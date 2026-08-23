@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: wedo-backend
+
+  profiles:
+    default: local
+
+server:
+  port: 8080

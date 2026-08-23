@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Backend
+backend/target/
+*.log
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Android
+mobile/android/.gradle/
+mobile/android/local.properties
+
+# iOS
+mobile/ios/Pods/
+mobile/ios/.symlinks/

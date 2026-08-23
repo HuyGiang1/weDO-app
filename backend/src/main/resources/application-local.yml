@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/wedo
-    username: wedo
-    password: wedo_local
+    url: ${WEDO_DB_URL:jdbc:postgresql://localhost:5432/wedo}
+    username: ${WEDO_DB_USERNAME:wedo}
+    password: ${WEDO_DB_PASSWORD:wedo_local}
 
   jpa:
     hibernate:
@@ -14,8 +14,8 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${WEDO_REDIS_HOST:localhost}
+      port: ${WEDO_REDIS_PORT:6379}
 
 management:
   endpoints:

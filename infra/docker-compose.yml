@@ -3,9 +3,9 @@ services:
     image: postgres:17
     container_name: wedo-postgres
     environment:
-      POSTGRES_DB: wedo
-      POSTGRES_USER: wedo
-      POSTGRES_PASSWORD: wedo_local
+      POSTGRES_DB: ${WEDO_DB_NAME:-wedo}
+      POSTGRES_USER: ${WEDO_DB_USERNAME:-wedo}
+      POSTGRES_PASSWORD: ${WEDO_DB_PASSWORD:-wedo_local}
     ports:
       - "5432:5432"
     volumes:

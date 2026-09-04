@@ -1069,13 +1069,13 @@ Default proposal is 1 day + 1 hour, user-customizable/disableable. Activity time
   "splitMethod": "EQUAL",
   "participantUserIds": ["...", "...", "..."],
   "activityId": null,
-  "expenseDate": "2026-09-01",
+  "occurredAt": "2026-09-01T12:00:00+07:00",
   "note": null,
   "receiptStorageKey": null
 }
 ```
 
-One payer only. Payer may be a participant. Backend calculates all ExpenseShare values; Flutter is not authoritative.
+One payer only. Payer may be a participant. Backend calculates all ExpenseShare values; Flutter is not authoritative. EQUAL split requires totalAmount >= participantCount * 0.01 so every share > 0; uses deterministic remainder-unit distribution: base = floor(amount / N, 2); remainder units (0.01) distributed one-by-one to paid_by (if participant), then remaining participants ordered by canonical UUID.
 
 ### FIN-02 Create Expense - Custom Amount
 
@@ -1113,12 +1113,12 @@ Includes payer, shares, activity reference, receipt, creator and change-history 
 
 `PATCH /api/v1/expenses/{expenseId}`
 
-Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. If settlements already depend on related balances, service must warn/restrict according to consistency rules.
+Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. Must preserve BOTH COMPLETED accounting protection (cannot cause already completed settlements to exceed underlying obligation / over-settle) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ### FIN-07 Cancel Expense
 
 `POST /api/v1/expenses/{expenseId}/cancel`  
-No hard-delete financial history.
+No hard-delete financial history. Must preserve BOTH COMPLETED accounting protection (cancellation cannot leave completed settlements over-settled) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ---
 
@@ -1179,7 +1179,7 @@ Frontend is never allowed to set arbitrary debt.
 }
 ```
 
-Backend derives debtor/creditor from current pairwise balance and declaration semantics. Validate amount > 0 and <= current outstanding debt. Initial state: PENDING.
+Backend derives debtor/creditor from current pairwise balance and declaration semantics. Initiator integrity: created_by matches from_user_id for I_PAID and to_user_id for I_RECEIVED. Validate amount > 0 and <= current outstanding debt. Initial state: PENDING.
 
 ### SET-02 Confirm
 

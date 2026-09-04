@@ -122,6 +122,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v6Migrations).isEqualTo(1);
 
+		Integer v7Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '7'
+						  AND description = 'finance'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v7Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -171,7 +183,12 @@ class BackendApplicationTests {
 						      'tasks',
 						      'task_assignees',
 						      'task_status_history',
-						      'activity_comments'
+						      'activity_comments',
+						      'expenses',
+						      'expense_shares',
+						      'expense_change_logs',
+						      'settlements',
+						      'settlement_status_history'
 						  )
 						""",
 				String.class
@@ -221,7 +238,12 @@ class BackendApplicationTests {
 				"tasks",
 				"task_assignees",
 				"task_status_history",
-				"activity_comments"
+				"activity_comments",
+				"expenses",
+				"expense_shares",
+				"expense_change_logs",
+				"settlements",
+				"settlement_status_history"
 		);
 	}
 

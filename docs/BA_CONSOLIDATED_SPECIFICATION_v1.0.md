@@ -246,7 +246,7 @@ Every expense:
 - belongs to Group
 - optional same-group Activity
 - one payer
-- date
+- occurred_at (TIMESTAMPTZ)
 - total
 - participants
 - split method
@@ -256,10 +256,12 @@ Split:
 - EQUAL
 - CUSTOM_AMOUNT
 
+EQUAL split requires totalAmount >= participantCount * 0.01 (minor units >= N) so every share > 0. Rounding: base = floor(total / N, 2); remainder units (0.01) distributed one-by-one starting with paid_by (if participant), then remaining participants by canonical UUID.
 Custom sum must equal total.
 Payer may participate.
 No self-debt.
 Multiple payers = separate expenses.
+Expense Edit/Cancel must preserve BOTH COMPLETED accounting protection (mutation cannot cause completed settlements to exceed corrected obligation) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved for any affected pair).
 
 ## 18. Debt
 No authoritative `debts` table.
@@ -276,6 +278,7 @@ Block does not break finance.
 - Full / Partial
 - amount > 0
 - amount <= current debt
+- initiator: created_by == from_user_id for I_PAID, created_by == to_user_id for I_RECEIVED
 
 Two-sided confirmation:
 A. Debtor says paid → Creditor confirms.

@@ -104,6 +104,24 @@ Tests:
 
 ## 5. M2 — Auth + Security
 
+Sub-milestones:
+- [x] M2.1  Auth JPA Mapping Foundation
+- [ ] M2.2  Security Foundation + BCrypt
+- [ ] M2.3  JWT Foundation
+- [ ] M2.4  Register
+- [ ] M2.5  Verify Email + Resend
+- [ ] M2.6  Username Availability + Complete Profile
+- [ ] M2.7  Login
+- [ ] M2.8  Refresh Token Rotation
+- [ ] M2.9  Logout
+- [ ] M2.10 Forgot / Reset Password
+- [ ] M2.11 Current User + Protected Endpoint
+- [ ] M2.12 Device / Session Security Hardening
+- [ ] M2.13 Flutter Auth Screens
+- [ ] M2.14 Secure Storage + Dio Auth Interceptor
+- [ ] M2.15 Refresh Interceptor + Route Guard
+- [ ] M2.16 Auth E2E / DoD
+
 Features:
 - register
 - verify email

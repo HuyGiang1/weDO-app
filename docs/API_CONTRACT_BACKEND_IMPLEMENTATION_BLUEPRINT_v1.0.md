@@ -372,13 +372,31 @@ Normalize, validate format and enforce uniqueness.
 
 `GET /api/v1/me/privacy`
 
-Includes discover-by username/QR/email/phone, DM policy, friend-request policy, online status and last-seen visibility.
+Returns current privacy settings with defaults applied upon registration:
+- `discoverByUsername`: boolean (default `true`)
+- `discoverByQr`: boolean (default `true`)
+- `discoverByEmail`: boolean (default `false`)
+- `discoverByPhone`: boolean (default `false`)
+- `dmPolicy`: enum `EVERYONE` (default), `MUTUAL_GROUPS`, `FRIENDS_ONLY`
+- `friendRequestPolicy`: enum `EVERYONE` (default), `MUTUAL_GROUPS`, `NONE`
+- `showOnlineStatus`: boolean (default `true`)
+- `showLastSeen`: boolean (default `true`)
+
+Semantics of `dmPolicy`:
+- `EVERYONE`: Friends DM directly; non-friends must use Message Request (max 3 text messages).
+- `MUTUAL_GROUPS`: Only non-friends sharing a group can send Message Request.
+- `FRIENDS_ONLY`: Non-friends cannot send Message Request.
+
+Semantics of `friendRequestPolicy`:
+- `EVERYONE`: Any valid user can send friend requests.
+- `MUTUAL_GROUPS`: Only users sharing a mutual group can send friend requests.
+- `NONE`: Friend requests are blocked.
 
 ### USER-05 Update Privacy Settings
 
 `PATCH /api/v1/me/privacy`
 
-Supports partial updates.
+Supports partial updates to any of the privacy fields listed above.
 
 ### USER-06 Change Password
 
@@ -576,12 +594,15 @@ Direct invite acceptance bypasses join approval policy. Banned users cannot be i
 
 `GET /api/v1/me/group-invitations`
 
-### GROUP-17 Accept/Decline Invitation
+### GROUP-17 Accept/Decline/Cancel Invitation
 
-`POST /api/v1/group-invitations/{id}/accept`  
+`POST /api/v1/group-invitations/{id}/accept`
 `POST /api/v1/group-invitations/{id}/decline`
+`POST /api/v1/group-invitations/{id}/cancel`
 
-Acceptance transaction checks group ACTIVE, invite valid, user not banned, no ACTIVE membership and active member count below 100.
+- Acceptance transaction checks group ACTIVE, invite valid, user not banned, no ACTIVE membership and active member count below 100.
+- Authorized Owner/Admin can cancel a PENDING direct invitation. Once cancelled, the invitee cannot accept it.
+- `ACCEPTED`, `DECLINED`, `CANCELLED` are terminal states. Direct invitations do not expire.
 
 ### GROUP-18 Create Invite Link/Code/QR
 
@@ -603,11 +624,14 @@ Supports expiration and usage limit. QR is generated from invite code/deep link;
 
 ### GROUP-21 Join Requests
 
-`GET /api/v1/groups/{groupId}/join-requests`  
-`POST /api/v1/group-join-requests/{requestId}/approve`  
+`GET /api/v1/groups/{groupId}/join-requests`
+`POST /api/v1/group-join-requests/{requestId}/approve`
 `POST /api/v1/group-join-requests/{requestId}/reject`
+`POST /api/v1/group-join-requests/{requestId}/cancel`
 
-Approval is transactional and rechecks group capacity, ban and membership state.
+- Approval is transactional and rechecks group capacity, ban and membership state.
+- Requester can cancel their own PENDING join request. `CANCELLED` is a terminal state and does not create membership.
+- After cancellation, user may submit a new join request later if still eligible (not banned and no existing active membership).
 
 ### GROUP-22 Bans
 
@@ -656,10 +680,10 @@ Returns conversation identity, type, last message preview/time, unread count and
 
 ### CHAT-04 Accept/Decline Message Request
 
-`POST /api/v1/message-requests/{id}/accept`  
+`POST /api/v1/message-requests/{id}/accept`
 `POST /api/v1/message-requests/{id}/decline`
 
-Rules: before acceptance sender may send max 3 TEXT messages and no images/files; decline keeps conversation/request history and starts 72-hour cooldown; Accept opens direct conversation but does not create friendship.
+Rules: before acceptance sender may send max 3 TEXT messages and no images/files; decline keeps conversation/request history and starts 72-hour cooldown; Accept opens direct conversation but does not create friendship; Block terminates any pending message request with status CANCELLED without activating a 72-hour decline cooldown, and unblocking does not revive it.
 
 ### CHAT-05 Message History
 
@@ -826,7 +850,7 @@ Returns core info, current user's RSVP, counts/capacity, waitlist, poll/task/exp
 
 `PATCH /api/v1/activities/{activityId}`
 
-Creator may edit own Activity; Owner/Admin may edit any Activity. Allowed fields depend on state. CONFIRMED time/location changes are logged and notify Going/Maybe participants. IN_PROGRESS allows limited practical edits. CANCELLED core fields are locked. COMPLETED allows only limited correction/logging.
+Creator may edit own Activity; Owner/Admin may edit any Activity. Allowed fields depend on state. CONFIRMED time/location changes are logged and notify Going/Maybe participants. Capacity decrease is rejected if below current GOING count. Capacity increase auto-promotes waitlisted users FIFO under parent activity lock. IN_PROGRESS allows limited practical edits. CANCELLED core fields are locked. COMPLETED allows only limited correction/logging.
 
 ### ACT-05 Confirm Activity
 
@@ -930,8 +954,8 @@ Before any vote, option creator may edit/delete their option where allowed. Once
 
 ### POLL-06 Close Poll
 
-`POST /api/v1/polls/{pollId}/close`  
-Creator/authorized moderator may close early. No further vote/option changes afterward.
+`POST /api/v1/polls/{pollId}/close`
+Creator/authorized moderator may close early (`closed_at` set to now, `closed_by` set to actor). Poll also closes automatically upon reaching deadline (`closed_at` set to close time, `closed_by` is null). In both cases, persisted status transitions to CLOSED and no further votes or option changes are permitted.
 
 ### POLL-07 Public Voters
 
@@ -1027,7 +1051,7 @@ There is no Calendar business table; calendar is a read model over Activity + Pa
 }
 ```
 
-Default proposal is 1 day + 1 hour, user-customizable/disableable. Activity time changes reschedule affected reminders.
+Single reminder configuration per user per activity. UI may offer preset offsets (e.g. 1 day = 1440 min, 1 hour = 60 min) or custom offset. Disabling sets `enabled = false`. Activity time changes reschedule affected reminders.
 
 ---
 
@@ -1045,13 +1069,13 @@ Default proposal is 1 day + 1 hour, user-customizable/disableable. Activity time
   "splitMethod": "EQUAL",
   "participantUserIds": ["...", "...", "..."],
   "activityId": null,
-  "expenseDate": "2026-09-01",
+  "occurredAt": "2026-09-01T12:00:00+07:00",
   "note": null,
   "receiptStorageKey": null
 }
 ```
 
-One payer only. Payer may be a participant. Backend calculates all ExpenseShare values; Flutter is not authoritative.
+One payer only. Payer may be a participant. Backend calculates all ExpenseShare values; Flutter is not authoritative. EQUAL split requires totalAmount >= participantCount * 0.01 so every share > 0; uses deterministic remainder-unit distribution: base = floor(amount / N, 2); remainder units (0.01) distributed one-by-one to paid_by (if participant), then remaining participants ordered by canonical UUID.
 
 ### FIN-02 Create Expense - Custom Amount
 
@@ -1089,12 +1113,12 @@ Includes payer, shares, activity reference, receipt, creator and change-history 
 
 `PATCH /api/v1/expenses/{expenseId}`
 
-Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. If settlements already depend on related balances, service must warn/restrict according to consistency rules.
+Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. Must preserve BOTH COMPLETED accounting protection (cannot cause already completed settlements to exceed underlying obligation / over-settle) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ### FIN-07 Cancel Expense
 
 `POST /api/v1/expenses/{expenseId}/cancel`  
-No hard-delete financial history.
+No hard-delete financial history. Must preserve BOTH COMPLETED accounting protection (cancellation cannot leave completed settlements over-settled) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ---
 
@@ -1155,7 +1179,7 @@ Frontend is never allowed to set arbitrary debt.
 }
 ```
 
-Backend derives debtor/creditor from current pairwise balance and declaration semantics. Validate amount > 0 and <= current outstanding debt. Initial state: PENDING.
+Backend derives debtor/creditor from current pairwise balance and declaration semantics. Initiator integrity: created_by matches from_user_id for I_PAID and to_user_id for I_RECEIVED. Validate amount > 0 and <= current outstanding debt. Initial state: PENDING.
 
 ### SET-02 Confirm
 
@@ -1209,7 +1233,7 @@ Fund balance is NEVER directly edited or trusted from a stored balance field. It
 Confirmed Contributions
 - Fund Expenses
 - Completed Reimbursements
-± Adjustments/Reversals
+± Reversals
 ```
 
 ### FUND-04 Managers
@@ -1242,6 +1266,10 @@ Transaction creates collection + member obligations. Required amount may differ 
 
 `GET /api/v1/funds/{fundId}/collections`  
 `GET /api/v1/collections/{collectionId}`
+
+Collection statuses: OPEN, CLOSED, CANCELLED.
+- When Collection transitions to CANCELLED, all associated PENDING contributions transition to CANCELLED (not REJECTED, no ledger entry).
+- When Collection transitions to CLOSED, existing PENDING contributions may still be confirmed or rejected, but no new contributions are accepted.
 
 Derived obligation state: UNPAID, PARTIAL, PAID, OVERDUE. Those states are computed from required, confirmed/pending contributions and deadline rather than being an authoritative manually-editable status.
 
@@ -1323,20 +1351,22 @@ Owner/Fund Manager. Transaction + lock computes current ledger balance, requires
 ```
 
 Any eligible member may submit; initial state PENDING.
+Creation reservation: At create-time, locks fund context and requires `pendingReserved + requestedAmount <= ledgerBalance`. If insufficient, returns `FUND_INSUFFICIENT_BALANCE`.
 
 ### FUND-14 Approve/Reject Reimbursement
 
 `POST /api/v1/reimbursements/{id}/approve`  
 `POST /api/v1/reimbursements/{id}/reject`
 
-Approval transaction locks fund context, verifies PENDING and sufficient balance, marks completed and creates OUT ledger transaction. If balance is insufficient, request remains PENDING and API returns `FUND_INSUFFICIENT_BALANCE`.
+Approval transaction locks fund context, excludes current reimbursement from other pending sum (`currentAmount <= ledgerBalance - otherPending`), marks COMPLETED (`resolved_at = now()`, `resolved_by = actor`), and creates OUT ledger transaction. If balance is insufficient, request remains PENDING and API returns `FUND_INSUFFICIENT_BALANCE`.
+Rejection/cancellation marks status REJECTED/CANCELLED (`resolved_at = now()`), releasing reserved amount immediately with no ledger entry.
 
 ### FUND-15 Ledger Transactions
 
 `GET /api/v1/funds/{fundId}/transactions`  
 `GET /api/v1/fund-transactions/{transactionId}`
 
-Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, ADJUSTMENT, REVERSAL.
+Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, REVERSAL.
 
 ### FUND-16 Reverse/Correct Transaction
 
@@ -1348,12 +1378,12 @@ Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, ADJUSTMENT, REVERSAL.
 }
 ```
 
-Creates compensating/reversal ledger entry. Never delete historical financial transactions.
+Creates compensating/reversal ledger entry (1-to-1 full reversal, opposite direction, same amount). Never delete historical financial transactions. Reversal cannot reverse a REVERSAL transaction. If reversing a positive transaction results in negative available balance, operation is rejected.
 
 ### FUND-17 Close Fund
 
 `POST /api/v1/funds/{fundId}/close`  
-Owner only. History remains viewable; new fund operations are disabled.
+Owner only. Preconditions: ledger balance == 0, no PENDING reimbursements, no PENDING contributions, no OPEN collections. Sets status to CLOSED, records `closed_at = now()` and `closed_by = actor`. History remains viewable; new fund operations are disabled. Group may create a new ACTIVE fund later.
 
 ---
 
@@ -1363,7 +1393,7 @@ Owner only. History remains viewable; new fund operations are disabled.
 
 `GET /api/v1/notifications?page=0&size=30`
 
-Notification contains category, priority, actor, target/deep link, timestamp and read state.
+Notification contains category, priority (`HIGH`, `NORMAL`, `LOW`), actor, target/deep link, timestamp and read state.
 
 ### NOTI-02 Unread Count
 
@@ -1382,7 +1412,24 @@ Notification contains category, priority, actor, target/deep link, timestamp and
 `GET   /api/v1/me/notification-settings`  
 `PATCH /api/v1/me/notification-settings`
 
+Response / Request payload:
+```json
+{
+  "pushEnabled": true,
+  "socialEnabled": true,
+  "groupEnabled": true,
+  "chatEnabled": true,
+  "activityEnabled": true,
+  "pollEnabled": true,
+  "taskEnabled": true,
+  "financeEnabled": true,
+  "fundEnabled": true
+}
+```
+
 Categories: Social, Group, Chat/DM, Activity, Poll, Task, Finance, Fund.
+User registration automatically creates default notification settings with all fields set to `true`.
+Notifications inbox records are always persisted in-app; these settings control PUSH delivery only.
 
 ### NOTI-06 Group Notification Settings
 

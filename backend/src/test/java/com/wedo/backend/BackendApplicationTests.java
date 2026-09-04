@@ -13,23 +13,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@ActiveProfiles("test")
-@Testcontainers
-class BackendApplicationTests {
+import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
-	@Container
-	static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine")
-			.withDatabaseName("wedo_test")
-			.withUsername("wedo")
-			.withPassword("wedo_test");
+import static org.assertj.core.api.Assertions.assertThat;
 
-	@DynamicPropertySource
-	static void configurePostgres(DynamicPropertyRegistry registry) {
-		registry.add("spring.datasource.url", postgres::getJdbcUrl);
-		registry.add("spring.datasource.username", postgres::getUsername);
-		registry.add("spring.datasource.password", postgres::getPassword);
-	}
+class BackendApplicationTests extends AbstractPostgresIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;

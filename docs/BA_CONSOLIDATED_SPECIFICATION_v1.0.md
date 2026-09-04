@@ -233,10 +233,10 @@ Includes:
 - Cancelled
 
 Reminder:
-- Default proposal 1 day + 1 hour.
-- Customizable.
-- Disable.
-- Time changes reschedule.
+- At most one reminder configuration per user per activity.
+- User may choose/customize one offset (e.g. preset 1 day or 1 hour, or custom minutes).
+- Disableable (enabled = false).
+- Activity time changes reschedule affected reminders.
 
 Conflict = warning only.
 Timezone must be handled consistently.
@@ -383,9 +383,9 @@ Categories:
 - Fund
 
 Priority:
-- H
-- N
-- L
+- HIGH (H)
+- NORMAL (N)
+- LOW (L)
 
 Mute:
 - 1h

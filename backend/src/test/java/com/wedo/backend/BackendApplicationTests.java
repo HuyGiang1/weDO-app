@@ -146,6 +146,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v8Migrations).isEqualTo(1);
 
+		Integer v9Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '9'
+						  AND description = 'notifications'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v9Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -209,7 +221,11 @@ class BackendApplicationTests {
 						      'fund_expenses',
 						      'fund_reimbursements',
 						      'fund_transactions',
-						      'fund_transaction_reversals'
+						      'fund_transaction_reversals',
+						      'notifications',
+						      'user_notification_settings',
+						      'group_notification_settings',
+						      'user_activity_reminders'
 						  )
 						""",
 				String.class
@@ -273,7 +289,11 @@ class BackendApplicationTests {
 				"fund_expenses",
 				"fund_reimbursements",
 				"fund_transactions",
-				"fund_transaction_reversals"
+				"fund_transaction_reversals",
+				"notifications",
+				"user_notification_settings",
+				"group_notification_settings",
+				"user_activity_reminders"
 		);
 
 		// V8 Schema Invariant Checks
@@ -344,6 +364,75 @@ class BackendApplicationTests {
 				Integer.class
 		);
 		assertThat(reversalUniqueConstraints).isEqualTo(2);
+
+		// V9 Schema Invariant Checks
+		// 1. UNIQUE constraint on user_activity_reminders (activity_id, user_id)
+		Integer reminderUniqueConstraint = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.table_constraints
+						WHERE table_schema = 'public'
+						  AND table_name = 'user_activity_reminders'
+						  AND constraint_name = 'uq_user_activity_reminders'
+						  AND constraint_type = 'UNIQUE'
+						""",
+				Integer.class
+		);
+		assertThat(reminderUniqueConstraint).isEqualTo(1);
+
+		// 2. UNIQUE constraint on group_notification_settings (user_id, group_id)
+		Integer groupNotifUniqueConstraint = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.table_constraints
+						WHERE table_schema = 'public'
+						  AND table_name = 'group_notification_settings'
+						  AND constraint_name = 'uq_group_notification_settings_user_group'
+						  AND constraint_type = 'UNIQUE'
+						""",
+				Integer.class
+		);
+		assertThat(groupNotifUniqueConstraint).isEqualTo(1);
+
+		// 3. notifications unread partial index exists
+		Integer notifUnreadIndexCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'notifications'
+						  AND indexname = 'idx_notifications_user_unread'
+						  AND indexdef LIKE '%WHERE%read_at IS NULL%'
+						""",
+				Integer.class
+		);
+		assertThat(notifUnreadIndexCount).isEqualTo(1);
+
+		// 4. reminder due partial index exists
+		Integer reminderDueIndexCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'user_activity_reminders'
+						  AND indexname = 'idx_user_activity_reminders_due'
+						  AND indexdef LIKE '%WHERE%enabled%sent_at IS NULL%'
+						""",
+				Integer.class
+		);
+		assertThat(reminderDueIndexCount).isEqualTo(1);
+
+		// 5. user_devices exists exactly once in public schema (created in V1, not duplicated in V9)
+		Integer userDevicesTableCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.tables
+						WHERE table_schema = 'public'
+						  AND table_name = 'user_devices'
+						""",
+				Integer.class
+		);
+		assertThat(userDevicesTableCount).isEqualTo(1);
 	}
 
 }

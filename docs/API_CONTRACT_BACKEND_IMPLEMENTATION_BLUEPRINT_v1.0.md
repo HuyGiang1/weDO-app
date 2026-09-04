@@ -1051,7 +1051,7 @@ There is no Calendar business table; calendar is a read model over Activity + Pa
 }
 ```
 
-Default proposal is 1 day + 1 hour, user-customizable/disableable. Activity time changes reschedule affected reminders.
+Single reminder configuration per user per activity. UI may offer preset offsets (e.g. 1 day = 1440 min, 1 hour = 60 min) or custom offset. Disabling sets `enabled = false`. Activity time changes reschedule affected reminders.
 
 ---
 
@@ -1393,7 +1393,7 @@ Owner only. Preconditions: ledger balance == 0, no PENDING reimbursements, no PE
 
 `GET /api/v1/notifications?page=0&size=30`
 
-Notification contains category, priority, actor, target/deep link, timestamp and read state.
+Notification contains category, priority (`HIGH`, `NORMAL`, `LOW`), actor, target/deep link, timestamp and read state.
 
 ### NOTI-02 Unread Count
 
@@ -1412,7 +1412,24 @@ Notification contains category, priority, actor, target/deep link, timestamp and
 `GET   /api/v1/me/notification-settings`  
 `PATCH /api/v1/me/notification-settings`
 
+Response / Request payload:
+```json
+{
+  "pushEnabled": true,
+  "socialEnabled": true,
+  "groupEnabled": true,
+  "chatEnabled": true,
+  "activityEnabled": true,
+  "pollEnabled": true,
+  "taskEnabled": true,
+  "financeEnabled": true,
+  "fundEnabled": true
+}
+```
+
 Categories: Social, Group, Chat/DM, Activity, Poll, Task, Finance, Fund.
+User registration automatically creates default notification settings with all fields set to `true`.
+Notifications inbox records are always persisted in-app; these settings control PUSH delivery only.
 
 ### NOTI-06 Group Notification Settings
 

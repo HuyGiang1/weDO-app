@@ -32,14 +32,25 @@
 - Non-friend DM creates Message Request.
 - Max 3 TEXT messages before accept.
 - No image/file before accept.
-- Receiver: Accept / Decline / Block.
-- Decline retains history.
-- Sender cooldown 72h after decline.
+- Receiver actions: Accept / Decline / Block.
+- Accept: opens direct conversation (does not create friendship).
+- Decline: retains history, starts sender 72h cooldown.
+- Block: cancels pending message request (terminal state CANCELLED, no 72h cooldown; does not revive on unblock).
 
 DM policy:
-- Everyone
-- Mutual groups
-- Friends only
+- Everyone (DEFAULT): Friends DM directly; non-friends must go through Message Request flow (max 3 TEXT messages before accept).
+- Mutual groups: Only non-friends with mutual groups can create Message Request.
+- Friends only: Non-friends cannot create Message Request.
+
+Friend request policy:
+- Everyone (DEFAULT): Any valid user can send a friend request.
+- Mutual groups: Only users sharing mutual groups can send a friend request.
+- None: Do not accept friend requests.
+
+Presence privacy:
+- Show online status: ON by default (TRUE).
+- Show last seen: ON by default (TRUE).
+- Users may update privacy settings at any time.
 
 ## 5. Group Roles
 
@@ -88,19 +99,17 @@ DELETED:
 
 ## 8. Invite / Join / Ban
 Invitation:
-- Direct
-- Link
-- Code
-- QR
-
-Invite link:
-- Expiry
-- Usage limit
-- Revoke
+- Direct: sent to specific user; bypasses join approval; no expiry; authorized Owner/Admin may cancel PENDING invitation; receiver may accept or decline; ACCEPTED / DECLINED / CANCELLED are terminal states.
+- Link / Code / QR: shareable token with optional expiry, usage limit, and revoke capability.
 
 Join policy:
-- AUTO_JOIN
-- APPROVAL_REQUIRED
+- AUTO_JOIN: join via valid link/code enters group directly (if capacity < 100 and not banned).
+- APPROVAL_REQUIRED: creates PENDING join request for Owner/Admin review.
+
+Join request lifecycle:
+- PENDING → APPROVED (creates active membership) / REJECTED.
+- Requester may CANCEL own PENDING join request (terminal state, does not create membership).
+- Eligible user may submit new request later if not banned or already active member.
 
 Banned user:
 - Cannot join.
@@ -165,6 +174,8 @@ Rules:
 - IN_PROGRESS auto when now >= start.
 - COMPLETED auto when now >= end, or manual if no end.
 - Confirmed time/location edit → log + notify GOING/MAYBE.
+- Capacity decrease rejected if new capacity < current GOING count.
+- Capacity increase auto-promotes waitlisted users FIFO up to new capacity (or all if unlimited).
 - Completed/cancelled lock core edits.
 
 ## 12. RSVP
@@ -186,7 +197,7 @@ Rules:
 ## 13. Poll
 - Single/multiple.
 - Optional member-added options.
-- Deadline / close early.
+- Deadline / close early (manual close by creator/moderator or auto-close at deadline; both transition to persisted CLOSED state with closed_at set; closed_by is null for deadline close).
 - Result immediate/after close.
 - Vote change while open.
 - Max selections optional.
@@ -222,10 +233,10 @@ Includes:
 - Cancelled
 
 Reminder:
-- Default proposal 1 day + 1 hour.
-- Customizable.
-- Disable.
-- Time changes reschedule.
+- At most one reminder configuration per user per activity.
+- User may choose/customize one offset (e.g. preset 1 day or 1 hour, or custom minutes).
+- Disableable (enabled = false).
+- Activity time changes reschedule affected reminders.
 
 Conflict = warning only.
 Timezone must be handled consistently.
@@ -235,7 +246,7 @@ Every expense:
 - belongs to Group
 - optional same-group Activity
 - one payer
-- date
+- occurred_at (TIMESTAMPTZ)
 - total
 - participants
 - split method
@@ -245,10 +256,12 @@ Split:
 - EQUAL
 - CUSTOM_AMOUNT
 
+EQUAL split requires totalAmount >= participantCount * 0.01 (minor units >= N) so every share > 0. Rounding: base = floor(total / N, 2); remainder units (0.01) distributed one-by-one starting with paid_by (if participant), then remaining participants by canonical UUID.
 Custom sum must equal total.
 Payer may participate.
 No self-debt.
 Multiple payers = separate expenses.
+Expense Edit/Cancel must preserve BOTH COMPLETED accounting protection (mutation cannot cause completed settlements to exceed corrected obligation) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved for any affected pair).
 
 ## 18. Debt
 No authoritative `debts` table.
@@ -265,6 +278,7 @@ Block does not break finance.
 - Full / Partial
 - amount > 0
 - amount <= current debt
+- initiator: created_by == from_user_id for I_PAID, created_by == to_user_id for I_RECEIVED
 
 Two-sided confirmation:
 A. Debtor says paid → Creditor confirms.
@@ -293,7 +307,7 @@ Balance:
 - never direct-edit
 
 Formula concept:
-Confirmed Contributions - Fund Expenses - Completed Reimbursements ± Adjustments/Reversals.
+Confirmed Contributions - Fund Expenses - Completed Reimbursements ± Reversals.
 
 ## 21. Collection & Contribution
 Collection:
@@ -302,6 +316,7 @@ Collection:
 - deadline
 - selected members
 - amount/member may differ
+- status: OPEN, CLOSED, CANCELLED
 
 Contribution:
 - PENDING
@@ -318,36 +333,39 @@ Obligation derived:
 Rules:
 - Only CONFIRMED increases balance.
 - Member may cancel pending.
+- When Collection transitions to CANCELLED, all associated PENDING contributions transition to CANCELLED (not REJECTED, no ledger entry).
+- When Collection transitions to CLOSED, existing PENDING contributions may still be confirmed/rejected, but no new contributions are accepted.
 - No overpayment.
 - Pending + confirmed count toward remaining amount.
-- Late payment allowed.
+- Late payment allowed while collection is OPEN.
 
 ## 22. Fund Expense & Reimbursement
 Fund Expense:
 - Owner/Fund Manager.
-- Immediate balance deduction.
+- Immediate balance deduction (OUT).
 - No second approval.
-- No negative balance.
+- No negative balance: amount <= ledgerBalance - sum(PENDING reimbursements).
 
 Reimbursement:
 - amount
 - reason
 - proof
-- manager approve/reject
-- approval only if enough balance
-- otherwise stays pending
-- Fund↔Member reimbursement is not debt
+- status: PENDING, COMPLETED, REJECTED, CANCELLED
+- Creation reservation: PENDING reserves available balance (requestedAmount + pendingReserved <= ledgerBalance).
+- Approval: locks fund context, validates currentAmount <= ledgerBalance - otherPending, transitions to COMPLETED and creates OUT ledger transaction.
+- Rejection/cancellation: releases reservation immediately, no ledger transaction.
+- Fund↔Member reimbursement is not debt.
 
 ## 23. Fund Ledger
 Transaction types:
-- contribution
-- fund expense
-- reimbursement
-- adjustment
-- reversal
+- contribution (IN)
+- fund expense (OUT)
+- reimbursement (OUT)
+- reversal (IN / OUT compensating original transaction)
 
-No hard-delete financial transaction.
-Correction via reversal/corrected entry.
+- No hard-delete financial transaction.
+- Correction strictly via 1-to-1 reversal.
+- No unbacked generic adjustments.
 
 ## 24. Notifications
 Channels:
@@ -365,9 +383,9 @@ Categories:
 - Fund
 
 Priority:
-- H
-- N
-- L
+- HIGH (H)
+- NORMAL (N)
+- LOW (L)
 
 Mute:
 - 1h

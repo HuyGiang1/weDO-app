@@ -1233,7 +1233,7 @@ Fund balance is NEVER directly edited or trusted from a stored balance field. It
 Confirmed Contributions
 - Fund Expenses
 - Completed Reimbursements
-± Adjustments/Reversals
+± Reversals
 ```
 
 ### FUND-04 Managers
@@ -1266,6 +1266,10 @@ Transaction creates collection + member obligations. Required amount may differ 
 
 `GET /api/v1/funds/{fundId}/collections`  
 `GET /api/v1/collections/{collectionId}`
+
+Collection statuses: OPEN, CLOSED, CANCELLED.
+- When Collection transitions to CANCELLED, all associated PENDING contributions transition to CANCELLED (not REJECTED, no ledger entry).
+- When Collection transitions to CLOSED, existing PENDING contributions may still be confirmed or rejected, but no new contributions are accepted.
 
 Derived obligation state: UNPAID, PARTIAL, PAID, OVERDUE. Those states are computed from required, confirmed/pending contributions and deadline rather than being an authoritative manually-editable status.
 
@@ -1347,20 +1351,22 @@ Owner/Fund Manager. Transaction + lock computes current ledger balance, requires
 ```
 
 Any eligible member may submit; initial state PENDING.
+Creation reservation: At create-time, locks fund context and requires `pendingReserved + requestedAmount <= ledgerBalance`. If insufficient, returns `FUND_INSUFFICIENT_BALANCE`.
 
 ### FUND-14 Approve/Reject Reimbursement
 
 `POST /api/v1/reimbursements/{id}/approve`  
 `POST /api/v1/reimbursements/{id}/reject`
 
-Approval transaction locks fund context, verifies PENDING and sufficient balance, marks completed and creates OUT ledger transaction. If balance is insufficient, request remains PENDING and API returns `FUND_INSUFFICIENT_BALANCE`.
+Approval transaction locks fund context, excludes current reimbursement from other pending sum (`currentAmount <= ledgerBalance - otherPending`), marks COMPLETED (`resolved_at = now()`, `resolved_by = actor`), and creates OUT ledger transaction. If balance is insufficient, request remains PENDING and API returns `FUND_INSUFFICIENT_BALANCE`.
+Rejection/cancellation marks status REJECTED/CANCELLED (`resolved_at = now()`), releasing reserved amount immediately with no ledger entry.
 
 ### FUND-15 Ledger Transactions
 
 `GET /api/v1/funds/{fundId}/transactions`  
 `GET /api/v1/fund-transactions/{transactionId}`
 
-Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, ADJUSTMENT, REVERSAL.
+Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, REVERSAL.
 
 ### FUND-16 Reverse/Correct Transaction
 
@@ -1372,12 +1378,12 @@ Types: CONTRIBUTION, FUND_EXPENSE, REIMBURSEMENT, ADJUSTMENT, REVERSAL.
 }
 ```
 
-Creates compensating/reversal ledger entry. Never delete historical financial transactions.
+Creates compensating/reversal ledger entry (1-to-1 full reversal, opposite direction, same amount). Never delete historical financial transactions. Reversal cannot reverse a REVERSAL transaction. If reversing a positive transaction results in negative available balance, operation is rejected.
 
 ### FUND-17 Close Fund
 
 `POST /api/v1/funds/{fundId}/close`  
-Owner only. History remains viewable; new fund operations are disabled.
+Owner only. Preconditions: ledger balance == 0, no PENDING reimbursements, no PENDING contributions, no OPEN collections. Sets status to CLOSED, records `closed_at = now()` and `closed_by = actor`. History remains viewable; new fund operations are disabled. Group may create a new ACTIVE fund later.
 
 ---
 

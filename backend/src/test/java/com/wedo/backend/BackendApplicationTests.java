@@ -134,6 +134,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v7Migrations).isEqualTo(1);
 
+		Integer v8Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '8'
+						  AND description = 'fund'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v8Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -188,7 +200,16 @@ class BackendApplicationTests {
 						      'expense_shares',
 						      'expense_change_logs',
 						      'settlements',
-						      'settlement_status_history'
+						      'settlement_status_history',
+						      'group_funds',
+						      'fund_managers',
+						      'fund_collections',
+						      'fund_collection_obligations',
+						      'fund_contributions',
+						      'fund_expenses',
+						      'fund_reimbursements',
+						      'fund_transactions',
+						      'fund_transaction_reversals'
 						  )
 						""",
 				String.class
@@ -243,8 +264,86 @@ class BackendApplicationTests {
 				"expense_shares",
 				"expense_change_logs",
 				"settlements",
-				"settlement_status_history"
+				"settlement_status_history",
+				"group_funds",
+				"fund_managers",
+				"fund_collections",
+				"fund_collection_obligations",
+				"fund_contributions",
+				"fund_expenses",
+				"fund_reimbursements",
+				"fund_transactions",
+				"fund_transaction_reversals"
 		);
+
+		// V8 Schema Invariant Checks
+		// 1. Partial Unique index for max 1 ACTIVE fund per group
+		Integer activeFundIndexCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'group_funds'
+						  AND indexname = 'uq_group_funds_active_group'
+						  AND indexdef LIKE '%WHERE%status%ACTIVE%'
+						""",
+				Integer.class
+		);
+		assertThat(activeFundIndexCount).isEqualTo(1);
+
+		// 2. UNIQUE constraint on fund_managers (fund_id, user_id)
+		Integer fundManagerUniqueConstraint = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.table_constraints
+						WHERE table_schema = 'public'
+						  AND table_name = 'fund_managers'
+						  AND constraint_name = 'uq_fund_managers_fund_user'
+						  AND constraint_type = 'UNIQUE'
+						""",
+				Integer.class
+		);
+		assertThat(fundManagerUniqueConstraint).isEqualTo(1);
+
+		// 3. UNIQUE constraint on fund_collection_obligations (collection_id, user_id)
+		Integer obligationUniqueConstraint = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.table_constraints
+						WHERE table_schema = 'public'
+						  AND table_name = 'fund_collection_obligations'
+						  AND constraint_name = 'uq_fund_collection_obligations_user'
+						  AND constraint_type = 'UNIQUE'
+						""",
+				Integer.class
+		);
+		assertThat(obligationUniqueConstraint).isEqualTo(1);
+
+		// 4. Ledger domain reference idempotency index
+		Integer ledgerDomainRefIndexCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'fund_transactions'
+						  AND indexname = 'uq_fund_transactions_domain_ref'
+						""",
+				Integer.class
+		);
+		assertThat(ledgerDomainRefIndexCount).isEqualTo(1);
+
+		// 5. UNIQUE constraints on fund_transaction_reversals (1-to-1 bijection)
+		Integer reversalUniqueConstraints = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM information_schema.table_constraints
+						WHERE table_schema = 'public'
+						  AND table_name = 'fund_transaction_reversals'
+						  AND constraint_type = 'UNIQUE'
+						""",
+				Integer.class
+		);
+		assertThat(reversalUniqueConstraints).isEqualTo(2);
 	}
 
 }

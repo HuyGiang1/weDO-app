@@ -307,7 +307,7 @@ Balance:
 - never direct-edit
 
 Formula concept:
-Confirmed Contributions - Fund Expenses - Completed Reimbursements ± Adjustments/Reversals.
+Confirmed Contributions - Fund Expenses - Completed Reimbursements ± Reversals.
 
 ## 21. Collection & Contribution
 Collection:
@@ -316,6 +316,7 @@ Collection:
 - deadline
 - selected members
 - amount/member may differ
+- status: OPEN, CLOSED, CANCELLED
 
 Contribution:
 - PENDING
@@ -332,36 +333,39 @@ Obligation derived:
 Rules:
 - Only CONFIRMED increases balance.
 - Member may cancel pending.
+- When Collection transitions to CANCELLED, all associated PENDING contributions transition to CANCELLED (not REJECTED, no ledger entry).
+- When Collection transitions to CLOSED, existing PENDING contributions may still be confirmed/rejected, but no new contributions are accepted.
 - No overpayment.
 - Pending + confirmed count toward remaining amount.
-- Late payment allowed.
+- Late payment allowed while collection is OPEN.
 
 ## 22. Fund Expense & Reimbursement
 Fund Expense:
 - Owner/Fund Manager.
-- Immediate balance deduction.
+- Immediate balance deduction (OUT).
 - No second approval.
-- No negative balance.
+- No negative balance: amount <= ledgerBalance - sum(PENDING reimbursements).
 
 Reimbursement:
 - amount
 - reason
 - proof
-- manager approve/reject
-- approval only if enough balance
-- otherwise stays pending
-- Fund↔Member reimbursement is not debt
+- status: PENDING, COMPLETED, REJECTED, CANCELLED
+- Creation reservation: PENDING reserves available balance (requestedAmount + pendingReserved <= ledgerBalance).
+- Approval: locks fund context, validates currentAmount <= ledgerBalance - otherPending, transitions to COMPLETED and creates OUT ledger transaction.
+- Rejection/cancellation: releases reservation immediately, no ledger transaction.
+- Fund↔Member reimbursement is not debt.
 
 ## 23. Fund Ledger
 Transaction types:
-- contribution
-- fund expense
-- reimbursement
-- adjustment
-- reversal
+- contribution (IN)
+- fund expense (OUT)
+- reimbursement (OUT)
+- reversal (IN / OUT compensating original transaction)
 
-No hard-delete financial transaction.
-Correction via reversal/corrected entry.
+- No hard-delete financial transaction.
+- Correction strictly via 1-to-1 reversal.
+- No unbacked generic adjustments.
 
 ## 24. Notifications
 Channels:

@@ -158,6 +158,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v9Migrations).isEqualTo(1);
 
+		Integer v10Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '10'
+						  AND description = 'cross module indexes'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v10Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -429,10 +441,99 @@ class BackendApplicationTests {
 						FROM information_schema.tables
 						WHERE table_schema = 'public'
 						  AND table_name = 'user_devices'
+						  AND table_type = 'BASE TABLE'
 						""",
 				Integer.class
 		);
 		assertThat(userDevicesTableCount).isEqualTo(1);
+
+		// V10 Schema Invariant Checks
+		// 1. Verify exact index metadata for uq_user_devices_active_push_token
+		String indexDef = jdbcTemplate.queryForObject(
+				"""
+						SELECT indexdef
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'user_devices'
+						  AND indexname = 'uq_user_devices_active_push_token'
+						""",
+				String.class
+		);
+		assertThat(indexDef).isNotNull();
+		assertThat(indexDef).containsIgnoringCase("CREATE UNIQUE INDEX");
+		assertThat(indexDef).containsIgnoringCase("ON public.user_devices");
+		assertThat(indexDef).containsIgnoringCase("(push_token)");
+		assertThat(indexDef).containsIgnoringCase("WHERE (active = true)");
+
+		// 2. Existing regular index idx_user_devices_push_token from V1 is preserved
+		Integer regularPushTokenIndexCount = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM pg_indexes
+						WHERE schemaname = 'public'
+						  AND tablename = 'user_devices'
+						  AND indexname = 'idx_user_devices_push_token'
+						""",
+				Integer.class
+		);
+		assertThat(regularPushTokenIndexCount).isEqualTo(1);
+
+		// 3. Focused data-correctness integration assertion
+		java.util.UUID userA = java.util.UUID.randomUUID();
+		java.util.UUID userB = java.util.UUID.randomUUID();
+
+		jdbcTemplate.update(
+				"""
+						INSERT INTO users (id, email, username, display_name, status)
+						VALUES (?, ?, ?, 'User A', 'ACTIVE'),
+						       (?, ?, ?, 'User B', 'ACTIVE')
+						""",
+				userA, "usera_" + userA + "@wedo.test", "user_a_" + userA.toString().substring(0, 8),
+				userB, "userb_" + userB + "@wedo.test", "user_b_" + userB.toString().substring(0, 8)
+		);
+
+		String sharedPushToken = "fcm_token_shared_" + java.util.UUID.randomUUID();
+
+		// Insert Device row A: active = true
+		jdbcTemplate.update(
+				"""
+						INSERT INTO user_devices (id, user_id, platform, push_token, device_id, active)
+						VALUES (?, ?, 'ANDROID', ?, 'device_A_1', TRUE)
+						""",
+				java.util.UUID.randomUUID(), userA, sharedPushToken
+		);
+
+		// Insert Device row B: second ACTIVE insert with same push_token MUST fail via uq_user_devices_active_push_token
+		org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+				jdbcTemplate.update(
+						"""
+								INSERT INTO user_devices (id, user_id, platform, push_token, device_id, active)
+								VALUES (?, ?, 'IOS', ?, 'device_B_1', TRUE)
+								""",
+						java.util.UUID.randomUUID(), userB, sharedPushToken
+				)
+		).isInstanceOf(org.springframework.dao.DuplicateKeyException.class)
+		 .hasMessageContaining("uq_user_devices_active_push_token");
+
+		// Deactivate Device row A
+		jdbcTemplate.update(
+				"""
+						UPDATE user_devices
+						SET active = FALSE
+						WHERE push_token = ? AND user_id = ?
+						""",
+				sharedPushToken, userA
+		);
+
+		// Now inserting Device row B with active = TRUE must succeed (partial index allows inactive duplicates)
+		int insertedB = jdbcTemplate.update(
+				"""
+						INSERT INTO user_devices (id, user_id, platform, push_token, device_id, active)
+						VALUES (?, ?, 'IOS', ?, 'device_B_1', TRUE)
+						""",
+				java.util.UUID.randomUUID(), userB, sharedPushToken
+		);
+		assertThat(insertedB).isEqualTo(1);
 	}
 
 }

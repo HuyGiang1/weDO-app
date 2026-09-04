@@ -197,7 +197,7 @@ Rules:
 ## 13. Poll
 - Single/multiple.
 - Optional member-added options.
-- Deadline / close early.
+- Deadline / close early (manual close by creator/moderator or auto-close at deadline; both transition to persisted CLOSED state with closed_at set; closed_by is null for deadline close).
 - Result immediate/after close.
 - Vote change while open.
 - Max selections optional.

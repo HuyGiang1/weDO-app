@@ -954,8 +954,8 @@ Before any vote, option creator may edit/delete their option where allowed. Once
 
 ### POLL-06 Close Poll
 
-`POST /api/v1/polls/{pollId}/close`  
-Creator/authorized moderator may close early. No further vote/option changes afterward.
+`POST /api/v1/polls/{pollId}/close`
+Creator/authorized moderator may close early (`closed_at` set to now, `closed_by` set to actor). Poll also closes automatically upon reaching deadline (`closed_at` set to close time, `closed_by` is null). In both cases, persisted status transitions to CLOSED and no further votes or option changes are permitted.
 
 ### POLL-07 Public Voters
 

@@ -372,13 +372,31 @@ Normalize, validate format and enforce uniqueness.
 
 `GET /api/v1/me/privacy`
 
-Includes discover-by username/QR/email/phone, DM policy, friend-request policy, online status and last-seen visibility.
+Returns current privacy settings with defaults applied upon registration:
+- `discoverByUsername`: boolean (default `true`)
+- `discoverByQr`: boolean (default `true`)
+- `discoverByEmail`: boolean (default `false`)
+- `discoverByPhone`: boolean (default `false`)
+- `dmPolicy`: enum `EVERYONE` (default), `MUTUAL_GROUPS`, `FRIENDS_ONLY`
+- `friendRequestPolicy`: enum `EVERYONE` (default), `MUTUAL_GROUPS`, `NONE`
+- `showOnlineStatus`: boolean (default `true`)
+- `showLastSeen`: boolean (default `true`)
+
+Semantics of `dmPolicy`:
+- `EVERYONE`: Friends DM directly; non-friends must use Message Request (max 3 text messages).
+- `MUTUAL_GROUPS`: Only non-friends sharing a group can send Message Request.
+- `FRIENDS_ONLY`: Non-friends cannot send Message Request.
+
+Semantics of `friendRequestPolicy`:
+- `EVERYONE`: Any valid user can send friend requests.
+- `MUTUAL_GROUPS`: Only users sharing a mutual group can send friend requests.
+- `NONE`: Friend requests are blocked.
 
 ### USER-05 Update Privacy Settings
 
 `PATCH /api/v1/me/privacy`
 
-Supports partial updates.
+Supports partial updates to any of the privacy fields listed above.
 
 ### USER-06 Change Password
 

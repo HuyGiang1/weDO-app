@@ -48,8 +48,45 @@ class BackendApplicationTests {
 						""",
 				Integer.class
 		);
-
 		assertThat(bootstrapMigrations).isEqualTo(1);
+
+		Integer v1Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '1'
+						  AND description = 'identity and auth'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v1Migrations).isEqualTo(1);
+
+		java.util.List<String> tables = jdbcTemplate.queryForList(
+				"""
+						SELECT table_name
+						FROM information_schema.tables
+						WHERE table_schema = 'public'
+						  AND table_name IN (
+						      'users',
+						      'user_credentials',
+						      'user_privacy_settings',
+						      'auth_tokens',
+						      'refresh_sessions',
+						      'user_devices'
+						  )
+						""",
+				String.class
+		);
+
+		assertThat(tables).containsExactlyInAnyOrder(
+				"users",
+				"user_credentials",
+				"user_privacy_settings",
+				"auth_tokens",
+				"refresh_sessions",
+				"user_devices"
+		);
 	}
 
 }

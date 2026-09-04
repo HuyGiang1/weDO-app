@@ -37,9 +37,19 @@
 - Sender cooldown 72h after decline.
 
 DM policy:
-- Everyone
-- Mutual groups
-- Friends only
+- Everyone (DEFAULT): Friends DM directly; non-friends must go through Message Request flow (max 3 TEXT messages before accept).
+- Mutual groups: Only non-friends with mutual groups can create Message Request.
+- Friends only: Non-friends cannot create Message Request.
+
+Friend request policy:
+- Everyone (DEFAULT): Any valid user can send a friend request.
+- Mutual groups: Only users sharing mutual groups can send a friend request.
+- None: Do not accept friend requests.
+
+Presence privacy:
+- Show online status: ON by default (TRUE).
+- Show last seen: ON by default (TRUE).
+- Users may update privacy settings at any time.
 
 ## 5. Group Roles
 

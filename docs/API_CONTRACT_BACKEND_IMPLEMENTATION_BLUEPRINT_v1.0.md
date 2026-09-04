@@ -594,12 +594,15 @@ Direct invite acceptance bypasses join approval policy. Banned users cannot be i
 
 `GET /api/v1/me/group-invitations`
 
-### GROUP-17 Accept/Decline Invitation
+### GROUP-17 Accept/Decline/Cancel Invitation
 
-`POST /api/v1/group-invitations/{id}/accept`  
+`POST /api/v1/group-invitations/{id}/accept`
 `POST /api/v1/group-invitations/{id}/decline`
+`POST /api/v1/group-invitations/{id}/cancel`
 
-Acceptance transaction checks group ACTIVE, invite valid, user not banned, no ACTIVE membership and active member count below 100.
+- Acceptance transaction checks group ACTIVE, invite valid, user not banned, no ACTIVE membership and active member count below 100.
+- Authorized Owner/Admin can cancel a PENDING direct invitation. Once cancelled, the invitee cannot accept it.
+- `ACCEPTED`, `DECLINED`, `CANCELLED` are terminal states. Direct invitations do not expire.
 
 ### GROUP-18 Create Invite Link/Code/QR
 
@@ -621,11 +624,14 @@ Supports expiration and usage limit. QR is generated from invite code/deep link;
 
 ### GROUP-21 Join Requests
 
-`GET /api/v1/groups/{groupId}/join-requests`  
-`POST /api/v1/group-join-requests/{requestId}/approve`  
+`GET /api/v1/groups/{groupId}/join-requests`
+`POST /api/v1/group-join-requests/{requestId}/approve`
 `POST /api/v1/group-join-requests/{requestId}/reject`
+`POST /api/v1/group-join-requests/{requestId}/cancel`
 
-Approval is transactional and rechecks group capacity, ban and membership state.
+- Approval is transactional and rechecks group capacity, ban and membership state.
+- Requester can cancel their own PENDING join request. `CANCELLED` is a terminal state and does not create membership.
+- After cancellation, user may submit a new join request later if still eligible (not banned and no existing active membership).
 
 ### GROUP-22 Bans
 

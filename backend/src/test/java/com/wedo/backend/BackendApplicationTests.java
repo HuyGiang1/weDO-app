@@ -74,6 +74,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v2Migrations).isEqualTo(1);
 
+		Integer v3Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '3'
+						  AND description = 'groups'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v3Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -89,7 +101,15 @@ class BackendApplicationTests {
 						      'friend_requests',
 						      'friendships',
 						      'user_blocks',
-						      'user_presence_snapshots'
+						      'user_presence_snapshots',
+						      'groups',
+						      'group_settings',
+						      'group_memberships',
+						      'group_invitations',
+						      'group_invite_links',
+						      'group_join_requests',
+						      'group_bans',
+						      'group_activity_logs'
 						  )
 						""",
 				String.class
@@ -105,7 +125,15 @@ class BackendApplicationTests {
 				"friend_requests",
 				"friendships",
 				"user_blocks",
-				"user_presence_snapshots"
+				"user_presence_snapshots",
+				"groups",
+				"group_settings",
+				"group_memberships",
+				"group_invitations",
+				"group_invite_links",
+				"group_join_requests",
+				"group_bans",
+				"group_activity_logs"
 		);
 	}
 

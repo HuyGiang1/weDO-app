@@ -98,19 +98,17 @@ DELETED:
 
 ## 8. Invite / Join / Ban
 Invitation:
-- Direct
-- Link
-- Code
-- QR
-
-Invite link:
-- Expiry
-- Usage limit
-- Revoke
+- Direct: sent to specific user; bypasses join approval; no expiry; authorized Owner/Admin may cancel PENDING invitation; receiver may accept or decline; ACCEPTED / DECLINED / CANCELLED are terminal states.
+- Link / Code / QR: shareable token with optional expiry, usage limit, and revoke capability.
 
 Join policy:
-- AUTO_JOIN
-- APPROVAL_REQUIRED
+- AUTO_JOIN: join via valid link/code enters group directly (if capacity < 100 and not banned).
+- APPROVAL_REQUIRED: creates PENDING join request for Owner/Admin review.
+
+Join request lifecycle:
+- PENDING → APPROVED (creates active membership) / REJECTED.
+- Requester may CANCEL own PENDING join request (terminal state, does not create membership).
+- Eligible user may submit new request later if not banned or already active member.
 
 Banned user:
 - Cannot join.

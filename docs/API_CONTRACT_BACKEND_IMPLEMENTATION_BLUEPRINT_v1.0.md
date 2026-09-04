@@ -850,7 +850,7 @@ Returns core info, current user's RSVP, counts/capacity, waitlist, poll/task/exp
 
 `PATCH /api/v1/activities/{activityId}`
 
-Creator may edit own Activity; Owner/Admin may edit any Activity. Allowed fields depend on state. CONFIRMED time/location changes are logged and notify Going/Maybe participants. IN_PROGRESS allows limited practical edits. CANCELLED core fields are locked. COMPLETED allows only limited correction/logging.
+Creator may edit own Activity; Owner/Admin may edit any Activity. Allowed fields depend on state. CONFIRMED time/location changes are logged and notify Going/Maybe participants. Capacity decrease is rejected if below current GOING count. Capacity increase auto-promotes waitlisted users FIFO under parent activity lock. IN_PROGRESS allows limited practical edits. CANCELLED core fields are locked. COMPLETED allows only limited correction/logging.
 
 ### ACT-05 Confirm Activity
 

@@ -98,6 +98,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v4Migrations).isEqualTo(1);
 
+		Integer v5Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '5'
+						  AND description = 'activities'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v5Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -133,7 +145,13 @@ class BackendApplicationTests {
 						      'message_hidden_users',
 						      'message_reactions',
 						      'conversation_read_states',
-						      'message_pins'
+						      'message_pins',
+						      'activities',
+						      'activity_participants',
+						      'activity_rsvp_history',
+						      'activity_waitlist_sequences',
+						      'activity_status_history',
+						      'activity_change_logs'
 						  )
 						""",
 				String.class
@@ -169,7 +187,13 @@ class BackendApplicationTests {
 				"message_hidden_users",
 				"message_reactions",
 				"conversation_read_states",
-				"message_pins"
+				"message_pins",
+				"activities",
+				"activity_participants",
+				"activity_rsvp_history",
+				"activity_waitlist_sequences",
+				"activity_status_history",
+				"activity_change_logs"
 		);
 	}
 

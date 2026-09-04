@@ -174,6 +174,8 @@ Rules:
 - IN_PROGRESS auto when now >= start.
 - COMPLETED auto when now >= end, or manual if no end.
 - Confirmed time/location edit → log + notify GOING/MAYBE.
+- Capacity decrease rejected if new capacity < current GOING count.
+- Capacity increase auto-promotes waitlisted users FIFO up to new capacity (or all if unlimited).
 - Completed/cancelled lock core edits.
 
 ## 12. RSVP

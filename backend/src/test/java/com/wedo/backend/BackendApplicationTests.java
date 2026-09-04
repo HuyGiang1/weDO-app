@@ -86,6 +86,18 @@ class BackendApplicationTests {
 		);
 		assertThat(v3Migrations).isEqualTo(1);
 
+		Integer v4Migrations = jdbcTemplate.queryForObject(
+				"""
+						SELECT count(*)
+						FROM flyway_schema_history
+						WHERE version = '4'
+						  AND description = 'chat'
+						  AND success = true
+						""",
+				Integer.class
+		);
+		assertThat(v4Migrations).isEqualTo(1);
+
 		java.util.List<String> tables = jdbcTemplate.queryForList(
 				"""
 						SELECT table_name
@@ -109,7 +121,19 @@ class BackendApplicationTests {
 						      'group_invite_links',
 						      'group_join_requests',
 						      'group_bans',
-						      'group_activity_logs'
+						      'group_activity_logs',
+						      'conversations',
+						      'direct_conversations',
+						      'group_conversations',
+						      'message_requests',
+						      'conversation_sequences',
+						      'messages',
+						      'message_attachments',
+						      'message_edit_history',
+						      'message_hidden_users',
+						      'message_reactions',
+						      'conversation_read_states',
+						      'message_pins'
 						  )
 						""",
 				String.class
@@ -133,7 +157,19 @@ class BackendApplicationTests {
 				"group_invite_links",
 				"group_join_requests",
 				"group_bans",
-				"group_activity_logs"
+				"group_activity_logs",
+				"conversations",
+				"direct_conversations",
+				"group_conversations",
+				"message_requests",
+				"conversation_sequences",
+				"messages",
+				"message_attachments",
+				"message_edit_history",
+				"message_hidden_users",
+				"message_reactions",
+				"conversation_read_states",
+				"message_pins"
 		);
 	}
 

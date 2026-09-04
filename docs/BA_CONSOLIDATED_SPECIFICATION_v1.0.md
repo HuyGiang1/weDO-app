@@ -32,9 +32,10 @@
 - Non-friend DM creates Message Request.
 - Max 3 TEXT messages before accept.
 - No image/file before accept.
-- Receiver: Accept / Decline / Block.
-- Decline retains history.
-- Sender cooldown 72h after decline.
+- Receiver actions: Accept / Decline / Block.
+- Accept: opens direct conversation (does not create friendship).
+- Decline: retains history, starts sender 72h cooldown.
+- Block: cancels pending message request (terminal state CANCELLED, no 72h cooldown; does not revive on unblock).
 
 DM policy:
 - Everyone (DEFAULT): Friends DM directly; non-friends must go through Message Request flow (max 3 TEXT messages before accept).

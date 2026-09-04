@@ -680,10 +680,10 @@ Returns conversation identity, type, last message preview/time, unread count and
 
 ### CHAT-04 Accept/Decline Message Request
 
-`POST /api/v1/message-requests/{id}/accept`  
+`POST /api/v1/message-requests/{id}/accept`
 `POST /api/v1/message-requests/{id}/decline`
 
-Rules: before acceptance sender may send max 3 TEXT messages and no images/files; decline keeps conversation/request history and starts 72-hour cooldown; Accept opens direct conversation but does not create friendship.
+Rules: before acceptance sender may send max 3 TEXT messages and no images/files; decline keeps conversation/request history and starts 72-hour cooldown; Accept opens direct conversation but does not create friendship; Block terminates any pending message request with status CANCELLED without activating a 72-hour decline cooldown, and unblocking does not revive it.
 
 ### CHAT-05 Message History
 

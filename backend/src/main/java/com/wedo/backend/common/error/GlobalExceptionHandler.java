@@ -3,6 +3,7 @@ package com.wedo.backend.common.error;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -15,6 +16,7 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String REQUEST_ID_KEY = "requestId";
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessException(
@@ -22,7 +24,8 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         ErrorCode errorCode = exception.errorCode();
-        ApiErrorResponse response = ApiErrorResponse.of(errorCode, exception.getMessage(), request.getRequestURI());
+        String requestId = MDC.get(REQUEST_ID_KEY);
+        ApiErrorResponse response = ApiErrorResponse.of(errorCode, exception.getMessage(), request.getRequestURI(), requestId);
 
         return ResponseEntity.status(errorCode.status()).body(response);
     }
@@ -38,7 +41,8 @@ public class GlobalExceptionHandler {
         );
 
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
-        ApiErrorResponse response = ApiErrorResponse.validation(errorCode, request.getRequestURI(), errors);
+        String requestId = MDC.get(REQUEST_ID_KEY);
+        ApiErrorResponse response = ApiErrorResponse.validation(errorCode, request.getRequestURI(), errors, requestId);
 
         return ResponseEntity.status(errorCode.status()).body(response);
     }
@@ -51,10 +55,12 @@ public class GlobalExceptionHandler {
         log.error("Unexpected request failure", exception);
 
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
+        String requestId = MDC.get(REQUEST_ID_KEY);
         ApiErrorResponse response = ApiErrorResponse.of(
                 errorCode,
                 errorCode.defaultMessage(),
-                request.getRequestURI()
+                request.getRequestURI(),
+                requestId
         );
 
         return ResponseEntity.status(errorCode.status()).body(response);

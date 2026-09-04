@@ -12,7 +12,8 @@ public record ApiErrorResponse(
         String code,
         String message,
         String path,
-        Map<String, String> errors
+        Map<String, String> errors,
+        String requestId
 ) {
 
     public ApiErrorResponse {
@@ -20,24 +21,34 @@ public record ApiErrorResponse(
     }
 
     public static ApiErrorResponse of(ErrorCode errorCode, String message, String path) {
+        return of(errorCode, message, path, null);
+    }
+
+    public static ApiErrorResponse of(ErrorCode errorCode, String message, String path, String requestId) {
         return new ApiErrorResponse(
                 Instant.now(),
                 errorCode.status().value(),
                 errorCode.name(),
                 message,
                 path,
-                Map.of()
+                Map.of(),
+                requestId
         );
     }
 
     public static ApiErrorResponse validation(ErrorCode errorCode, String path, Map<String, String> errors) {
+        return validation(errorCode, path, errors, null);
+    }
+
+    public static ApiErrorResponse validation(ErrorCode errorCode, String path, Map<String, String> errors, String requestId) {
         return new ApiErrorResponse(
                 Instant.now(),
                 errorCode.status().value(),
                 errorCode.name(),
                 errorCode.defaultMessage(),
                 path,
-                errors
+                errors,
+                requestId
         );
     }
 }

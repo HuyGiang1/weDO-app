@@ -33,6 +33,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/resend-verification").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/usernames/*/availability").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/complete-profile").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(
                                 "/api/v1/health",
                                 "/actuator/health",

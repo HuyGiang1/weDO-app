@@ -1,5 +1,6 @@
 package com.wedo.backend.auth.controller;
 
+import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
@@ -10,6 +11,11 @@ import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.service.AuthService;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
+import com.wedo.backend.user.entity.UserCredentialEntity;
+import com.wedo.backend.user.entity.UserEntity;
+import com.wedo.backend.user.entity.UserStatus;
+import com.wedo.backend.user.repository.UserCredentialRepository;
+import com.wedo.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +52,12 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private ProfileCompletionTokenService profileCompletionTokenService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private UserCredentialRepository userCredentialRepository;
 
     @Autowired
     private ApplicationEvents applicationEvents;
@@ -854,5 +866,250 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
         String code = getLatestVerificationCode(reg.userId());
         authService.verifyEmail(new VerifyEmailRequest(reg.userId(), code));
         return reg.userId();
+    }
+
+    // ==========================================
+    // M2.7 Login Endpoint Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with valid credentials fully onboarded should return 200 and auth payload")
+    void login_fullyOnboarded_shouldReturn200() throws Exception {
+        String email = "login.full@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "loginuser", "Login User", null, null));
+
+        String payload = String.format("""
+                {
+                    "email": "%s",
+                    "password": "Password123!"
+                }
+                """, email);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(userId.toString()))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.nextStep").value("AUTHENTICATED"))
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.accessTokenExpiresAt").isNotEmpty())
+                .andExpect(jsonPath("$.user.id").value(userId.toString()))
+                .andExpect(jsonPath("$.user.email").value(email))
+                .andExpect(jsonPath("$.user.username").value("loginuser"))
+                .andExpect(jsonPath("$.user.displayName").value("Login User"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with incomplete profile should return 200 and recovery payload")
+    void login_incompleteProfile_shouldReturn200Recovery() throws Exception {
+        String email = "login.incomplete@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        String payload = String.format("""
+                {
+                    "email": "%s",
+                    "password": "Password123!"
+                }
+                """, email);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(userId.toString()))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.nextStep").value("COMPLETE_PROFILE"))
+                .andExpect(jsonPath("$.profileCompletionToken").isNotEmpty())
+                .andExpect(jsonPath("$.accessToken").doesNotExist())
+                .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login validation errors should return 400 VALIDATION_FAILED")
+    void login_validationErrors_shouldReturn400() throws Exception {
+        // Blank email
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "email": "",
+                                    "password": "Password123!"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // Invalid email
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "email": "not-an-email",
+                                    "password": "Password123!"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // Blank password
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "email": "valid@example.com",
+                                    "password": "   "
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // Password > 72 UTF-8 bytes
+        String tooLongPassword = "a".repeat(73);
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "valid@example.com",
+                                    "password": "%s"
+                                }
+                                """, tooLongPassword)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.passwordByteLengthValid").value("Password must not exceed 72 bytes in UTF-8 encoding"));
+
+        // Exactly 72 UTF-8 bytes should NOT fail for byte length
+        String exact72BytesPassword = "a".repeat(72);
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "valid@example.com",
+                                    "password": "%s"
+                                }
+                                """, exact72BytesPassword)))
+                .andExpect(status().isUnauthorized()); // passes validation, fails authentication
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with unknown email should return 401 AUTH_INVALID_CREDENTIALS")
+    void login_unknownEmail_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "email": "unknown@example.com",
+                                    "password": "Password123!"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("AUTH_INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("Invalid email or password."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with wrong password should return 401 AUTH_INVALID_CREDENTIALS")
+    void login_wrongPassword_shouldReturn401() throws Exception {
+        String email = "wrong.pwd@example.com";
+        registerAndVerifyUser(email);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "%s",
+                                    "password": "WrongPassword1!"
+                                }
+                                """, email)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("AUTH_INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("Invalid email or password."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with non-ACTIVE status should return 403 status errors")
+    void login_nonActiveStatus_shouldReturn403() throws Exception {
+        // 1. PENDING_VERIFICATION
+        String pendingEmail = "pending.login@example.com";
+        authService.register(new RegisterRequest(pendingEmail, "Password123!"));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "%s",
+                                    "password": "Password123!"
+                                }
+                                """, pendingEmail)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+
+        // 2. SUSPENDED
+        String suspendedEmail = "suspended.login@example.com";
+        UUID suspendedId = registerAndVerifyUser(suspendedEmail);
+        UserEntity suspendedUser = userRepository.findById(suspendedId).orElseThrow();
+        suspendedUser.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(suspendedUser);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "%s",
+                                    "password": "Password123!"
+                                }
+                                """, suspendedEmail)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_SUSPENDED"));
+
+        // 3. DEACTIVATED
+        String deactivatedEmail = "deactivated.login@example.com";
+        UUID deactivatedId = registerAndVerifyUser(deactivatedEmail);
+        UserEntity deactivatedUser = userRepository.findById(deactivatedId).orElseThrow();
+        deactivatedUser.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(deactivatedUser);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "%s",
+                                    "password": "Password123!"
+                                }
+                                """, deactivatedEmail)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DEACTIVATED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login when account locked and password correct should return 423 ACCOUNT_LOCKED")
+    void login_lockedAccount_correctPassword_shouldReturn423() throws Exception {
+        String email = "locked.login@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        UserCredentialEntity cred = userCredentialRepository.findById(userId).orElseThrow();
+        cred.setLockedUntil(Instant.now().plus(Duration.ofMinutes(15)));
+        userCredentialRepository.save(cred);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("""
+                                {
+                                    "email": "%s",
+                                    "password": "Password123!"
+                                }
+                                """, email)))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.status").value(423))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"))
+                .andExpect(jsonPath("$.message").value("Account is temporarily locked."));
     }
 }

@@ -2,6 +2,8 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.LoginRequest;
+import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
@@ -11,11 +13,16 @@ import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
+import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
+import com.wedo.backend.auth.exception.LoginAttemptException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
+import com.wedo.backend.auth.repository.RefreshSessionRepository;
 import com.wedo.backend.auth.security.AuthTokenHasher;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
+import com.wedo.backend.auth.security.RefreshTokenService;
+import com.wedo.backend.security.jwt.JwtService;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
@@ -90,6 +97,12 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private ProfileCompletionTokenService profileCompletionTokenService;
+
+    @Autowired
+    private RefreshSessionRepository refreshSessionRepository;
+
+    @Autowired
+    private JwtService jwtService;
 
     @Autowired
     private ApplicationEvents applicationEvents;
@@ -1006,5 +1019,333 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         String code = getLatestVerificationCode(reg.userId());
         authService.verifyEmail(new VerifyEmailRequest(reg.userId(), code));
         return reg.userId();
+    }
+
+    // ==========================================
+    // M2.7 Login Service Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("login with unknown email should execute dummy hash and throw AUTH_INVALID_CREDENTIALS")
+    void login_unknownEmail_shouldThrowAuthInvalidCredentials() {
+        assertThatThrownBy(() -> authService.login(new LoginRequest("unknown@example.com", "Password123!")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Invalid email or password.")
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+    }
+
+    @Test
+    @DisplayName("login with wrong password should throw LoginAttemptException and persist failed attempts")
+    void login_wrongPassword_shouldIncrementAndPersistFailedAttempts() {
+        String email = "wrong.pwd.svc@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "WrongPassword1!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        // Reload fresh from DB to prove transaction did not roll back
+        UserCredentialEntity cred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(cred.getFailedAttempts()).isEqualTo(1);
+        assertThat(cred.getLockedUntil()).isNull();
+    }
+
+    @Test
+    @DisplayName("login lockout lifecycle: increments to 5, locks for 15m, rejects active lock, expires deterministically")
+    void login_lockoutLifecycle_test() {
+        String email = "lockout.cycle@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        // 1st to 4th wrong password
+        for (int i = 1; i <= 4; i++) {
+            assertThatThrownBy(() -> authService.login(new LoginRequest(email, "WrongPassword!")))
+                    .isInstanceOf(LoginAttemptException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+            UserCredentialEntity c = userCredentialRepository.findById(userId).orElseThrow();
+            assertThat(c.getFailedAttempts()).isEqualTo(i);
+            assertThat(c.getLockedUntil()).isNull();
+        }
+
+        // 5th wrong password triggers lock
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "WrongPassword!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        UserCredentialEntity lockedCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(lockedCred.getFailedAttempts()).isEqualTo(5);
+        Instant expectedLockExpiry = currentInstant.plus(Duration.ofMinutes(15));
+        assertThat(lockedCred.getLockedUntil()).isEqualTo(expectedLockExpiry);
+
+        // Advance 5 minutes (still locked)
+        currentInstant = currentInstant.plus(Duration.ofMinutes(5));
+
+        // Wrong password during active lock: no count increment, no lock extension
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "StillWrong!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        UserCredentialEntity stillLockedCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(stillLockedCred.getFailedAttempts()).isEqualTo(5);
+        assertThat(stillLockedCred.getLockedUntil()).isEqualTo(expectedLockExpiry);
+
+        // Correct password during active lock: throws ACCOUNT_LOCKED 423, does NOT reset lock
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "Password123!")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Account is temporarily locked.")
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.ACCOUNT_LOCKED));
+
+        UserCredentialEntity unresetCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(unresetCred.getFailedAttempts()).isEqualTo(5);
+        assertThat(unresetCred.getLockedUntil()).isEqualTo(expectedLockExpiry);
+
+        // Advance clock exactly to expectedLockExpiry: lock is expired
+        currentInstant = expectedLockExpiry;
+
+        // Correct password at exact expiry: succeeds and resets failedAttempts to 0 and lockedUntil to null
+        LoginResponse response = authService.login(new LoginRequest(email, "Password123!"));
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+
+        UserCredentialEntity resetCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(resetCred.getFailedAttempts()).isEqualTo(0);
+        assertThat(resetCred.getLockedUntil()).isNull();
+    }
+
+    @Test
+    @DisplayName("login when lock expired and wrong password should start new cycle with failedAttempts = 1")
+    void login_lockExpired_wrongPassword_startsNewCycle() {
+        String email = "lockout.expire.wrong@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        // Lock user
+        UserCredentialEntity cred = userCredentialRepository.findById(userId).orElseThrow();
+        cred.setFailedAttempts(5);
+        cred.setLockedUntil(currentInstant.plus(Duration.ofMinutes(15)));
+        userCredentialRepository.save(cred);
+
+        // Advance past lock
+        currentInstant = currentInstant.plus(Duration.ofMinutes(20));
+
+        // Wrong password starts new cycle
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "WrongPassword!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        UserCredentialEntity newCycleCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(newCycleCred.getFailedAttempts()).isEqualTo(1);
+        assertThat(newCycleCred.getLockedUntil()).isNull();
+    }
+
+    @Test
+    @DisplayName("login status matrix: status error only after password matches; wrong password always returns 401")
+    void login_statusMatrix_tests() {
+        // 1. PENDING_VERIFICATION
+        String pendingEmail = "pending.matrix@example.com";
+        authService.register(new RegisterRequest(pendingEmail, "Password123!"));
+
+        // Wrong password -> 401
+        assertThatThrownBy(() -> authService.login(new LoginRequest(pendingEmail, "WrongPassword!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        // Correct password -> 403 EMAIL_NOT_VERIFIED
+        assertThatThrownBy(() -> authService.login(new LoginRequest(pendingEmail, "Password123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED));
+
+        // 2. SUSPENDED
+        String suspendedEmail = "suspended.matrix@example.com";
+        UUID suspendedId = registerAndVerifyUser(suspendedEmail);
+        UserEntity suspendedUser = userRepository.findById(suspendedId).orElseThrow();
+        suspendedUser.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(suspendedUser);
+
+        // Wrong password -> 401
+        assertThatThrownBy(() -> authService.login(new LoginRequest(suspendedEmail, "WrongPassword!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        // Correct password -> 403 ACCOUNT_SUSPENDED
+        assertThatThrownBy(() -> authService.login(new LoginRequest(suspendedEmail, "Password123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.ACCOUNT_SUSPENDED));
+
+        // 3. DEACTIVATED
+        String deactivatedEmail = "deactivated.matrix@example.com";
+        UUID deactivatedId = registerAndVerifyUser(deactivatedEmail);
+        UserEntity deactivatedUser = userRepository.findById(deactivatedId).orElseThrow();
+        deactivatedUser.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(deactivatedUser);
+
+        // Wrong password -> 401
+        assertThatThrownBy(() -> authService.login(new LoginRequest(deactivatedEmail, "WrongPassword!")))
+                .isInstanceOf(LoginAttemptException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIALS));
+
+        // Correct password -> 403 ACCOUNT_DEACTIVATED
+        assertThatThrownBy(() -> authService.login(new LoginRequest(deactivatedEmail, "Password123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).errorCode()).isEqualTo(ErrorCode.ACCOUNT_DEACTIVATED));
+    }
+
+    @Test
+    @DisplayName("login with ACTIVE and null username should return recovery response and zero refresh sessions")
+    void login_activeIncompleteProfile_recoveryFlow() {
+        String email = "recovery.login@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        LoginResponse response = authService.login(new LoginRequest(email, "Password123!"));
+
+        assertThat(response.userId()).isEqualTo(userId);
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.nextStep()).isEqualTo(LoginResponse.NEXT_STEP_COMPLETE_PROFILE);
+        assertThat(response.profileCompletionToken()).isNotBlank();
+        assertThat(response.accessToken()).isNull();
+        assertThat(response.refreshToken()).isNull();
+        assertThat(response.tokenType()).isNull();
+        assertThat(response.accessTokenExpiresAt()).isNull();
+        assertThat(response.user()).isNull();
+
+        // Verify token resolves to user
+        UUID tokenUser = profileCompletionTokenService.extractAndValidate(response.profileCompletionToken());
+        assertThat(tokenUser).isEqualTo(userId);
+
+        // Verify no refresh sessions created
+        long sessionCount = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .count();
+        assertThat(sessionCount).isZero();
+
+        // Complete profile using returned token succeeds
+        CompleteProfileResponse comp = authService.completeProfile(
+                new CompleteProfileRequest(response.profileCompletionToken(), "recovered_user", "Recovered", null, null)
+        );
+        assertThat(comp.username()).isEqualTo("recovered_user");
+    }
+
+    @Test
+    @DisplayName("login with ACTIVE and populated username should return authenticated response with JWT and refresh session")
+    void login_fullyOnboarded_success() {
+        String email = "full.login@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "fulluser", "Full User", null, null));
+
+        // Case-insensitive email login
+        LoginResponse response = authService.login(new LoginRequest("FULL.LOGIN@EXAMPLE.COM", "Password123!"));
+
+        assertThat(response.userId()).isEqualTo(userId);
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.nextStep()).isEqualTo(LoginResponse.NEXT_STEP_AUTHENTICATED);
+        assertThat(response.profileCompletionToken()).isNull();
+        assertThat(response.tokenType()).isEqualTo(LoginResponse.TOKEN_TYPE_BEARER);
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.refreshToken()).isNotBlank();
+        assertThat(response.accessTokenExpiresAt()).isNotNull();
+
+        // Verify JWT
+        assertThat(jwtService.isTokenValid(response.accessToken())).isTrue();
+        assertThat(jwtService.extractUserId(response.accessToken())).isEqualTo(userId);
+        assertThat(response.accessTokenExpiresAt()).isEqualTo(jwtService.extractExpiration(response.accessToken()));
+
+        // Verify user summary
+        assertThat(response.user()).isNotNull();
+        assertThat(response.user().id()).isEqualTo(userId);
+        assertThat(response.user().email()).isEqualTo(email);
+        assertThat(response.user().username()).isEqualTo("fulluser");
+        assertThat(response.user().displayName()).isEqualTo("Full User");
+
+        // Verify refresh session in DB
+        Optional<RefreshSessionEntity> sessionOpt = refreshSessionRepository.findByTokenHash(
+                RefreshTokenService.hashToken(response.refreshToken())
+        );
+        assertThat(sessionOpt).isPresent();
+        RefreshSessionEntity session = sessionOpt.get();
+        assertThat(session.getUserId()).isEqualTo(userId);
+        assertThat(session.getTokenHash()).isNotEqualTo(response.refreshToken());
+        assertThat(session.getRevokedAt()).isNull();
+        assertThat(session.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("concurrency: two simultaneous wrong passwords should serialize increments without lost updates")
+    void login_concurrency_wrongPassword_serialized() throws Exception {
+        String email = "concurrent.wrong@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                try {
+                    authService.login(new LoginRequest(email, "WrongPassword!"));
+                } catch (LoginAttemptException expected) {
+                    // expected
+                }
+                return null;
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+
+        for (Future<Void> f : futures) {
+            f.get(10, TimeUnit.SECONDS);
+        }
+        executor.shutdown();
+
+        UserCredentialEntity cred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(cred.getFailedAttempts()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("concurrency: two simultaneous successful logins create two independent refresh sessions")
+    void login_concurrency_successfulLogins_independentSessions() throws Exception {
+        String email = "concurrent.success@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "concurrentuser", "Concurrent User", null, null));
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<LoginResponse>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return authService.login(new LoginRequest(email, "Password123!"));
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+
+        List<LoginResponse> responses = new ArrayList<>();
+        for (Future<LoginResponse> f : futures) {
+            responses.add(f.get(10, TimeUnit.SECONDS));
+        }
+        executor.shutdown();
+
+        assertThat(responses).hasSize(2);
+        LoginResponse r1 = responses.get(0);
+        LoginResponse r2 = responses.get(1);
+
+        assertThat(r1.accessToken()).isNotBlank();
+        assertThat(r2.accessToken()).isNotBlank();
+        assertThat(r1.refreshToken()).isNotEqualTo(r2.refreshToken());
+
+        long count = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .count();
+        assertThat(count).isEqualTo(2);
     }
 }

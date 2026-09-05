@@ -24,3 +24,8 @@ security:
   profile-completion-token:
     secret-base64: q9W8eR7tY6uI5oP4aD3fG2hJ1kL0zX9cV8bN7mQ6wE5=
     ttl: 15m
+  refresh-token:
+    ttl: 14d
+  login:
+    max-failed-attempts: 5
+    lock-duration: 15m

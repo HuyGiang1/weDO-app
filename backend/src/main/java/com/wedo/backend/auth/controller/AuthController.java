@@ -2,6 +2,8 @@ package com.wedo.backend.auth.controller;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.LoginRequest;
+import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
@@ -69,6 +71,12 @@ public class AuthController {
             @Valid @RequestBody CompleteProfileRequest request
     ) {
         CompleteProfileResponse response = authService.completeProfile(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+        LoginResponse response = authService.login(request);
         return ResponseEntity.ok(response);
     }
 }

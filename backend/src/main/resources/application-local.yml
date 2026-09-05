@@ -36,3 +36,8 @@ security:
   profile-completion-token:
     secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64:s4A8wY0D2eE6vK1L5oP9tQ3rF7mN8xZ2cT4vB6nI8uM=}
     ttl: 15m
+  refresh-token:
+    ttl: 14d
+  login:
+    max-failed-attempts: 5
+    lock-duration: 15m

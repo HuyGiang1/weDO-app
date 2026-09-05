@@ -16,6 +16,11 @@ public enum ErrorCode {
     RESEND_COOLDOWN_ACTIVE(HttpStatus.TOO_MANY_REQUESTS, "Please wait before requesting another verification code."),
     PROFILE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "Profile has already been completed."),
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Username is already taken."),
+    AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "Invalid email or password."),
+    EMAIL_NOT_VERIFIED(HttpStatus.FORBIDDEN, "Email address has not been verified."),
+    ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "Account has been suspended."),
+    ACCOUNT_DEACTIVATED(HttpStatus.FORBIDDEN, "Account has been deactivated."),
+    ACCOUNT_LOCKED(HttpStatus.LOCKED, "Account is temporarily locked."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

@@ -2,23 +2,29 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.LoginRequest;
+import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.UserSummaryDto;
 import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
+import com.wedo.backend.auth.exception.LoginAttemptException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.security.AuthTokenHasher;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
+import com.wedo.backend.auth.security.RefreshTokenService;
 import com.wedo.backend.auth.security.VerificationCodeGenerator;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
+import com.wedo.backend.security.jwt.JwtService;
 import com.wedo.backend.notification.entity.UserNotificationSettingsEntity;
 import com.wedo.backend.notification.repository.UserNotificationSettingsRepository;
 import com.wedo.backend.user.entity.UserCredentialEntity;
@@ -29,6 +35,7 @@ import com.wedo.backend.user.repository.UserCredentialRepository;
 import com.wedo.backend.user.repository.UserPrivacySettingsRepository;
 import com.wedo.backend.user.repository.UserRepository;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -62,8 +69,13 @@ public class AuthService {
     private final VerificationCodeGenerator verificationCodeGenerator;
     private final AuthTokenHasher authTokenHasher;
     private final ProfileCompletionTokenService profileCompletionTokenService;
+    private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final int maxFailedAttempts;
+    private final Duration lockDuration;
+    private final String dummyPasswordHash;
 
     public AuthService(
             UserRepository userRepository,
@@ -75,9 +87,20 @@ public class AuthService {
             VerificationCodeGenerator verificationCodeGenerator,
             AuthTokenHasher authTokenHasher,
             ProfileCompletionTokenService profileCompletionTokenService,
+            JwtService jwtService,
+            RefreshTokenService refreshTokenService,
             ApplicationEventPublisher eventPublisher,
-            Clock clock
+            Clock clock,
+            @Value("${security.login.max-failed-attempts:5}") int maxFailedAttempts,
+            @Value("${security.login.lock-duration:15m}") Duration lockDuration
     ) {
+        if (maxFailedAttempts <= 0) {
+            throw new IllegalStateException("max-failed-attempts must be positive");
+        }
+        if (lockDuration == null || lockDuration.isZero() || lockDuration.isNegative()) {
+            throw new IllegalStateException("lock-duration must be positive");
+        }
+
         this.userRepository = userRepository;
         this.userCredentialRepository = userCredentialRepository;
         this.userPrivacySettingsRepository = userPrivacySettingsRepository;
@@ -87,8 +110,13 @@ public class AuthService {
         this.verificationCodeGenerator = verificationCodeGenerator;
         this.authTokenHasher = authTokenHasher;
         this.profileCompletionTokenService = profileCompletionTokenService;
+        this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
+        this.maxFailedAttempts = maxFailedAttempts;
+        this.lockDuration = lockDuration;
+        this.dummyPasswordHash = passwordEncoder.encode("wedo-login-dummy-password");
     }
 
     @Transactional
@@ -381,6 +409,108 @@ public class AuthService {
         }
 
         return CompleteProfileResponse.of(user.getId(), user.getUsername(), user.getDisplayName(), user.getStatus());
+    }
+
+    @Transactional(noRollbackFor = LoginAttemptException.class)
+    public LoginResponse login(LoginRequest request) {
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        Optional<UserEntity> userOpt = userRepository.findByEmail(normalizedEmail);
+
+        if (userOpt.isEmpty()) {
+            passwordEncoder.matches(request.password(), dummyPasswordHash);
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+        }
+
+        UserEntity user = userOpt.get();
+        Optional<UserCredentialEntity> credentialOpt = userCredentialRepository.findByUserIdWithLock(user.getId());
+
+        if (credentialOpt.isEmpty()) {
+            passwordEncoder.matches(request.password(), dummyPasswordHash);
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+        }
+
+        UserCredentialEntity credential = credentialOpt.get();
+        Instant now = clock.instant();
+        boolean currentlyLocked = credential.getLockedUntil() != null && now.isBefore(credential.getLockedUntil());
+
+        boolean passwordMatches = passwordEncoder.matches(request.password(), credential.getPasswordHash());
+
+        if (!passwordMatches) {
+            if (currentlyLocked) {
+                // A. PASSWORD WRONG + currentlyLocked: no increment, no lock extension
+                throw new LoginAttemptException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+            }
+
+            if (credential.getLockedUntil() != null) {
+                // B. PASSWORD WRONG + lock expired: start new cycle
+                credential.setFailedAttempts(1);
+                credential.setLockedUntil(null);
+                credential.setUpdatedAt(now);
+                userCredentialRepository.save(credential);
+                throw new LoginAttemptException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+            }
+
+            // C. PASSWORD WRONG + normal unlocked cycle:
+            int newFailedAttempts = credential.getFailedAttempts() + 1;
+            credential.setFailedAttempts(newFailedAttempts);
+            if (newFailedAttempts >= maxFailedAttempts) {
+                credential.setLockedUntil(now.plus(lockDuration));
+            }
+            credential.setUpdatedAt(now);
+            userCredentialRepository.save(credential);
+            throw new LoginAttemptException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+        }
+
+        // PASSWORD MATCHES
+        if (currentlyLocked) {
+            // D. PASSWORD CORRECT + currentlyLocked
+            throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
+        }
+
+        // Check status only after password matches and account is not actively locked:
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            throw new BusinessException(ErrorCode.EMAIL_NOT_VERIFIED);
+        }
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
+        if (user.getStatus() == UserStatus.DEACTIVATED) {
+            throw new BusinessException(ErrorCode.ACCOUNT_DEACTIVATED);
+        }
+
+        // ACTIVE success: reset failed attempts and lock
+        if (credential.getFailedAttempts() != 0 || credential.getLockedUntil() != null) {
+            credential.setFailedAttempts(0);
+            credential.setLockedUntil(null);
+            credential.setUpdatedAt(now);
+            userCredentialRepository.save(credential);
+        }
+
+        if (user.getUsername() == null) {
+            String profileCompletionToken = profileCompletionTokenService.generate(user.getId());
+            return LoginResponse.recovery(user.getId(), user.getStatus(), profileCompletionToken);
+        }
+
+        String accessToken = jwtService.generateAccessToken(user.getId());
+        Instant accessTokenExpiresAt = jwtService.extractExpiration(accessToken);
+        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(user.getId());
+
+        UserSummaryDto userSummary = new UserSummaryDto(
+                user.getId(),
+                user.getEmail(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getAvatarStorageKey()
+        );
+
+        return LoginResponse.authenticated(
+                user.getId(),
+                user.getStatus(),
+                accessToken,
+                issuedRefresh.rawToken(),
+                accessTokenExpiresAt,
+                userSummary
+        );
     }
 
     private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {

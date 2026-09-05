@@ -1,9 +1,12 @@
 package com.wedo.backend.auth.service;
 
+import com.wedo.backend.auth.dto.CompleteProfileRequest;
+import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
@@ -12,6 +15,7 @@ import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.security.AuthTokenHasher;
+import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
@@ -83,6 +87,9 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private AuthTokenHasher authTokenHasher;
+
+    @Autowired
+    private ProfileCompletionTokenService profileCompletionTokenService;
 
     @Autowired
     private ApplicationEvents applicationEvents;
@@ -264,6 +271,9 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
         assertThat(response.emailVerifiedAt()).isEqualTo(currentInstant);
         assertThat(response.nextStep()).isEqualTo("COMPLETE_PROFILE");
+        assertThat(response.profileCompletionToken()).isNotBlank();
+        assertThat(profileCompletionTokenService.extractAndValidate(response.profileCompletionToken()))
+                .isEqualTo(userId);
 
         UserEntity user = userRepository.findById(userId).orElseThrow();
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
@@ -676,5 +686,325 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         assertThat(errors).hasSize(1);
         assertThat(errors.get(0)).isInstanceOf(BusinessException.class);
         assertThat(((BusinessException) errors.get(0)).errorCode()).isEqualTo(ErrorCode.RESEND_COOLDOWN_ACTIVE);
+    }
+
+    // ==========================================
+    // M2.6 Username Availability & Complete Profile Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("checkUsernameAvailability with unused username should return true with canonical lowercase username")
+    void checkUsernameAvailability_unusedUsername_shouldReturnTrue() {
+        UsernameAvailabilityResponse res = authService.checkUsernameAvailability("UniqueUser123");
+
+        assertThat(res.username()).isEqualTo("uniqueuser123");
+        assertThat(res.available()).isTrue();
+    }
+
+    @Test
+    @DisplayName("checkUsernameAvailability with existing username should return false")
+    void checkUsernameAvailability_existingUsername_shouldReturnFalse() {
+        // Register and complete profile for a user
+        UUID userId = registerAndVerifyUser("taken.check@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(
+                token,
+                "svc_existing_user",
+                "Existing User",
+                null,
+                null
+        ));
+
+        UsernameAvailabilityResponse res = authService.checkUsernameAvailability("svc_existing_user");
+        assertThat(res.username()).isEqualTo("svc_existing_user");
+        assertThat(res.available()).isFalse();
+
+        // Case-insensitive check
+        UsernameAvailabilityResponse resUpper = authService.checkUsernameAvailability("SVC_EXISTING_USER");
+        assertThat(resUpper.username()).isEqualTo("svc_existing_user");
+        assertThat(resUpper.available()).isFalse();
+    }
+
+    @Test
+    @DisplayName("completeProfile with valid request should update user, trim fields, and return 200 with nextStep LOGIN")
+    void completeProfile_validRequest_shouldSucceed() {
+        UUID userId = registerAndVerifyUser("profile.success@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        currentInstant = currentInstant.plusSeconds(10);
+
+        CompleteProfileRequest request = new CompleteProfileRequest(
+                token,
+                "SvcHuyGiang",
+                "  Huy Giang  ",
+                "  Software engineer & builder  ",
+                "avatars/2026/09/profile_1.png"
+        );
+
+        CompleteProfileResponse response = authService.completeProfile(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.userId()).isEqualTo(userId);
+        assertThat(response.username()).isEqualTo("svchuygiang");
+        assertThat(response.displayName()).isEqualTo("Huy Giang");
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.nextStep()).isEqualTo("LOGIN");
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        assertThat(user.getUsername()).isEqualTo("svchuygiang");
+        assertThat(user.getDisplayName()).isEqualTo("Huy Giang");
+        assertThat(user.getBio()).isEqualTo("Software engineer & builder");
+        assertThat(user.getAvatarStorageKey()).isEqualTo("avatars/2026/09/profile_1.png");
+        assertThat(user.getUpdatedAt()).isEqualTo(currentInstant);
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("completeProfile bio normalization: null -> null, blank -> null, trimmed -> trimmed")
+    void completeProfile_bioNormalization_shouldPersistExpectedValues() {
+        // 1. null bio
+        UUID user1Id = registerAndVerifyUser("bio1@example.com");
+        String token1 = profileCompletionTokenService.generate(user1Id);
+        authService.completeProfile(new CompleteProfileRequest(token1, "user_bio_1", "User One", null, null));
+        assertThat(userRepository.findById(user1Id).orElseThrow().getBio()).isNull();
+
+        // 2. blank bio ("   ") -> null
+        UUID user2Id = registerAndVerifyUser("bio2@example.com");
+        String token2 = profileCompletionTokenService.generate(user2Id);
+        authService.completeProfile(new CompleteProfileRequest(token2, "user_bio_2", "User Two", "    ", null));
+        assertThat(userRepository.findById(user2Id).orElseThrow().getBio()).isNull();
+
+        // 3. bio with edges trimmed
+        UUID user3Id = registerAndVerifyUser("bio3@example.com");
+        String token3 = profileCompletionTokenService.generate(user3Id);
+        authService.completeProfile(new CompleteProfileRequest(token3, "user_bio_3", "User Three", "  valid bio  ", null));
+        assertThat(userRepository.findById(user3Id).orElseThrow().getBio()).isEqualTo("valid bio");
+    }
+
+    @Test
+    @DisplayName("completeProfile avatarStorageKey preserves exact string without trimming or normalization")
+    void completeProfile_avatarStorageKey_preservesExactString() {
+        UUID userId = registerAndVerifyUser("avatar.exact@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        String exactKey = "custom/storage-key/path.jpg";
+        authService.completeProfile(new CompleteProfileRequest(token, "avatar_user", "Avatar User", null, exactKey));
+
+        assertThat(userRepository.findById(userId).orElseThrow().getAvatarStorageKey()).isEqualTo(exactKey);
+    }
+
+    @Test
+    @DisplayName("completeProfile sequential replay: second attempt throws PROFILE_ALREADY_COMPLETED")
+    void completeProfile_sequentialReplay_shouldThrowProfileAlreadyCompleted() {
+        UUID userId = registerAndVerifyUser("replay@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        CompleteProfileRequest request = new CompleteProfileRequest(token, "svc_replay_user", "Replay User", null, null);
+        CompleteProfileResponse first = authService.completeProfile(request);
+        assertThat(first).isNotNull();
+
+        assertThatThrownBy(() -> authService.completeProfile(request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PROFILE_ALREADY_COMPLETED));
+    }
+
+    @Test
+    @DisplayName("completeProfile when user status is not ACTIVE throws ACCESS_DENIED")
+    void completeProfile_userNotActive_shouldThrowAccessDenied() {
+        // Register without verifying -> status PENDING_VERIFICATION
+        RegisterResponse reg = authService.register(new RegisterRequest("pending.profile@example.com", "Password123!"));
+        String token = profileCompletionTokenService.generate(reg.userId());
+
+        CompleteProfileRequest request = new CompleteProfileRequest(token, "svc_pending_user", "Pending User", null, null);
+
+        assertThatThrownBy(() -> authService.completeProfile(request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.ACCESS_DENIED));
+    }
+
+    @Test
+    @DisplayName("completeProfile with non-existent userId in token throws RESOURCE_NOT_FOUND")
+    void completeProfile_userNotFound_shouldThrowResourceNotFound() {
+        UUID nonExistentUserId = UUID.randomUUID();
+        String token = profileCompletionTokenService.generate(nonExistentUserId);
+
+        CompleteProfileRequest request = new CompleteProfileRequest(token, "svc_ghost_user", "Ghost User", null, null);
+
+        assertThatThrownBy(() -> authService.completeProfile(request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("completeProfile with pre-existing username throws USERNAME_ALREADY_EXISTS")
+    void completeProfile_usernameAlreadyExists_shouldThrowConflict() {
+        UUID user1Id = registerAndVerifyUser("user1.uname@example.com");
+        String token1 = profileCompletionTokenService.generate(user1Id);
+        authService.completeProfile(new CompleteProfileRequest(token1, "svc_chosen_name", "User One", null, null));
+
+        UUID user2Id = registerAndVerifyUser("user2.uname@example.com");
+        String token2 = profileCompletionTokenService.generate(user2Id);
+        CompleteProfileRequest request2 = new CompleteProfileRequest(token2, "svc_chosen_name", "User Two", null, null);
+
+        assertThatThrownBy(() -> authService.completeProfile(request2))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.USERNAME_ALREADY_EXISTS));
+    }
+
+    @Test
+    @DisplayName("completeProfile with case-insensitive username conflict throws USERNAME_ALREADY_EXISTS")
+    void completeProfile_caseInsensitiveUsernameConflict_shouldThrowConflict() {
+        UUID user1Id = registerAndVerifyUser("case1.uname@example.com");
+        String token1 = profileCompletionTokenService.generate(user1Id);
+        authService.completeProfile(new CompleteProfileRequest(token1, "svc_myname", "User One", null, null));
+
+        UUID user2Id = registerAndVerifyUser("case2.uname@example.com");
+        String token2 = profileCompletionTokenService.generate(user2Id);
+        CompleteProfileRequest request2 = new CompleteProfileRequest(token2, "SVC_MYNAME", "User Two", null, null);
+
+        assertThatThrownBy(() -> authService.completeProfile(request2))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.USERNAME_ALREADY_EXISTS));
+    }
+
+    @Test
+    @DisplayName("completeProfile concurrency (same user): two simultaneous requests serialize; exactly 1 succeeds, 1 gets PROFILE_ALREADY_COMPLETED")
+    void completeProfile_sameUserConcurrency_shouldBeDeterministic() throws Exception {
+        UUID userId = registerAndVerifyUser("concurrent.sameuser@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch readyLatch = new CountDownLatch(threads);
+        CountDownLatch startLatch = new CountDownLatch(1);
+
+        List<Future<CompleteProfileResponse>> futures = new ArrayList<>();
+        List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
+
+        for (int i = 0; i < threads; i++) {
+            final int index = i;
+            futures.add(executor.submit(() -> {
+                readyLatch.countDown();
+                startLatch.await();
+                try {
+                    return authService.completeProfile(new CompleteProfileRequest(
+                            token,
+                            "svc_same_user_" + index,
+                            "Same User " + index,
+                            null,
+                            null
+                    ));
+                } catch (Throwable t) {
+                    errors.add(t);
+                    throw t;
+                }
+            }));
+        }
+
+        readyLatch.await(5, TimeUnit.SECONDS);
+        startLatch.countDown();
+
+        int successCount = 0;
+        for (Future<CompleteProfileResponse> f : futures) {
+            try {
+                CompleteProfileResponse res = f.get(10, TimeUnit.SECONDS);
+                if (res != null) {
+                    successCount++;
+                }
+            } catch (ExecutionException e) {
+                // expected for losing request
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(1);
+        assertThat(errors).hasSize(1);
+        Throwable error = errors.get(0);
+        assertThat(error).isInstanceOf(BusinessException.class);
+        assertThat(((BusinessException) error).errorCode()).isEqualTo(ErrorCode.PROFILE_ALREADY_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("completeProfile concurrency (two users, same username): DB unique constraint serializes; exactly 1 succeeds, 1 gets USERNAME_ALREADY_EXISTS")
+    void completeProfile_twoUsersSameUsernameConcurrency_shouldBeDeterministic() throws Exception {
+        UUID userAId = registerAndVerifyUser("userA.race@example.com");
+        UUID userBId = registerAndVerifyUser("userB.race@example.com");
+        String tokenA = profileCompletionTokenService.generate(userAId);
+        String tokenB = profileCompletionTokenService.generate(userBId);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch readyLatch = new CountDownLatch(threads);
+        CountDownLatch startLatch = new CountDownLatch(1);
+
+        List<Future<CompleteProfileResponse>> futures = new ArrayList<>();
+        List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
+
+        futures.add(executor.submit(() -> {
+            readyLatch.countDown();
+            startLatch.await();
+            try {
+                return authService.completeProfile(new CompleteProfileRequest(
+                        tokenA,
+                        "svc_contested_name",
+                        "User A",
+                        null,
+                        null
+                ));
+            } catch (Throwable t) {
+                errors.add(t);
+                throw t;
+            }
+        }));
+
+        futures.add(executor.submit(() -> {
+            readyLatch.countDown();
+            startLatch.await();
+            try {
+                return authService.completeProfile(new CompleteProfileRequest(
+                        tokenB,
+                        "SVC_CONTESTED_NAME",
+                        "User B",
+                        null,
+                        null
+                ));
+            } catch (Throwable t) {
+                errors.add(t);
+                throw t;
+            }
+        }));
+
+        readyLatch.await(5, TimeUnit.SECONDS);
+        startLatch.countDown();
+
+        int successCount = 0;
+        for (Future<CompleteProfileResponse> f : futures) {
+            try {
+                CompleteProfileResponse res = f.get(10, TimeUnit.SECONDS);
+                if (res != null) {
+                    successCount++;
+                }
+            } catch (ExecutionException e) {
+                // expected for losing request
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(1);
+        assertThat(errors).hasSize(1);
+        Throwable error = errors.get(0);
+        assertThat(error).isInstanceOf(BusinessException.class);
+        assertThat(((BusinessException) error).errorCode()).isEqualTo(ErrorCode.USERNAME_ALREADY_EXISTS);
+
+        // Verify DB has only 1 user owning the username
+        Optional<UserEntity> owner = userRepository.findByUsername("svc_contested_name");
+        assertThat(owner).isPresent();
+    }
+
+    private UUID registerAndVerifyUser(String email) {
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        String code = getLatestVerificationCode(reg.userId());
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), code));
+        return reg.userId();
     }
 }

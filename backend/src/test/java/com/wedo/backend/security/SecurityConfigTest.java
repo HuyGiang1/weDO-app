@@ -151,4 +151,43 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/usernames/{username}/availability should be permitted without authentication (reaches endpoint)")
+    void getUsernameAvailability_shouldBePublic() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/usernames/huygiang/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("huygiang"))
+                .andExpect(jsonPath("$.available").isBoolean());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/usernames/{username}/availability without authentication should return 401 Unauthorized")
+    void postUsernameAvailability_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/usernames/huygiang/availability"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile should be permitted without authentication (not 401)")
+    void postCompleteProfile_shouldBePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/complete-profile without authentication should return exactly 401 Unauthorized")
+    void getCompleteProfile_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/complete-profile"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
 }

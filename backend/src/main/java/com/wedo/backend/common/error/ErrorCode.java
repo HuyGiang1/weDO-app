@@ -14,6 +14,8 @@ public enum ErrorCode {
     VERIFICATION_ATTEMPTS_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Maximum verification attempts exceeded."),
     EMAIL_ALREADY_VERIFIED(HttpStatus.CONFLICT, "Email is already verified."),
     RESEND_COOLDOWN_ACTIVE(HttpStatus.TOO_MANY_REQUESTS, "Please wait before requesting another verification code."),
+    PROFILE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "Profile has already been completed."),
+    USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Username is already taken."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

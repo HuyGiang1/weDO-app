@@ -33,3 +33,6 @@ security:
     access-token-ttl: 15m
   auth-token:
     pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64:k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3hT6rY9uI2oP5aD8=}
+  profile-completion-token:
+    secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64:s4A8wY0D2eE6vK1L5oP9tQ3rF7mN8xZ2cT4vB6nI8uM=}
+    ttl: 15m

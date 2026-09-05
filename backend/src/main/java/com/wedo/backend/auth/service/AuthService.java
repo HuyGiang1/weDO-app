@@ -1,9 +1,12 @@
 package com.wedo.backend.auth.service;
 
+import com.wedo.backend.auth.dto.CompleteProfileRequest;
+import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
@@ -12,6 +15,7 @@ import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.security.AuthTokenHasher;
+import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.auth.security.VerificationCodeGenerator;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
@@ -43,6 +47,7 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String USERS_EMAIL_KEY_CONSTRAINT = "users_email_key";
+    private static final String USERS_USERNAME_KEY_CONSTRAINT = "users_username_key";
     private static final String POSTGRES_UNIQUE_VIOLATION_SQL_STATE = "23505";
     private static final Duration EMAIL_VERIFICATION_TTL = Duration.ofMinutes(15);
     private static final Duration RESEND_COOLDOWN = Duration.ofSeconds(60);
@@ -56,6 +61,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final VerificationCodeGenerator verificationCodeGenerator;
     private final AuthTokenHasher authTokenHasher;
+    private final ProfileCompletionTokenService profileCompletionTokenService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -68,6 +74,7 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             VerificationCodeGenerator verificationCodeGenerator,
             AuthTokenHasher authTokenHasher,
+            ProfileCompletionTokenService profileCompletionTokenService,
             ApplicationEventPublisher eventPublisher,
             Clock clock
     ) {
@@ -79,6 +86,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.verificationCodeGenerator = verificationCodeGenerator;
         this.authTokenHasher = authTokenHasher;
+        this.profileCompletionTokenService = profileCompletionTokenService;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -198,7 +206,8 @@ public class AuthService {
             user.setUpdatedAt(now);
             userRepository.save(user);
 
-            return VerifyEmailResponse.of(user.getId(), UserStatus.ACTIVE, now);
+            String profileCompletionToken = profileCompletionTokenService.generate(user.getId());
+            return VerifyEmailResponse.of(user.getId(), UserStatus.ACTIVE, now, profileCompletionToken);
         }
 
         String candidateHash = authTokenHasher.hash(
@@ -308,6 +317,94 @@ public class AuthService {
                 if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)) {
                     String message = sqlEx.getMessage();
                     if (message != null && message.contains(USERS_EMAIL_KEY_CONSTRAINT)) {
+                        return true;
+                    }
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    @Transactional(readOnly = true)
+    public UsernameAvailabilityResponse checkUsernameAvailability(String username) {
+        String canonicalUsername = username.toLowerCase(Locale.ROOT);
+        boolean available = !userRepository.existsByUsername(canonicalUsername);
+        return UsernameAvailabilityResponse.of(canonicalUsername, available);
+    }
+
+    @Transactional
+    public CompleteProfileResponse completeProfile(CompleteProfileRequest request) {
+        UUID userId = profileCompletionTokenService.extractAndValidate(request.profileCompletionToken());
+
+        UserEntity user = userRepository.findByIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+
+        if (user.getUsername() != null) {
+            throw new BusinessException(ErrorCode.PROFILE_ALREADY_COMPLETED);
+        }
+
+        String canonicalUsername = request.username().toLowerCase(Locale.ROOT);
+
+        if (userRepository.existsByUsername(canonicalUsername)) {
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+        }
+
+        String displayName = request.displayName().trim();
+        String bio = null;
+        if (request.bio() != null) {
+            String trimmedBio = request.bio().trim();
+            if (!trimmedBio.isEmpty()) {
+                bio = trimmedBio;
+            }
+        }
+        String avatarStorageKey = request.avatarStorageKey();
+
+        Instant now = clock.instant();
+        user.setUsername(canonicalUsername);
+        user.setDisplayName(displayName);
+        user.setBio(bio);
+        user.setAvatarStorageKey(avatarStorageKey);
+        user.setUpdatedAt(now);
+
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException ex) {
+            if (isUsernameUniqueViolation(ex)) {
+                throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+            }
+            throw ex;
+        }
+
+        return CompleteProfileResponse.of(user.getId(), user.getUsername(), user.getDisplayName(), user.getStatus());
+    }
+
+    private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException cve) {
+                String constraint = cve.getConstraintName();
+                if (constraint != null && constraint.equalsIgnoreCase(USERS_USERNAME_KEY_CONSTRAINT)) {
+                    return true;
+                }
+                if (cve.getSQLException() != null) {
+                    String sqlState = cve.getSQLException().getSQLState();
+                    if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)
+                            && constraint != null
+                            && constraint.contains("users_username")) {
+                        return true;
+                    }
+                }
+            }
+            if (current instanceof java.sql.SQLException sqlEx) {
+                String sqlState = sqlEx.getSQLState();
+                if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)) {
+                    String message = sqlEx.getMessage();
+                    if (message != null && message.contains(USERS_USERNAME_KEY_CONSTRAINT)) {
                         return true;
                     }
                 }

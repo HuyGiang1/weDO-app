@@ -87,6 +87,18 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.path").value("/test/custom-business-error"));
     }
 
+    @Test
+    void methodParameterValidationFailureReturnsFieldErrors() throws Exception {
+        mockMvc.perform(get("/test/path-validation/ab"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.timestamp").isString())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.message").value(ErrorCode.VALIDATION_FAILED.defaultMessage()))
+                .andExpect(jsonPath("$.path").value("/test/path-validation/ab"))
+                .andExpect(jsonPath("$.errors.param").exists());
+    }
+
     @RestController
     static class TestErrorController {
 
@@ -105,6 +117,14 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/test/validation")
         void validationError(@Valid @RequestBody TestRequest request) {
+        }
+
+        @GetMapping("/test/path-validation/{param}")
+        void pathValidationError(
+                @org.springframework.web.bind.annotation.PathVariable
+                @jakarta.validation.constraints.Size(min = 3)
+                String param
+        ) {
         }
 
         @GetMapping("/test/unexpected-error")

@@ -2,11 +2,13 @@ package com.wedo.backend.auth.controller;
 
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
+import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.service.AuthService;
+import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,6 +43,9 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private AuthTokenRepository authTokenRepository;
+
+    @Autowired
+    private ProfileCompletionTokenService profileCompletionTokenService;
 
     @Autowired
     private ApplicationEvents applicationEvents;
@@ -248,6 +254,7 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.emailVerifiedAt").isNotEmpty())
                 .andExpect(jsonPath("$.nextStep").value("COMPLETE_PROFILE"))
+                .andExpect(jsonPath("$.profileCompletionToken").isNotEmpty())
                 .andExpect(jsonPath("$.accessToken").doesNotExist())
                 .andExpect(jsonPath("$.refreshToken").doesNotExist());
     }
@@ -491,5 +498,361 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    // ==========================================
+    // M2.6 Username Availability Endpoint Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("GET /api/v1/auth/usernames/{username}/availability with unused username should return 200 available=true")
+    void checkAvailability_unusedUsername_shouldReturn200AvailableTrue() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/usernames/fresh_user_99/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("fresh_user_99"))
+                .andExpect(jsonPath("$.available").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/usernames/{username}/availability with taken username should return 200 available=false")
+    void checkAvailability_takenUsername_shouldReturn200AvailableFalse() throws Exception {
+        UUID userId = registerAndVerifyUser("taken.api@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+        String completePayload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "taken_api_user",
+                    "displayName": "Taken User"
+                }
+                """, token);
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(completePayload))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/auth/usernames/taken_api_user/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("taken_api_user"))
+                .andExpect(jsonPath("$.available").value(false));
+
+        // Case-insensitive check
+        mockMvc.perform(get("/api/v1/auth/usernames/TAKEN_API_USER/availability"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("taken_api_user"))
+                .andExpect(jsonPath("$.available").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/usernames/{username}/availability invalid format should return 400 VALIDATION_FAILED")
+    void checkAvailability_invalidFormat_shouldReturn400() throws Exception {
+        // 1. Too short (2 characters)
+        mockMvc.perform(get("/api/v1/auth/usernames/ab/availability"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.path").value("/api/v1/auth/usernames/ab/availability"));
+
+        // 2. Special characters (@)
+        mockMvc.perform(get("/api/v1/auth/usernames/bad@name/availability"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // 3. Too long (> 30 characters)
+        mockMvc.perform(get("/api/v1/auth/usernames/a1234567890123456789012345678901/availability"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // 4. Space in username
+        mockMvc.perform(get("/api/v1/auth/usernames/bad name/availability"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    // ==========================================
+    // M2.6 Complete Profile Endpoint Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile with valid payload should return 200 OK and correct response shape")
+    void completeProfile_validPayload_shouldReturn200() throws Exception {
+        UUID userId = registerAndVerifyUser("complete.api@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        String payload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "HuyGiang",
+                    "displayName": "  Huy Giang  ",
+                    "bio": "  Building awesome software  ",
+                    "avatarStorageKey": "avatars/2026/09/user_profile.jpg"
+                }
+                """, token);
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(userId.toString()))
+                .andExpect(jsonPath("$.username").value("huygiang"))
+                .andExpect(jsonPath("$.displayName").value("Huy Giang"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.nextStep").value("LOGIN"))
+                .andExpect(jsonPath("$.accessToken").doesNotExist())
+                .andExpect(jsonPath("$.refreshToken").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile DTO validation errors should return 400 VALIDATION_FAILED")
+    void completeProfile_validationErrors_shouldReturn400() throws Exception {
+        UUID userId = registerAndVerifyUser("validation.api@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        // 1. Missing / blank token
+        String missingToken = """
+                {
+                    "profileCompletionToken": "",
+                    "username": "valid_user",
+                    "displayName": "Valid User"
+                }
+                """;
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(missingToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.profileCompletionToken").isNotEmpty());
+
+        // 2. Invalid username format (spaces)
+        String spacesUsername = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": " huygiang ",
+                    "displayName": "Valid User"
+                }
+                """, token);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(spacesUsername))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.username").isNotEmpty());
+
+        // 3. Invalid username format (too short)
+        String shortUsername = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "ab",
+                    "displayName": "Valid User"
+                }
+                """, token);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shortUsername))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.username").isNotEmpty());
+
+        // 4. Blank displayName
+        String blankDisplayName = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "valid_user",
+                    "displayName": "   "
+                }
+                """, token);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(blankDisplayName))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.displayName").isNotEmpty());
+
+        // 5. Bio > 500 characters
+        String longBio = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "valid_user",
+                    "displayName": "Valid User",
+                    "bio": "%s"
+                }
+                """, token, "a".repeat(501));
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(longBio))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.bio").isNotEmpty());
+
+        // 6. AvatarStorageKey > 255 characters
+        String longAvatar = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "valid_user",
+                    "displayName": "Valid User",
+                    "avatarStorageKey": "%s"
+                }
+                """, token, "a".repeat(256));
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(longAvatar))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.avatarStorageKey").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile with invalid or expired token should return 401 UNAUTHORIZED")
+    void completeProfile_invalidToken_shouldReturn401() throws Exception {
+        // 1. Malformed token
+        String malformedPayload = """
+                {
+                    "profileCompletionToken": "not.a.valid.jwt.token",
+                    "username": "valid_user",
+                    "displayName": "Valid User"
+                }
+                """;
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(malformedPayload))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("Invalid or expired profile completion token"));
+
+        // 2. Tampered token
+        UUID userId = registerAndVerifyUser("tampered.token@example.com");
+        String validToken = profileCompletionTokenService.generate(userId);
+        String tamperedToken = validToken.substring(0, validToken.length() - 5) + "abcde";
+
+        String tamperedPayload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "valid_user",
+                    "displayName": "Valid User"
+                }
+                """, tamperedToken);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(tamperedPayload))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile sequential replay should return 409 PROFILE_ALREADY_COMPLETED")
+    void completeProfile_sequentialReplay_shouldReturn409() throws Exception {
+        UUID userId = registerAndVerifyUser("replay.api@example.com");
+        String token = profileCompletionTokenService.generate(userId);
+
+        String payload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "replay_user",
+                    "displayName": "Replay User"
+                }
+                """, token);
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("PROFILE_ALREADY_COMPLETED"))
+                .andExpect(jsonPath("$.message").value("Profile has already been completed."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile duplicate username should return 409 USERNAME_ALREADY_EXISTS")
+    void completeProfile_duplicateUsername_shouldReturn409() throws Exception {
+        UUID user1Id = registerAndVerifyUser("dup1.api@example.com");
+        String token1 = profileCompletionTokenService.generate(user1Id);
+        String payload1 = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "occupied_user",
+                    "displayName": "Occupied User"
+                }
+                """, token1);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload1))
+                .andExpect(status().isOk());
+
+        UUID user2Id = registerAndVerifyUser("dup2.api@example.com");
+        String token2 = profileCompletionTokenService.generate(user2Id);
+        String payload2 = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "occupied_user",
+                    "displayName": "Second User"
+                }
+                """, token2);
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload2))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("USERNAME_ALREADY_EXISTS"))
+                .andExpect(jsonPath("$.message").value("Username is already taken."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile for unverified user should return 403 ACCESS_DENIED")
+    void completeProfile_unverifiedUser_shouldReturn403() throws Exception {
+        RegisterResponse reg = authService.register(new RegisterRequest("unverified.api@example.com", "Password123!"));
+        String token = profileCompletionTokenService.generate(reg.userId());
+
+        String payload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "unverified_user",
+                    "displayName": "Unverified User"
+                }
+                """, token);
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/complete-profile with unknown userId token should return 404 RESOURCE_NOT_FOUND")
+    void completeProfile_unknownUser_shouldReturn404() throws Exception {
+        UUID unknownId = UUID.randomUUID();
+        String token = profileCompletionTokenService.generate(unknownId);
+
+        String payload = String.format("""
+                {
+                    "profileCompletionToken": "%s",
+                    "username": "ghost_api_user",
+                    "displayName": "Ghost User"
+                }
+                """, token);
+
+        mockMvc.perform(post("/api/v1/auth/complete-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    private UUID registerAndVerifyUser(String email) {
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        String code = getLatestVerificationCode(reg.userId());
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), code));
+        return reg.userId();
     }
 }

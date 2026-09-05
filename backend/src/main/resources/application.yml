@@ -14,3 +14,6 @@ security:
     access-token-ttl: ${WEDO_JWT_ACCESS_TOKEN_TTL:15m}
   auth-token:
     pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64}
+  profile-completion-token:
+    secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64}
+    ttl: ${WEDO_PROFILE_COMPLETION_TOKEN_TTL:15m}

@@ -1,15 +1,22 @@
 package com.wedo.backend.auth.controller;
 
+import com.wedo.backend.auth.dto.CompleteProfileRequest;
+import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,6 +47,28 @@ public class AuthController {
     @PostMapping("/resend-verification")
     public ResponseEntity<ResendVerificationResponse> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         ResendVerificationResponse response = authService.resendVerification(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/usernames/{username}/availability")
+    public ResponseEntity<UsernameAvailabilityResponse> checkUsernameAvailability(
+            @PathVariable
+            @Size(min = 3, max = 30, message = "Username must be between 3 and 30 characters")
+            @Pattern(
+                    regexp = "^[a-zA-Z0-9_]{3,30}$",
+                    message = "Username must contain only letters, numbers, and underscores"
+            )
+            String username
+    ) {
+        UsernameAvailabilityResponse response = authService.checkUsernameAvailability(username);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/complete-profile")
+    public ResponseEntity<CompleteProfileResponse> completeProfile(
+            @Valid @RequestBody CompleteProfileRequest request
+    ) {
+        CompleteProfileResponse response = authService.completeProfile(request);
         return ResponseEntity.ok(response);
     }
 }

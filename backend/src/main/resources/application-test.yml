@@ -21,3 +21,6 @@ security:
     access-token-ttl: 15m
   auth-token:
     pepper-base64: t6rY9uI2oP5aD8k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3h=
+  profile-completion-token:
+    secret-base64: q9W8eR7tY6uI5oP4aD3fG2hJ1kL0zX9cV8bN7mQ6wE5=
+    ttl: 15m

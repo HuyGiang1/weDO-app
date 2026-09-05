@@ -410,8 +410,8 @@ Uses Redis rate limiting to prevent abuse.
 >
 > If it expires before profile completion, the account remains: `status = ACTIVE`, `username == null`.
 >
-> Recovery is intentionally deferred to AUTH Login work:
-> Future M2.7 Login must detect `ACTIVE + username == null` and issue a fresh `ProfileCompletionToken` with `nextStep = COMPLETE_PROFILE` without treating the user as fully onboarded.
+> Recovery is implemented in M2.7 Login (AUTH-06):
+> Login detects `ACTIVE + username == null` and issues a fresh `ProfileCompletionToken` with `nextStep = COMPLETE_PROFILE` without issuing application access or refresh tokens.
 
 ### AUTH-05 Username Availability
 
@@ -449,7 +449,12 @@ Taken username:
 
 ### AUTH-06 Login
 
-**Endpoint:** `POST /api/v1/auth/login`
+- **Endpoint:** `POST /api/v1/auth/login`
+- **Authentication:** Public endpoint at Spring Security level. (Note: `GET /api/v1/auth/login` remains protected/unauthorized. No `Authorization: Bearer` access token required for login.)
+- **Request DTO:** `LoginRequest`
+- **Response DTO:** `LoginResponse` (HTTP 200 OK)
+
+**Request Schema:**
 
 ```json
 {
@@ -458,7 +463,150 @@ Taken username:
 }
 ```
 
-Validate credentials/account status/email verification, then return access token, refresh token, expiration and basic user information. Errors: `AUTH_INVALID_CREDENTIALS`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DEACTIVATED`.
+*(No client metadata fields such as `deviceId`, `deviceName`, `pushToken`, `rememberMe`, or `ipAddress` are accepted in M2.7.)*
+
+**Request Validation Rules:**
+- `email`:
+  - Required (`@NotBlank`).
+  - Valid email syntax (`@Email`).
+  - Normalized internally by trimming leading/trailing whitespace and converting to lowercase.
+- `password`:
+  - Required (`@NotBlank`).
+  - Max 72 UTF-8 bytes: technical safety constraint for BCrypt hashing (not a password-strength rule).
+  - Note: No minimum length (e.g. min 8), uppercase/lowercase, or special-character requirements are enforced at login.
+
+**Authentication & Anti-Enumeration Semantics:**
+- Unknown email or incorrect password:
+  - Returns `401 AUTH_INVALID_CREDENTIALS` with default message `"Invalid email or password."`.
+  - Specific internal reasons (`EMAIL_NOT_FOUND`, `USER_NOT_FOUND`, `CREDENTIAL_NOT_FOUND`) are never exposed to callers.
+  - The implementation performs a dummy password verification for unknown accounts to reduce timing differences between unknown-email and wrong-password paths.
+
+**Account Status Disclosure Order:**
+- Account status checks are only evaluated **after** password verification succeeds:
+  - If password is correct and status is `PENDING_VERIFICATION` → `403 EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - If password is correct and status is `SUSPENDED` → `403 ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - If password is correct and status is `DEACTIVATED` → `403 ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+  - If password is wrong for an account in any of these states → returns `401 AUTH_INVALID_CREDENTIALS` (`"Invalid email or password."`).
+- This strict sequence prevents leaking account existence or status to callers who do not know the password.
+
+**Account Lockout Policy:**
+- Default configuration (configurable via environment/application properties):
+  - Max failed attempts: `5` (`security.login.max-failed-attempts`)
+  - Lock duration: `15 minutes` (`security.login.lock-duration`)
+- Semantics:
+  - 1st through 4th consecutive wrong password:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` counter increments by 1.
+  - 5th consecutive wrong password:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` reaches 5; `locked_until` is set to `now + 15 minutes`.
+  - Wrong password submitted while account is actively locked:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` counter does not increment further; lock duration is not extended.
+  - Correct password submitted while account is actively locked:
+    - Returns `423 ACCOUNT_LOCKED` with message `"Account is temporarily locked."`.
+  - Lock expiration: At exact `now == locked_until`, the lock is expired. On the next successful login, `failed_attempts` and `locked_until` are reset.
+  - `ACCOUNT_LOCKED` is never exposed on a wrong-password request.
+
+**Response Branches (One Stable DTO Shape):**
+
+`LoginResponse` provides a single, stable JSON schema across all login branches. Fields not applicable to a specific branch are returned as `null`.
+
+1. **Profile-Incomplete Recovery Branch (`ACTIVE` status, `username == null`):**
+   - Occurs when credentials are valid, email is verified (`ACTIVE`), but the user has not completed initial profile setup (fulfills the deferred M2.6 recovery requirement).
+   - Issues a fresh short-lived `profileCompletionToken` (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes).
+   - No application access token is issued; no refresh token is issued; zero `refresh_sessions` rows are created.
+   - HTTP 200 OK:
+     ```json
+     {
+       "userId": "11111111-1111-1111-1111-111111111111",
+       "status": "ACTIVE",
+       "nextStep": "COMPLETE_PROFILE",
+       "profileCompletionToken": "eyJhbGciOi...",
+       "accessToken": null,
+       "refreshToken": null,
+       "tokenType": null,
+       "accessTokenExpiresAt": null,
+       "user": null
+     }
+     ```
+
+2. **Fully-Onboarded Normal Branch (`ACTIVE` status, `username != null`):**
+   - Occurs when credentials are valid, email is verified (`ACTIVE`), and profile is complete.
+   - Issues an application access token, an initial refresh token, and creates a persistent refresh session.
+   - HTTP 200 OK:
+     ```json
+     {
+       "userId": "11111111-1111-1111-1111-111111111111",
+       "status": "ACTIVE",
+       "nextStep": "AUTHENTICATED",
+       "profileCompletionToken": null,
+       "accessToken": "eyJhbGciOi...",
+       "refreshToken": "7k8y...",
+       "tokenType": "Bearer",
+       "accessTokenExpiresAt": "2026-09-05T10:15:00Z",
+       "user": {
+         "id": "11111111-1111-1111-1111-111111111111",
+         "email": "user@example.com",
+         "username": "huygiang",
+         "displayName": "Huy Giang",
+         "avatarStorageKey": null
+       }
+     }
+     ```
+
+**User Summary Structure (`UserSummaryDto`):**
+```json
+{
+  "id": "UUID",
+  "email": "string",
+  "username": "string",
+  "displayName": "string",
+  "avatarStorageKey": "string|null"
+}
+```
+*(Sensitive or internal fields such as `passwordHash`, `failedAttempts`, `lockedUntil`, privacy settings, or internal refresh session identifiers are strictly excluded.)*
+
+**Token Architecture & Terminology:**
+- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes) used strictly for `POST /api/v1/auth/profile/complete`. Not an application session.
+- `accessToken`: Application authentication JWT (`tokenType: "Bearer"`, TTL: 15 minutes). Minimal claims: `sub` (user UUID), `iat`, `exp`. No custom claims (roles, email, username) inside the JWT. Response expiration field: `accessTokenExpiresAt`.
+- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters). **Not a JWT**.
+  - Client transmission: Raw token returned only to client in response body.
+  - Server persistence: Raw token is **never stored**. Its SHA-256 lowercase hex digest is stored in `refresh_sessions.token_hash`.
+  - Default TTL: 14 days (`security.jwt.refresh-token-ttl`).
+
+**Refresh Session State (M2.7):**
+- On fully onboarded login, a single record is inserted into `refresh_sessions`:
+  - `user_id`: Authenticated user ID.
+  - `token_hash`: SHA-256 hash of the issued refresh token.
+  - `expires_at`: `now + 14 days`.
+  - `revoked_at`: `null`.
+  - `replaced_by_session_id`: `null`.
+  - `device_name`: `null` (device metadata omitted in M2.7).
+  - `ip_address`: `null` (IP tracking omitted in M2.7).
+
+**Milestone Boundary: M2.7 vs. M2.8:**
+- **M2.7 (Implemented in commit `e74f08e`):**
+  - Initial login credential verification with timing-mitigated anti-enumeration.
+  - Status disclosure ordering and account lockout semantics.
+  - Profile-incomplete recovery branch issuing fresh `profileCompletionToken`.
+  - Fully-onboarded branch issuing application `accessToken` + initial opaque `refreshToken`.
+  - Initial `refresh_sessions` row persistence.
+- **M2.8 (Upcoming - Refresh Token Rotation):**
+  - Endpoint: `POST /api/v1/auth/refresh`.
+  - Refresh token rotation mechanism (issuing new refresh token upon refresh).
+  - Revocation of previous refresh session and linkage via `replaced_by_session_id`.
+  - Reuse detection semantics (revoking downstream session family if revoked/compromised token is reused).
+  - *Do not treat M2.8 behavior as already implemented.*
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
+- No `JwtAuthenticationFilter` is present in M2.7.
+- Default configuration settings:
+  - `security.jwt.access-token-ttl: 15m`
+  - `security.jwt.refresh-token-ttl: 14d`
+  - `security.login.max-failed-attempts: 5`
+  - `security.login.lock-duration: 15m`
 
 ### AUTH-07 Refresh Token
 
@@ -1698,7 +1846,15 @@ EMAIL_ALREADY_EXISTS
 USERNAME_ALREADY_EXISTS
 ACCOUNT_SUSPENDED
 ACCOUNT_DEACTIVATED
+ACCOUNT_LOCKED
 ```
+
+*Authentication Error Status & Disclosure Semantics:*
+- `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
+- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted only after password verification succeeds on `PENDING_VERIFICATION` accounts.
+- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted only after password verification succeeds on `SUSPENDED` accounts.
+- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted only after password verification succeeds on `DEACTIVATED` accounts.
+- `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
 
 ### Social
 
@@ -1868,6 +2024,7 @@ ResendVerificationRequest / ResendVerificationResponse
 CompleteProfileRequest / CompleteProfileResponse
 UsernameAvailabilityResponse
 LoginRequest / LoginResponse
+UserSummaryDto
 RefreshTokenRequest / RefreshTokenResponse
 ForgotPasswordRequest
 ResetPasswordRequest

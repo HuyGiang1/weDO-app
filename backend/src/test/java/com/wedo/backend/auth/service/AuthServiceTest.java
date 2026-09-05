@@ -4,6 +4,8 @@ import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
+import com.wedo.backend.auth.dto.RefreshTokenRequest;
+import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
@@ -16,6 +18,7 @@ import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.exception.LoginAttemptException;
+import com.wedo.backend.auth.exception.RefreshSessionStatusException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.repository.RefreshSessionRepository;
@@ -1347,5 +1350,352 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 .filter(s -> s.getUserId().equals(userId))
                 .count();
         assertThat(count).isEqualTo(2);
+    }
+
+    // ==========================================
+    // M2.8 Refresh Token Rotation Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("refreshToken with valid token rotates session and returns new credentials")
+    void refreshToken_validToken_shouldRotateSuccessfully() {
+        String email = "refresh.service.valid@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_serv_valid", "Ref Valid", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        RefreshSessionEntity s1Before = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1Before.getRevokedAt()).isNull();
+        assertThat(s1Before.getReplacedBySessionId()).isNull();
+
+        Instant rotationTime = currentInstant.plus(Duration.ofHours(1));
+        currentInstant = rotationTime;
+
+        RefreshTokenResponse response = authService.refreshToken(new RefreshTokenRequest(raw1));
+
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(jwtService.extractUserId(response.accessToken())).isEqualTo(userId);
+        assertThat(response.accessTokenExpiresAt()).isEqualTo(jwtService.extractExpiration(response.accessToken()));
+        assertThat(response.refreshToken()).isNotBlank();
+        assertThat(response.refreshToken()).isNotEqualTo(raw1);
+        assertThat(response.tokenType()).isEqualTo("Bearer");
+        assertThat(response.refreshTokenExpiresAt()).isEqualTo(rotationTime.plus(Duration.ofDays(14)));
+
+        // DB Assertions: S1 is revoked and replaced
+        RefreshSessionEntity s1After = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1After.getRevokedAt()).isEqualTo(rotationTime);
+
+        String hash2 = RefreshTokenService.hashToken(response.refreshToken());
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        assertThat(s1After.getReplacedBySessionId()).isEqualTo(s2.getId());
+
+        assertThat(s2.getUserId()).isEqualTo(userId);
+        assertThat(s2.getRevokedAt()).isNull();
+        assertThat(s2.getReplacedBySessionId()).isNull();
+        assertThat(s2.getExpiresAt()).isEqualTo(rotationTime.plus(Duration.ofDays(14)));
+    }
+
+    @Test
+    @DisplayName("refreshToken boundary: valid before expiry, rejected at exact expiry and after expiry")
+    void refreshToken_expiryBoundary_checks() {
+        String email = "refresh.boundary@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_boundary", "Ref Boundary", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        Instant expiry = s1.getExpiresAt();
+
+        // 1. Exact expiry boundary (now == expiresAt) -> invalid
+        currentInstant = expiry;
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        RefreshSessionEntity s1Still = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1Still.getRevokedAt()).isNull();
+        assertThat(s1Still.getReplacedBySessionId()).isNull();
+
+        // 2. After expiry boundary (now > expiresAt) -> invalid
+        currentInstant = expiry.plus(Duration.ofSeconds(1));
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // 3. Before expiry boundary (now < expiresAt) -> valid
+        currentInstant = expiry.minus(Duration.ofSeconds(1));
+        RefreshTokenResponse resp = authService.refreshToken(new RefreshTokenRequest(raw1));
+        assertThat(resp.accessToken()).isNotBlank();
+        assertThat(resp.refreshToken()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("refreshToken direct reuse: previously rotated token is rejected without revoking replacement")
+    void refreshToken_reusedRotatedToken_shouldRejectWithoutRevokingReplacement() {
+        String email = "refresh.reuse@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_reuse", "Ref Reuse", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+
+        // First rotation S1 -> S2 succeeds
+        RefreshTokenResponse rot1 = authService.refreshToken(new RefreshTokenRequest(raw1));
+        String raw2 = rot1.refreshToken();
+        String hash2 = RefreshTokenService.hashToken(raw2);
+
+        // Reusing raw1 -> must be rejected with REFRESH_TOKEN_INVALID
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // Replacement S2 must remain active and unaffected
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        assertThat(s2.getRevokedAt()).isNull();
+        assertThat(s2.getReplacedBySessionId()).isNull();
+
+        // And S2 can still be rotated normally
+        RefreshTokenResponse rot2 = authService.refreshToken(new RefreshTokenRequest(raw2));
+        assertThat(rot2.accessToken()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("refreshToken revoked non-rotated token should be rejected")
+    void refreshToken_revokedNonRotatedToken_shouldReject() {
+        String email = "refresh.revoked.nonrotated@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_rev_nonrot", "Ref Rev NonRot", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        // Simulate manual revocation (like logout) where replacedBySessionId is null
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        s1.setRevokedAt(currentInstant);
+        s1.setReplacedBySessionId(null);
+        refreshSessionRepository.save(s1);
+
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+    }
+
+    @Test
+    @DisplayName("refreshToken with random or unrecognized token should be rejected")
+    void refreshToken_randomToken_shouldReject() {
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest("nonexistent-random-refresh-token")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+    }
+
+    @Test
+    @DisplayName("refreshToken status revocation: non-ACTIVE users have session revoked and throw RefreshSessionStatusException")
+    void refreshToken_statusRevocation_checks() {
+        // 1. PENDING_VERIFICATION
+        String emailPending = "status.pending@example.com";
+        UUID idPending = registerAndVerifyUser(emailPending);
+        String token1 = profileCompletionTokenService.generate(idPending);
+        authService.completeProfile(new CompleteProfileRequest(token1, "status_pending", "Status Pending", null, null));
+        LoginResponse loginPending = authService.login(new LoginRequest(emailPending, "Password123!"));
+        String rawPending = loginPending.refreshToken();
+        String hashPending = RefreshTokenService.hashToken(rawPending);
+
+        UserEntity userPending = userRepository.findById(idPending).orElseThrow();
+        userPending.setStatus(UserStatus.PENDING_VERIFICATION);
+        userRepository.save(userPending);
+
+        Instant timePending = currentInstant.plus(Duration.ofMinutes(10));
+        currentInstant = timePending;
+
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(rawPending)))
+                .isInstanceOf(RefreshSessionStatusException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.EMAIL_NOT_VERIFIED);
+
+        RefreshSessionEntity sessPending = refreshSessionRepository.findByTokenHash(hashPending).orElseThrow();
+        assertThat(sessPending.getRevokedAt()).isEqualTo(timePending);
+        assertThat(sessPending.getReplacedBySessionId()).isNull();
+
+        // 2. SUSPENDED
+        String emailSusp = "status.susp@example.com";
+        UUID idSusp = registerAndVerifyUser(emailSusp);
+        String token2 = profileCompletionTokenService.generate(idSusp);
+        authService.completeProfile(new CompleteProfileRequest(token2, "status_susp", "Status Susp", null, null));
+        LoginResponse loginSusp = authService.login(new LoginRequest(emailSusp, "Password123!"));
+        String rawSusp = loginSusp.refreshToken();
+        String hashSusp = RefreshTokenService.hashToken(rawSusp);
+
+        UserEntity userSusp = userRepository.findById(idSusp).orElseThrow();
+        userSusp.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(userSusp);
+
+        Instant timeSusp = currentInstant.plus(Duration.ofMinutes(10));
+        currentInstant = timeSusp;
+
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(rawSusp)))
+                .isInstanceOf(RefreshSessionStatusException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ACCOUNT_SUSPENDED);
+
+        RefreshSessionEntity sessSusp = refreshSessionRepository.findByTokenHash(hashSusp).orElseThrow();
+        assertThat(sessSusp.getRevokedAt()).isEqualTo(timeSusp);
+        assertThat(sessSusp.getReplacedBySessionId()).isNull();
+
+        // 3. DEACTIVATED
+        String emailDeact = "status.deact@example.com";
+        UUID idDeact = registerAndVerifyUser(emailDeact);
+        String token3 = profileCompletionTokenService.generate(idDeact);
+        authService.completeProfile(new CompleteProfileRequest(token3, "status_deact", "Status Deact", null, null));
+        LoginResponse loginDeact = authService.login(new LoginRequest(emailDeact, "Password123!"));
+        String rawDeact = loginDeact.refreshToken();
+        String hashDeact = RefreshTokenService.hashToken(rawDeact);
+
+        UserEntity userDeact = userRepository.findById(idDeact).orElseThrow();
+        userDeact.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(userDeact);
+
+        Instant timeDeact = currentInstant.plus(Duration.ofMinutes(10));
+        currentInstant = timeDeact;
+
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(rawDeact)))
+                .isInstanceOf(RefreshSessionStatusException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ACCOUNT_DEACTIVATED);
+
+        RefreshSessionEntity sessDeact = refreshSessionRepository.findByTokenHash(hashDeact).orElseThrow();
+        assertThat(sessDeact.getRevokedAt()).isEqualTo(timeDeact);
+        assertThat(sessDeact.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("concurrency: two simultaneous refreshes of the same token yield exactly 1 success and 1 REFRESH_TOKEN_INVALID")
+    void refreshToken_concurrency_sameToken_exactlyOneSuccess() throws Exception {
+        String email = "concurrent.refresh.same@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_same_user", "Ref Same User", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<Future<Object>> futures = new ArrayList<>();
+        for (int i = 0; i < threadCount; i++) {
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                try {
+                    return authService.refreshToken(new RefreshTokenRequest(raw1));
+                } catch (Exception e) {
+                    return e;
+                }
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+
+        int successCount = 0;
+        int invalidCount = 0;
+        RefreshTokenResponse successResponse = null;
+
+        for (Future<Object> f : futures) {
+            Object res = f.get(10, TimeUnit.SECONDS);
+            if (res instanceof RefreshTokenResponse r) {
+                successCount++;
+                successResponse = r;
+            } else if (res instanceof BusinessException be && be.errorCode() == ErrorCode.REFRESH_TOKEN_INVALID) {
+                invalidCount++;
+            }
+        }
+        executor.shutdown();
+
+        assertThat(successCount).isEqualTo(1);
+        assertThat(invalidCount).isEqualTo(1);
+        assertThat(successResponse).isNotNull();
+
+        // Database checks:
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1.getRevokedAt()).isNotNull();
+        assertThat(s1.getReplacedBySessionId()).isNotNull();
+
+        String hash2 = RefreshTokenService.hashToken(successResponse.refreshToken());
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        assertThat(s1.getReplacedBySessionId()).isEqualTo(s2.getId());
+        assertThat(s2.getRevokedAt()).isNull();
+
+        long sessionCount = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .count();
+        // exactly 2 sessions: S1 (revoked) and S2 (active)
+        assertThat(sessionCount).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("concurrency: two independent sessions of the same user refresh simultaneously and both succeed")
+    void refreshToken_concurrency_differentTokens_bothSucceed() throws Exception {
+        String email = "concurrent.refresh.diff@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_diff_user", "Ref Diff User", null, null));
+
+        LoginResponse login1 = authService.login(new LoginRequest(email, "Password123!"));
+        LoginResponse login2 = authService.login(new LoginRequest(email, "Password123!"));
+        String rawS1 = login1.refreshToken();
+        String rawA1 = login2.refreshToken();
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<RefreshTokenResponse> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.refreshToken(new RefreshTokenRequest(rawS1));
+        });
+
+        Future<RefreshTokenResponse> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.refreshToken(new RefreshTokenRequest(rawA1));
+        });
+
+        ready.await();
+        start.countDown();
+
+        RefreshTokenResponse resp1 = f1.get(10, TimeUnit.SECONDS);
+        RefreshTokenResponse resp2 = f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(resp1.accessToken()).isNotBlank();
+        assertThat(resp2.accessToken()).isNotBlank();
+        assertThat(resp1.refreshToken()).isNotEqualTo(resp2.refreshToken());
+
+        String hashS2 = RefreshTokenService.hashToken(resp1.refreshToken());
+        String hashA2 = RefreshTokenService.hashToken(resp2.refreshToken());
+
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hashS2).orElseThrow();
+        RefreshSessionEntity a2 = refreshSessionRepository.findByTokenHash(hashA2).orElseThrow();
+        assertThat(s2.getRevokedAt()).isNull();
+        assertThat(a2.getRevokedAt()).isNull();
+
+        long totalSessions = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .count();
+        // 4 total: S1, A1 (both revoked), S2, A2 (both active)
+        assertThat(totalSessions).isEqualTo(4);
     }
 }

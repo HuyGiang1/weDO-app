@@ -1,6 +1,8 @@
 package com.wedo.backend.auth.controller;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
+import com.wedo.backend.auth.dto.LoginRequest;
+import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
@@ -1111,5 +1113,164 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value(423))
                 .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"))
                 .andExpect(jsonPath("$.message").value("Account is temporarily locked."));
+    }
+
+    // ==========================================
+    // M2.8 Refresh Token Rotation Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with valid token should return 200 and new credentials")
+    void refresh_validToken_shouldReturn200() throws Exception {
+        String email = "refresh.api.valid@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "refreshuser", "Refresh User", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.accessTokenExpiresAt").isNotEmpty())
+                .andExpect(jsonPath("$.refreshTokenExpiresAt").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with null token should return 400 VALIDATION_FAILED")
+    void refresh_nullToken_shouldReturn400() throws Exception {
+        String payload = """
+                {
+                    "refreshToken": null
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.refreshToken").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with empty token should return 400 VALIDATION_FAILED")
+    void refresh_emptyToken_shouldReturn400() throws Exception {
+        String payload = """
+                {
+                    "refreshToken": ""
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.refreshToken").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with whitespace token should return 400 VALIDATION_FAILED")
+    void refresh_whitespaceToken_shouldReturn400() throws Exception {
+        String payload = """
+                {
+                    "refreshToken": "   "
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.refreshToken").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with invalid token should return 401 REFRESH_TOKEN_INVALID")
+    void refresh_invalidToken_shouldReturn401() throws Exception {
+        String payload = """
+                {
+                    "refreshToken": "invalid-non-existent-refresh-token"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_INVALID"))
+                .andExpect(jsonPath("$.message").value("Invalid refresh token."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh for suspended user should return 403 ACCOUNT_SUSPENDED")
+    void refresh_suspendedUser_shouldReturn403() throws Exception {
+        String email = "refresh.suspended@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_susp", "Ref Susp", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_SUSPENDED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh for deactivated user should return 403 ACCOUNT_DEACTIVATED")
+    void refresh_deactivatedUser_shouldReturn403() throws Exception {
+        String email = "refresh.deact@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "ref_deact", "Ref Deact", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(user);
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DEACTIVATED"));
     }
 }

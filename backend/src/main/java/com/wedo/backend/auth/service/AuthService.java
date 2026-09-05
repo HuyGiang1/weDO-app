@@ -4,6 +4,8 @@ import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
+import com.wedo.backend.auth.dto.RefreshTokenRequest;
+import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
@@ -14,10 +16,13 @@ import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
+import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.exception.LoginAttemptException;
+import com.wedo.backend.auth.exception.RefreshSessionStatusException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
+import com.wedo.backend.auth.repository.RefreshSessionRepository;
 import com.wedo.backend.auth.security.AuthTokenHasher;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.auth.security.RefreshTokenService;
@@ -71,6 +76,7 @@ public class AuthService {
     private final ProfileCompletionTokenService profileCompletionTokenService;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final RefreshSessionRepository refreshSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final int maxFailedAttempts;
@@ -89,6 +95,7 @@ public class AuthService {
             ProfileCompletionTokenService profileCompletionTokenService,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
+            RefreshSessionRepository refreshSessionRepository,
             ApplicationEventPublisher eventPublisher,
             Clock clock,
             @Value("${security.login.max-failed-attempts:5}") int maxFailedAttempts,
@@ -112,6 +119,7 @@ public class AuthService {
         this.profileCompletionTokenService = profileCompletionTokenService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
+        this.refreshSessionRepository = refreshSessionRepository;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.maxFailedAttempts = maxFailedAttempts;
@@ -510,6 +518,71 @@ public class AuthService {
                 issuedRefresh.rawToken(),
                 accessTokenExpiresAt,
                 userSummary
+        );
+    }
+
+    @Transactional(noRollbackFor = RefreshSessionStatusException.class)
+    public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
+        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        String rawToken = request.refreshToken();
+        String tokenHash = RefreshTokenService.hashToken(rawToken);
+
+        Optional<RefreshSessionEntity> sessionOpt = refreshSessionRepository.findByTokenHashWithLock(tokenHash);
+        if (sessionOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        RefreshSessionEntity session = sessionOpt.get();
+        Instant now = clock.instant();
+
+        if (session.getRevokedAt() != null) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        if (!now.isBefore(session.getExpiresAt())) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        Optional<UserEntity> userOpt = userRepository.findById(session.getUserId());
+        if (userOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        UserEntity user = userOpt.get();
+
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            session.setRevokedAt(now);
+            refreshSessionRepository.save(session);
+            throw new RefreshSessionStatusException(ErrorCode.EMAIL_NOT_VERIFIED);
+        }
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            session.setRevokedAt(now);
+            refreshSessionRepository.save(session);
+            throw new RefreshSessionStatusException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
+        if (user.getStatus() == UserStatus.DEACTIVATED) {
+            session.setRevokedAt(now);
+            refreshSessionRepository.save(session);
+            throw new RefreshSessionStatusException(ErrorCode.ACCOUNT_DEACTIVATED);
+        }
+
+        String accessToken = jwtService.generateAccessToken(user.getId());
+        Instant accessTokenExpiresAt = jwtService.extractExpiration(accessToken);
+
+        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(user.getId());
+
+        session.setRevokedAt(now);
+        session.setReplacedBySessionId(issuedRefresh.sessionId());
+        refreshSessionRepository.save(session);
+
+        return RefreshTokenResponse.of(
+                accessToken,
+                issuedRefresh.rawToken(),
+                accessTokenExpiresAt,
+                issuedRefresh.expiresAt()
         );
     }
 

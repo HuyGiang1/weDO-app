@@ -735,7 +735,7 @@ Taken username:
 - **Same-User Concurrency Semantic Change:**
   - Multiple concurrent refresh requests belonging to the **same user** are serialized through the `UserCredential` row lock.
   - Two different valid refresh sessions for the same user serialize, but both succeed sequentially if otherwise valid.
-  - Concurrent operations across **different users** remain completely independent and non-blocking.
+  - Refresh operations for different users do not contend on the same per-user `UserCredential` lock and may proceed independently, subject to normal database/runtime resource contention.
 
 **Sliding Session Lifetime:**
 - Refresh token TTL: 14 days sliding (`security.refresh-token.ttl: 14d`).
@@ -974,7 +974,7 @@ Taken username:
   - Expired reset token (`now >= expiresAt`)
   - Attempt counter exhausted (`attempts >= 5`)
   - Incorrect OTP code submitted
-- *Oracle Leakage Prevention:* Emitting a single outward error code prevents attackers from determining whether an email exists, whether an account is suspended/unverified, or whether a reset token has expired vs. reached max attempts.
+- *Oracle Leakage Prevention:* The unified outward error reduces account and reset-state oracle leakage through normal HTTP status/body/error semantics. It does not claim complete timing indistinguishability.
 - No `PASSWORD_RESET_CODE_EXPIRED`, `PASSWORD_RESET_ATTEMPTS_EXCEEDED`, `ACCOUNT_SUSPENDED`, or `EMAIL_NOT_VERIFIED` errors are exposed on this endpoint.
 
 **Internal Verification Check Order & Token Semantics:**
@@ -2287,7 +2287,7 @@ PASSWORD_RESET_CODE_INVALID
 - `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, or when attempting refresh with a valid credential for a suspended account (current session is revoked).
 - `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, or when attempting refresh with a valid credential for a deactivated account (current session is revoked).
 - `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
-- `PASSWORD_RESET_CODE_INVALID` (HTTP 400, `"Invalid password reset code."`): Single unified external error emitted on unknown email, non-ACTIVE account, missing/consumed/expired reset token, exhausted attempts ($\ge 5$), or wrong OTP code during password reset. Emitted as a single error to avoid reset oracle and account status disclosure.
+- `PASSWORD_RESET_CODE_INVALID` (HTTP 400, `"Invalid password reset code."`): Single unified external error emitted on unknown email, non-ACTIVE account, missing/consumed/expired reset token, exhausted attempts ($\ge 5$), or wrong OTP code during password reset. Emitted as a single error to reduce reset-flow and account-state oracle leakage through normal response semantics (without claiming timing indistinguishability).
 
 ### Social
 

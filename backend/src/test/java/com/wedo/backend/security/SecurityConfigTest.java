@@ -5,13 +5,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
@@ -60,12 +63,23 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET non-existent protected route without authentication should return exactly 403 Forbidden with no redirect or Basic challenge")
-    void getUnauthenticatedProtected_shouldReturn403ForbiddenWithoutRedirectOrBasicAuth() throws Exception {
-        mockMvc.perform(get("/api/v1/non-existent-protected"))
-                .andExpect(status().isForbidden())
+    @DisplayName("GET unauthenticated protected route should return exactly 401 Unauthorized JSON with matching X-Request-Id and no redirect")
+    void getUnauthenticatedProtected_shouldReturn401UnauthorizedJsonWithMatchingRequestId() throws Exception {
+        String testRequestId = "test-req-id-401";
+
+        mockMvc.perform(get("/api/v1/non-existent-protected")
+                        .header("X-Request-Id", testRequestId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(header().string("X-Request-Id", testRequestId))
                 .andExpect(header().doesNotExist("Location"))
                 .andExpect(header().doesNotExist("WWW-Authenticate"))
-                .andExpect(header().doesNotExist("Set-Cookie"));
+                .andExpect(header().doesNotExist("Set-Cookie"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("Authentication is required."))
+                .andExpect(jsonPath("$.path").value("/api/v1/non-existent-protected"))
+                .andExpect(jsonPath("$.requestId").value(testRequestId))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }
 }

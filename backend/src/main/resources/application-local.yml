@@ -26,3 +26,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+security:
+  jwt:
+    secret-base64: ${WEDO_JWT_SECRET_BASE64:1WZTYD0Q6/LbmgH08YrpYg+Xwsn19ZXp2M3WObbPl/4=}
+    access-token-ttl: 15m

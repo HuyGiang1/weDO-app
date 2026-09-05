@@ -14,3 +14,8 @@ management:
   health:
     redis:
       enabled: false
+
+security:
+  jwt:
+    secret-base64: HtYDoxLoUE6DB2ghGul6hVTMTMpg0ysFkJPvuDWf8aU=
+    access-token-ttl: 15m

@@ -111,4 +111,44 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/verify-email should be permitted without authentication (not 401)")
+    void postVerifyEmail_shouldBePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/verify-email without authentication should return exactly 401 Unauthorized")
+    void getVerifyEmail_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/verify-email"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/resend-verification should be permitted without authentication (not 401)")
+    void postResendVerification_shouldBePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/resend-verification without authentication should return exactly 401 Unauthorized")
+    void getResendVerification_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/resend-verification"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
 }

@@ -9,6 +9,11 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "Resource was not found."),
     CONFLICT(HttpStatus.CONFLICT, "Request conflicts with the current state."),
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "An account with this email already exists."),
+    VERIFICATION_CODE_INVALID(HttpStatus.BAD_REQUEST, "Invalid verification code."),
+    VERIFICATION_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "Verification code has expired."),
+    VERIFICATION_ATTEMPTS_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Maximum verification attempts exceeded."),
+    EMAIL_ALREADY_VERIFIED(HttpStatus.CONFLICT, "Email is already verified."),
+    RESEND_COOLDOWN_ACTIVE(HttpStatus.TOO_MANY_REQUESTS, "Please wait before requesting another verification code."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

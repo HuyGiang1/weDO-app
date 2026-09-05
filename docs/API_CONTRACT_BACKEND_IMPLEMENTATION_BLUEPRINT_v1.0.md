@@ -246,7 +246,7 @@ Short-lived, recommended 15-60 minutes. Contains only stable/minimal identity cl
 
 ### 4.3 Refresh token
 
-Recommended 7-30 days with refresh-token rotation. Using refresh token A invalidates A and produces new access + refresh credentials.
+High-entropy opaque random session credential (not a JWT). Raw token is returned only to client; SHA-256 hash is persisted in the database (`refresh_sessions.token_hash`). Configured with a 14-day sliding TTL (`security.refresh-token.ttl: 14d`). Refresh rotation invalidates the old token/session S1 atomically (`revoked_at = now`, `replaced_by_session_id = S2.id`) and produces a new access token and a replacement refresh token/session S2.
 
 ### 4.4 Authentication vs authorization
 
@@ -592,16 +592,21 @@ Taken username:
   - Profile-incomplete recovery branch issuing fresh `profileCompletionToken`.
   - Fully-onboarded branch issuing application `accessToken` + initial opaque `refreshToken`.
   - Initial `refresh_sessions` row persistence.
-- **M2.8 (Upcoming - Refresh Token Rotation):**
-  - Endpoint: `POST /api/v1/auth/refresh`.
-  - Refresh token rotation mechanism (issuing new refresh token upon refresh).
-  - Revocation of previous refresh session and linkage via `replaced_by_session_id`.
-  - Reuse detection semantics (revoking downstream session family if revoked/compromised token is reused).
-  - *Do not treat M2.8 behavior as already implemented.*
+- **M2.8 (Implemented in commit `480b6e2`):**
+  - Public endpoint `POST /api/v1/auth/refresh` at Spring Security level.
+  - Refresh token rotation (issuing new access token and new opaque refresh token S2).
+  - Atomically revoking previous session S1 (`revokedAt = now`) and linking `replacedBySessionId = S2.id`.
+  - Concurrency-safe same-token handling via row-level `PESSIMISTIC_WRITE` lock.
+  - Reuse of previously rotated token is rejected with `401 REFRESH_TOKEN_INVALID` without broad session revocation.
+  - Enforcing account status control point (revoking current session on non-ACTIVE status).
+- **Still NOT implemented in M2.8:**
+  - Logout endpoint (`POST /api/v1/auth/logout`, M2.9).
+  - User-wide or descendant-family revocation.
+  - Device binding / session management UI / absolute family lifetime (M2.12).
 
 **Security & Configuration Notes:**
 - Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
-- No `JwtAuthenticationFilter` is present in M2.7.
+- No `JwtAuthenticationFilter` is present in M2.7/M2.8.
 - Default configuration settings:
   - `security.jwt.access-token-ttl: 15m`
   - `security.profile-completion-token.ttl: 15m`
@@ -611,8 +616,123 @@ Taken username:
 
 ### AUTH-07 Refresh Token
 
-**Endpoint:** `POST /api/v1/auth/refresh`  
-Uses refresh-token rotation.
+- **Endpoint:** `POST /api/v1/auth/refresh`
+- **Authentication:** Public endpoint at Spring Security level. Credential authentication is performed using `refreshToken` in request body. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/refresh` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `RefreshTokenRequest`
+- **Response DTO:** `RefreshTokenResponse` (HTTP 200 OK)
+
+**Request Schema:**
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+*(No client metadata fields such as `deviceId`, `deviceName`, `pushToken`, or IP metadata are accepted in M2.8.)*
+
+**Request Validation Rules:**
+- `refreshToken`:
+  - Required (`@NotBlank(message = "Refresh token must not be blank")`).
+  - Opaque random credential.
+  - Note: No strict 43-character regex validation is applied (avoids freezing token representation; invalid tokens naturally fail lookup).
+  - No JWT parsing.
+
+**Success Response Schema (HTTP 200 OK):**
+
+```json
+{
+  "accessToken": "eyJhbGciOi...",
+  "refreshToken": "9m2x...",
+  "tokenType": "Bearer",
+  "accessTokenExpiresAt": "2026-09-05T10:30:00Z",
+  "refreshTokenExpiresAt": "2026-09-19T10:15:00Z"
+}
+```
+
+*(Response contains only token credentials and timestamps. No `UserSummaryDto` and no device/session metadata are included.)*
+
+**Happy-Path Rotation Semantics:**
+- Incoming raw refresh token is hashed using SHA-256 (`RefreshTokenService.hashToken`).
+- Matched `refresh_sessions` row is locked exclusively using `PESSIMISTIC_WRITE` (`findByTokenHashWithLock`).
+- Verifies session validity (not revoked, not expired) and account status (`ACTIVE`).
+- Issues a new application access token (JWT 15m) and extracts expiration timestamp via `JwtService`.
+- Issues a new refresh token and creates replacement session S2 via `RefreshTokenService.issue` (Sliding 14 days).
+- Updates previous session S1: `S1.revokedAt = now`, `S1.replacedBySessionId = S2.id`.
+- Atomically commits transaction (`@Transactional`).
+- The previous refresh token becomes invalid immediately upon successful rotation.
+
+**Session Validity & Expiration Rules:**
+- A refresh session is usable only when:
+  1. The session record exists in `refresh_sessions`.
+  2. `revokedAt == null` (unrevoked).
+  3. `now < expiresAt` (strictly before expiry; exact `now == expiresAt` is expired/invalid).
+  4. The associated user exists and is valid for refresh.
+- Expired session:
+  - Returns `401 REFRESH_TOKEN_INVALID`.
+  - No replacement session is created.
+  - The expired row's `revokedAt` is not mutated merely because of expiry (historical state preserved).
+
+**Unified Credential Error Contract:**
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`):
+  - Single, unified external error code for all refresh credential failures: unknown/random token, expired token, revoked token, and previously rotated token.
+  - No separate external error codes (such as `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REUSED`, or `REFRESH_SESSION_REVOKED`) are exposed in M2.8.
+
+**Account Status Control Point:**
+- Refresh serves as an authoritative control point for account state.
+- If the refresh session itself is structurally valid and unexpired, but the user account status is non-ACTIVE:
+  - `PENDING_VERIFICATION` → `403 EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - `SUSPENDED` → `403 ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - `DEACTIVATED` → `403 ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+- In all non-ACTIVE cases:
+  - The current session is immediately revoked: `session.setRevokedAt(now)`.
+  - `replacedBySessionId` remains `null` (no replacement session created).
+  - This revocation **persists in DB** despite the HTTP 403 business error response (managed via `noRollbackFor = RefreshSessionStatusException.class`).
+  - Only `ACTIVE` users may proceed to rotation.
+
+**Reuse & Compromise Semantics:**
+- If an already-rotated token (`revokedAt != null` and `replacedBySessionId != null`) is submitted:
+  - Returns `401 REFRESH_TOKEN_INVALID`.
+  - The replacement session remains active.
+  - M2.8 intentionally does not perform broad compromise revocation (such as revoking descendant chains or all user sessions), because legitimate duplicate/concurrent retries cannot be distinguished reliably from malicious reuse with the current schema.
+
+**Concurrent Same-Token Handling:**
+- Two concurrent refresh requests using the exact same refresh token (e.g., client race condition or network retry):
+  - The first request acquires `PESSIMISTIC_WRITE` lock on the old session, rotates S1 to S2, and succeeds (HTTP 200).
+  - The second request waits for lock release, then observes S1 as already revoked, and fails with `401 REFRESH_TOKEN_INVALID`.
+  - Exactly one replacement session S2 is created and remains active.
+  - Enforced by row-level locking without user-wide revocation.
+
+**Raw Token Storage Limitation:**
+- The server stores only the SHA-256 hash of refresh tokens (`refresh_sessions.token_hash`), never raw tokens.
+- After S1 rotates to S2, the server cannot reconstruct raw S2 for a duplicate S1 request.
+- True idempotent replay of refresh requests is not supported with this security model; raw refresh tokens are never persisted to solve retry behavior.
+
+**Different-Session Concurrency:**
+- Two independent valid refresh sessions for the same user can rotate concurrently without blocking each other (locks are row-level per session, no user-global serialization).
+
+**Sliding Session Lifetime:**
+- Refresh token TTL: 14 days sliding (`security.refresh-token.ttl: 14d`).
+- Each successful rotation creates a new session with `expiresAt = rotation_time + 14 days`.
+- Continued active use extends the session. No absolute family lifetime is enforced in M2.8 (deferred to M2.12 session hardening).
+
+**Token Architecture & Terminology:**
+- `accessToken`: Application JWT authentication credential (`tokenType: "Bearer"`, TTL: 15 minutes, minimal claims: `sub`, `iat`, `exp`).
+- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters, sliding 14 days). **Not a JWT**. Raw token returned only to client; SHA-256 stored server-side.
+- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes).
+
+**Refresh Session State (M2.8):**
+- On successful rotation:
+  - Previous session S1: `revoked_at = now`, `replaced_by_session_id = S2.id`.
+  - New session S2: `revoked_at = null`, `replaced_by_session_id = null`, `expires_at = now + 14 days`.
+- Session rows are permanently preserved for audit and reuse detection (no hard delete).
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/refresh` is public only at the filter-chain level; the refresh token in the body serves as the authentication credential.
+- No `JwtAuthenticationFilter` is required for the refresh endpoint.
+- Relevant configuration settings:
+  - `security.jwt.access-token-ttl: 15m`
+  - `security.refresh-token.ttl: 14d`
 
 ### AUTH-08 Logout
 
@@ -1852,9 +1972,10 @@ ACCOUNT_LOCKED
 
 *Authentication Error Status & Disclosure Semantics:*
 - `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
-- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted only after password verification succeeds on `PENDING_VERIFICATION` accounts.
-- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted only after password verification succeeds on `SUSPENDED` accounts.
-- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted only after password verification succeeds on `DEACTIVATED` accounts.
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired token, revoked token, or previously rotated token during refresh rotation.
+- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, or when attempting refresh with a structurally valid credential for an unverified account (in which case the current refresh session is revoked).
+- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, or when attempting refresh with a valid credential for a suspended account (current session is revoked).
+- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, or when attempting refresh with a valid credential for a deactivated account (current session is revoked).
 - `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
 
 ### Social

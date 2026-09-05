@@ -568,12 +568,12 @@ Taken username:
 *(Sensitive or internal fields such as `passwordHash`, `failedAttempts`, `lockedUntil`, privacy settings, or internal refresh session identifiers are strictly excluded.)*
 
 **Token Architecture & Terminology:**
-- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes) used strictly for `POST /api/v1/auth/profile/complete`. Not an application session.
+- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes) used strictly for `POST /api/v1/auth/complete-profile`. Not an application session.
 - `accessToken`: Application authentication JWT (`tokenType: "Bearer"`, TTL: 15 minutes). Minimal claims: `sub` (user UUID), `iat`, `exp`. No custom claims (roles, email, username) inside the JWT. Response expiration field: `accessTokenExpiresAt`.
 - `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters). **Not a JWT**.
   - Client transmission: Raw token returned only to client in response body.
   - Server persistence: Raw token is **never stored**. Its SHA-256 lowercase hex digest is stored in `refresh_sessions.token_hash`.
-  - Default TTL: 14 days (`security.jwt.refresh-token-ttl`).
+  - Default TTL: 14 days (`security.refresh-token.ttl`).
 
 **Refresh Session State (M2.7):**
 - On fully onboarded login, a single record is inserted into `refresh_sessions`:
@@ -604,7 +604,8 @@ Taken username:
 - No `JwtAuthenticationFilter` is present in M2.7.
 - Default configuration settings:
   - `security.jwt.access-token-ttl: 15m`
-  - `security.jwt.refresh-token-ttl: 14d`
+  - `security.profile-completion-token.ttl: 15m`
+  - `security.refresh-token.ttl: 14d`
   - `security.login.max-failed-attempts: 5`
   - `security.login.lock-duration: 15m`
 

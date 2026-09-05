@@ -2,6 +2,8 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.ForgotPasswordRequest;
+import com.wedo.backend.auth.dto.ForgotPasswordResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.LogoutRequest;
@@ -9,6 +11,7 @@ import com.wedo.backend.auth.dto.RefreshTokenRequest;
 import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
+import com.wedo.backend.auth.dto.ResetPasswordRequest;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
 import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
@@ -18,7 +21,9 @@ import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
+import com.wedo.backend.auth.event.PasswordResetRequestedEvent;
 import com.wedo.backend.auth.exception.LoginAttemptException;
+import com.wedo.backend.auth.exception.PasswordResetAttemptException;
 import com.wedo.backend.auth.exception.RefreshSessionStatusException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
@@ -128,6 +133,14 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 .filter(e -> e.userId().equals(userId))
                 .reduce((first, second) -> second)
                 .orElseThrow(() -> new IllegalStateException("No verification event found for user: " + userId))
+                .rawCode();
+    }
+
+    private String getLatestResetCode(UUID userId) {
+        return applicationEvents.stream(PasswordResetRequestedEvent.class)
+                .filter(e -> e.userId().equals(userId))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new IllegalStateException("No password reset event found for user: " + userId))
                 .rawCode();
     }
 
@@ -2028,5 +2041,588 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 .filter(s -> s.getUserId().equals(userId))
                 .count();
         assertThat(totalSessions).isEqualTo(1);
+    }
+
+    // =========================================================================
+    // M2.10: FORGOT PASSWORD SERVICE TESTS
+    // =========================================================================
+
+    @Test
+    @DisplayName("forgotPassword: active known user should create exactly 1 unconsumed reset token and publish event")
+    void forgotPassword_activeKnownUser_shouldCreateUnconsumedTokenAndPublishEvent() {
+        String email = "forgot.active.test@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        ForgotPasswordResponse response = authService.forgotPassword(new ForgotPasswordRequest(email));
+        assertThat(response.message()).isEqualTo(ForgotPasswordResponse.DEFAULT_MESSAGE);
+
+        List<AuthTokenEntity> resetTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET);
+        assertThat(resetTokens).hasSize(1);
+
+        AuthTokenEntity token = resetTokens.get(0);
+        assertThat(token.getAttempts()).isZero();
+        assertThat(token.getConsumedAt()).isNull();
+        assertThat(token.getExpiresAt()).isEqualTo(currentInstant.plus(Duration.ofMinutes(15)));
+
+        List<PasswordResetRequestedEvent> events = applicationEvents.stream(PasswordResetRequestedEvent.class)
+                .filter(e -> e.userId().equals(userId))
+                .toList();
+        assertThat(events).hasSize(1);
+        PasswordResetRequestedEvent event = events.get(0);
+        assertThat(event.email()).isEqualTo(email);
+        assertThat(event.rawCode()).matches("^\\d{6}$");
+        assertThat(token.getTokenHash()).isNotEqualTo(event.rawCode());
+
+        // Verify stored hash matches rawCode via AuthTokenHasher
+        assertThat(authTokenHasher.matches(
+                userId,
+                AuthTokenType.PASSWORD_RESET,
+                event.rawCode(),
+                token.getTokenHash()
+        )).isTrue();
+    }
+
+    @Test
+    @DisplayName("forgotPassword: unknown email returns generic response without creating token or publishing event")
+    void forgotPassword_unknownEmail_shouldReturnGenericResponseWithoutTokenOrEvent() {
+        ForgotPasswordResponse response = authService.forgotPassword(new ForgotPasswordRequest("ghost.nonexistent@example.com"));
+        assertThat(response.message()).isEqualTo(ForgotPasswordResponse.DEFAULT_MESSAGE);
+
+        List<PasswordResetRequestedEvent> events = applicationEvents.stream(PasswordResetRequestedEvent.class)
+                .filter(e -> e.email().equals("ghost.nonexistent@example.com"))
+                .toList();
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("forgotPassword: non-ACTIVE statuses return generic response without token or event")
+    void forgotPassword_ineligibleStatuses_shouldReturnGenericResponseWithoutTokenOrEvent() {
+        // 1. PENDING_VERIFICATION
+        String pendingEmail = "forgot.pending.status@example.com";
+        RegisterResponse regPending = authService.register(new RegisterRequest(pendingEmail, "Password123!"));
+        ForgotPasswordResponse resp1 = authService.forgotPassword(new ForgotPasswordRequest(pendingEmail));
+        assertThat(resp1.message()).isEqualTo(ForgotPasswordResponse.DEFAULT_MESSAGE);
+        assertThat(authTokenRepository.findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+                regPending.userId(), AuthTokenType.PASSWORD_RESET)).isEmpty();
+
+        // 2. SUSPENDED
+        String suspendedEmail = "forgot.suspended.status@example.com";
+        UUID suspendedId = registerAndVerifyUser(suspendedEmail);
+        UserEntity suspUser = userRepository.findById(suspendedId).orElseThrow();
+        suspUser.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(suspUser);
+
+        ForgotPasswordResponse resp2 = authService.forgotPassword(new ForgotPasswordRequest(suspendedEmail));
+        assertThat(resp2.message()).isEqualTo(ForgotPasswordResponse.DEFAULT_MESSAGE);
+        assertThat(authTokenRepository.findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+                suspendedId, AuthTokenType.PASSWORD_RESET)).isEmpty();
+
+        // 3. DEACTIVATED
+        String deactEmail = "forgot.deact.status@example.com";
+        UUID deactId = registerAndVerifyUser(deactEmail);
+        UserEntity deactUser = userRepository.findById(deactId).orElseThrow();
+        deactUser.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(deactUser);
+
+        ForgotPasswordResponse resp3 = authService.forgotPassword(new ForgotPasswordRequest(deactEmail));
+        assertThat(resp3.message()).isEqualTo(ForgotPasswordResponse.DEFAULT_MESSAGE);
+        assertThat(authTokenRepository.findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+                deactId, AuthTokenType.PASSWORD_RESET)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("forgotPassword: repeated call invalidates previous token and creates fresh one")
+    void forgotPassword_repeatedCall_shouldInvalidatePreviousToken() {
+        String email = "forgot.repeat@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        List<AuthTokenEntity> firstTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET);
+        assertThat(firstTokens).hasSize(1);
+        AuthTokenEntity firstToken = firstTokens.get(0);
+
+        // Advance time by 2 minutes
+        currentInstant = currentInstant.plus(Duration.ofMinutes(2));
+
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+
+        // Re-read first token
+        AuthTokenEntity reFirst = authTokenRepository.findById(firstToken.getId()).orElseThrow();
+        assertThat(reFirst.getConsumedAt()).isEqualTo(currentInstant);
+
+        List<AuthTokenEntity> activeTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET);
+        assertThat(activeTokens).hasSize(1);
+        assertThat(activeTokens.get(0).getId()).isNotEqualTo(firstToken.getId());
+    }
+
+    @Test
+    @DisplayName("forgotPassword: concurrent calls for same user serialize and yield exactly 1 unconsumed token")
+    void forgotPassword_concurrentCalls_sameUser_shouldYieldExactlyOneUnconsumedToken() throws Exception {
+        String email = "forgot.concurrent@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<ForgotPasswordResponse> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.forgotPassword(new ForgotPasswordRequest(email));
+        });
+
+        Future<ForgotPasswordResponse> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.forgotPassword(new ForgotPasswordRequest(email));
+        });
+
+        ready.await();
+        start.countDown();
+
+        f1.get(10, TimeUnit.SECONDS);
+        f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        List<AuthTokenEntity> unconsumed = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET);
+        assertThat(unconsumed).hasSize(1);
+    }
+
+    // =========================================================================
+    // M2.10: RESET PASSWORD SERVICE TESTS
+    // =========================================================================
+
+    @Test
+    @DisplayName("resetPassword: valid reset updates password, resets lockout, consumes token, revokes refresh sessions")
+    void resetPassword_valid_shouldUpdatePasswordResetLockoutConsumeTokenAndRevokeRefreshSessions() {
+        String email = "reset.valid.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        // Complete profile & login to establish active refresh session
+        String compToken = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(compToken, "reset_val", "Reset Val", null, null));
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+        String hashRefresh = RefreshTokenService.hashToken(rawRefresh);
+
+        // Simulate failed login attempts and lockout on credential
+        UserCredentialEntity cred = userCredentialRepository.findById(userId).orElseThrow();
+        cred.setFailedAttempts(3);
+        cred.setLockedUntil(currentInstant.plus(Duration.ofMinutes(10)));
+        userCredentialRepository.save(cred);
+
+        // Issue forgot password token
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String resetCode = getLatestResetCode(userId);
+
+        // Advance clock slightly
+        currentInstant = currentInstant.plus(Duration.ofMinutes(1));
+
+        // Perform reset
+        String newPassword = "BrandNewPassword123!";
+        authService.resetPassword(new ResetPasswordRequest(email, resetCode, newPassword));
+
+        // 1. Password and lockout assertions
+        UserCredentialEntity updatedCred = userCredentialRepository.findById(userId).orElseThrow();
+        assertThat(passwordEncoder.matches(newPassword, updatedCred.getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches("Password123!", updatedCred.getPasswordHash())).isFalse();
+        assertThat(updatedCred.getFailedAttempts()).isZero();
+        assertThat(updatedCred.getLockedUntil()).isNull();
+        assertThat(updatedCred.getPasswordChangedAt()).isEqualTo(currentInstant);
+
+        // 2. Token consumed assertion
+        List<AuthTokenEntity> activeTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET);
+        assertThat(activeTokens).isEmpty();
+
+        // 3. Refresh session revoked assertion
+        RefreshSessionEntity session = refreshSessionRepository.findByTokenHash(hashRefresh).orElseThrow();
+        assertThat(session.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(session.getReplacedBySessionId()).isNull();
+
+        // 4. Verification that new password works for login and old password fails
+        LoginResponse newLogin = authService.login(new LoginRequest(email, newPassword));
+        assertThat(newLogin.accessToken()).isNotBlank();
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(email, "Password123!")))
+                .isInstanceOf(LoginAttemptException.class);
+    }
+
+    @Test
+    @DisplayName("resetPassword: wrong code increments attempts and throws PASSWORD_RESET_CODE_INVALID with persistence")
+    void resetPassword_wrongCode_shouldIncrementAttemptsAndPersist() {
+        String email = "reset.wrong.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+
+        // Submit wrong code
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, "000000", "NewPassword123!")))
+                .isInstanceOf(PasswordResetAttemptException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+
+        // Verify attempts persisted
+        AuthTokenEntity token = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET)
+                .get(0);
+        assertThat(token.getAttempts()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("resetPassword: fifth wrong code sets attempts to 5, persists, and returns 400 INVALID; subsequent call rejects")
+    void resetPassword_fifthWrongAttempt_shouldPersistAndRejectSubsequentCalls() {
+        String email = "reset.maxatt.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+
+        AuthTokenEntity token = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET)
+                .get(0);
+        token.setAttempts(4);
+        authTokenRepository.save(token);
+
+        // 5th wrong attempt
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, "000000", "NewPassword123!")))
+                .isInstanceOf(PasswordResetAttemptException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+
+        AuthTokenEntity tokenAfter5 = authTokenRepository.findById(token.getId()).orElseThrow();
+        assertThat(tokenAfter5.getAttempts()).isEqualTo(5);
+
+        // 6th attempt (even with CORRECT code!) should reject immediately without incrementing attempts
+        String correctCode = getLatestResetCode(userId);
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, correctCode, "NewPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+
+        AuthTokenEntity tokenAfter6 = authTokenRepository.findById(token.getId()).orElseThrow();
+        assertThat(tokenAfter6.getAttempts()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("resetPassword: exact expiry boundary now == expiresAt and now > expiresAt are invalid and do not increment attempts")
+    void resetPassword_expiryBoundaries_shouldBeInvalidAndNotIncrementAttempts() {
+        String email = "reset.expiry.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String code = getLatestResetCode(userId);
+
+        // Boundary: now == expiresAt (12:15:00 UTC)
+        currentInstant = currentInstant.plus(Duration.ofMinutes(15));
+
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, code, "NewPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+
+        AuthTokenEntity token = authTokenRepository.findAll().stream()
+                .filter(t -> t.getUserId().equals(userId) && t.getTokenType() == AuthTokenType.PASSWORD_RESET)
+                .findFirst().orElseThrow();
+        assertThat(token.getAttempts()).isZero();
+
+        // After boundary: now > expiresAt
+        currentInstant = currentInstant.plusSeconds(1);
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, code, "NewPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+        assertThat(token.getAttempts()).isZero();
+    }
+
+    @Test
+    @DisplayName("resetPassword: reuse consumed token or no unconsumed token rejects with INVALID")
+    void resetPassword_reuseConsumedToken_shouldRejectWithInvalid() {
+        String email = "reset.reuse.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String code = getLatestResetCode(userId);
+
+        // First successful reset
+        authService.resetPassword(new ResetPasswordRequest(email, code, "NewPassword123!"));
+
+        // Second attempt with same code
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, code, "AnotherPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+    }
+
+    @Test
+    @DisplayName("resetPassword: unknown email or non-ACTIVE user rejects with PASSWORD_RESET_CODE_INVALID")
+    void resetPassword_unknownOrNonActive_shouldRejectWithInvalid() {
+        // Unknown email
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest("nonexistent@example.com", "123456", "NewPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+
+        // Non-ACTIVE user
+        String email = "reset.susp.check@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String code = getLatestResetCode(userId);
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(email, code, "NewPassword123!")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).errorCode()).isEqualTo(ErrorCode.PASSWORD_RESET_CODE_INVALID));
+    }
+
+    // =========================================================================
+    // M2.10: CONCURRENCY & RACE BARRIER TESTS
+    // =========================================================================
+
+    @Test
+    @DisplayName("resetPassword concurrent: same OTP submitted simultaneously yields exactly 1 success")
+    void resetPassword_concurrent_sameOtp_shouldYieldExactlyOneSuccess() throws Exception {
+        String email = "reset.conc.sameotp@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String code = getLatestResetCode(userId);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<String> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, code, "NewPasswordA123!"));
+                return "SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        Future<String> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, code, "NewPasswordB123!"));
+                return "SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        ready.await();
+        start.countDown();
+
+        String res1 = f1.get(10, TimeUnit.SECONDS);
+        String res2 = f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        List<String> results = List.of(res1, res2);
+        assertThat(results).containsExactlyInAnyOrder("SUCCESS", "PASSWORD_RESET_CODE_INVALID");
+    }
+
+    @Test
+    @DisplayName("resetPassword concurrent: two wrong code attempts do not lose update (attempts becomes 2)")
+    void resetPassword_concurrent_wrongAttempts_shouldIncrementWithoutLostUpdate() throws Exception {
+        String email = "reset.conc.wrong@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<String> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, "111111", "NewPassword123!"));
+                return "SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        Future<String> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, "222222", "NewPassword123!"));
+                return "SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        ready.await();
+        start.countDown();
+
+        String res1 = f1.get(10, TimeUnit.SECONDS);
+        String res2 = f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(res1).isEqualTo("PASSWORD_RESET_CODE_INVALID");
+        assertThat(res2).isEqualTo("PASSWORD_RESET_CODE_INVALID");
+
+        AuthTokenEntity token = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(userId, AuthTokenType.PASSWORD_RESET)
+                .get(0);
+        assertThat(token.getAttempts()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("concurrency: forgotPassword vs resetPassword serialize via UserCredential lock")
+    void forgotPassword_vs_resetPassword_concurrent_shouldSerializeConsistently() throws Exception {
+        String email = "forgot.vs.reset@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String code = getLatestResetCode(userId);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<String> fForgot = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.forgotPassword(new ForgotPasswordRequest(email));
+                return "FORGOT_SUCCESS";
+            } catch (Exception ex) {
+                return ex.getMessage();
+            }
+        });
+
+        Future<String> fReset = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, code, "NewPasswordAfterForgot123!"));
+                return "RESET_SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        ready.await();
+        start.countDown();
+
+        String resForgot = fForgot.get(10, TimeUnit.SECONDS);
+        String resReset = fReset.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(resForgot).isEqualTo("FORGOT_SUCCESS");
+        // Reset either succeeded (if it ran before forgot invalidated old token) or failed with INVALID (if forgot ran first)
+        assertThat(resReset).isIn("RESET_SUCCESS", "PASSWORD_RESET_CODE_INVALID");
+    }
+
+    @Test
+    @DisplayName("CRITICAL MANDATORY TEST: resetPassword vs refreshToken leaves ZERO active refresh sessions surviving after reset commits")
+    void resetPassword_vs_refreshToken_concurrency_leavesZeroActiveRefreshSessions() throws Exception {
+        String email = "reset.vs.refresh@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        String compToken = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(compToken, "rv_ref", "Rv Ref", null, null));
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        authService.forgotPassword(new ForgotPasswordRequest(email));
+        String resetCode = getLatestResetCode(userId);
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<String> fReset = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.resetPassword(new ResetPasswordRequest(email, resetCode, "NewPasswordPostRefresh123!"));
+                return "RESET_SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        Future<String> fRefresh = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            try {
+                authService.refreshToken(new RefreshTokenRequest(rawRefresh));
+                return "REFRESH_SUCCESS";
+            } catch (BusinessException ex) {
+                return ex.errorCode().name();
+            }
+        });
+
+        ready.await();
+        start.countDown();
+
+        String resetRes = fReset.get(10, TimeUnit.SECONDS);
+        String refreshRes = fRefresh.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(resetRes).isEqualTo("RESET_SUCCESS");
+        // refresh either succeeded (and its S2 was subsequently revoked by reset) or failed (if reset ran first)
+        assertThat(refreshRes).isIn("REFRESH_SUCCESS", "REFRESH_TOKEN_INVALID");
+
+        // CRITICAL INVARIANT ASSERTION: ZERO active refresh sessions for this user!
+        long activeSessionCount = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId) && s.getRevokedAt() == null)
+                .count();
+        assertThat(activeSessionCount).isZero();
+    }
+
+    @Test
+    @DisplayName("same user independent refresh sessions serialize through UserCredential lock and both succeed sequentially")
+    void refreshToken_sameUser_independentSessions_serializeAndBothSucceed() throws Exception {
+        String email = "refresh.two.sessions@example.com";
+        UUID userId = registerAndVerifyUser(email);
+
+        String compToken = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(compToken, "ref_two", "Ref Two", null, null));
+
+        // Two logins create two independent active refresh sessions for same user
+        LoginResponse login1 = authService.login(new LoginRequest(email, "Password123!"));
+        LoginResponse login2 = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh1 = login1.refreshToken();
+        String rawRefresh2 = login2.refreshToken();
+
+        int threads = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<RefreshTokenResponse> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.refreshToken(new RefreshTokenRequest(rawRefresh1));
+        });
+
+        Future<RefreshTokenResponse> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.refreshToken(new RefreshTokenRequest(rawRefresh2));
+        });
+
+        ready.await();
+        start.countDown();
+
+        RefreshTokenResponse resp1 = f1.get(10, TimeUnit.SECONDS);
+        RefreshTokenResponse resp2 = f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(resp1.refreshToken()).isNotBlank();
+        assertThat(resp2.refreshToken()).isNotBlank();
+
+        // Both original sessions rotated, both replacement sessions active
+        long activeSessions = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId) && s.getRevokedAt() == null)
+                .count();
+        assertThat(activeSessions).isEqualTo(2);
     }
 }

@@ -9,6 +9,7 @@ import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
+import com.wedo.backend.auth.event.PasswordResetRequestedEvent;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
 import com.wedo.backend.auth.service.AuthService;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
@@ -70,6 +71,14 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                 .filter(e -> e.userId().equals(userId))
                 .reduce((first, second) -> second)
                 .orElseThrow(() -> new IllegalStateException("No verification event for user: " + userId))
+                .rawCode();
+    }
+
+    private String getLatestResetCode(UUID userId) {
+        return applicationEvents.stream(PasswordResetRequestedEvent.class)
+                .filter(e -> e.userId().equals(userId))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new IllegalStateException("No password reset event for user: " + userId))
                 .rawCode();
     }
 
@@ -1414,6 +1423,272 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                                     "refreshToken": "   "
                                 }
                                 """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    // ==========================================
+    // FORGOT PASSWORD CONTROLLER TESTS
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with active user should return 200 generic message without OTP")
+    void forgotPassword_activeUser_shouldReturn200GenericMessage() throws Exception {
+        String email = "forgot.controller.active@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If an account with this email exists, password reset instructions have been sent."))
+                .andExpect(jsonPath("$.userId").doesNotExist())
+                .andExpect(jsonPath("$.rawCode").doesNotExist())
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with unknown email should return identical 200 generic message")
+    void forgotPassword_unknownEmail_shouldReturnIdentical200GenericMessage() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"unknown.ghost.user@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If an account with this email exists, password reset instructions have been sent."))
+                .andExpect(jsonPath("$.userId").doesNotExist())
+                .andExpect(jsonPath("$.code").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with PENDING_VERIFICATION user should return identical 200 generic message")
+    void forgotPassword_pendingVerification_shouldReturnIdentical200GenericMessage() throws Exception {
+        String email = "forgot.pending@example.com";
+        authService.register(new RegisterRequest(email, "Password123!"));
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If an account with this email exists, password reset instructions have been sent."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with SUSPENDED user should return identical 200 generic message")
+    void forgotPassword_suspendedUser_shouldReturnIdentical200GenericMessage() throws Exception {
+        String email = "forgot.suspended@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        UserEntity user = userRepository.findById(reg.userId()).orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If an account with this email exists, password reset instructions have been sent."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with DEACTIVATED user should return identical 200 generic message")
+    void forgotPassword_deactivatedUser_shouldReturnIdentical200GenericMessage() throws Exception {
+        String email = "forgot.deactivated@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        UserEntity user = userRepository.findById(reg.userId()).orElseThrow();
+        user.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(user);
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If an account with this email exists, password reset instructions have been sent."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password with invalid email should return 400 VALIDATION_FAILED")
+    void forgotPassword_invalidEmail_shouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    // ==========================================
+    // RESET PASSWORD CONTROLLER TESTS
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with valid payload should return 204 No Content")
+    void resetPassword_validPayload_shouldReturn204() throws Exception {
+        String email = "reset.controller.valid@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "OldPassword123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk());
+
+        String resetCode = getLatestResetCode(reg.userId());
+
+        String resetJson = String.format("""
+                {
+                    "email": "%s",
+                    "code": "%s",
+                    "newPassword": "NewPassword123!"
+                }
+                """, email, resetCode);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with wrong code should return 400 PASSWORD_RESET_CODE_INVALID")
+    void resetPassword_wrongCode_shouldReturn400() throws Exception {
+        String email = "reset.controller.wrong@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "OldPassword123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk());
+
+        String resetJson = String.format("""
+                {
+                    "email": "%s",
+                    "code": "999999",
+                    "newPassword": "NewPassword123!"
+                }
+                """, email);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_CODE_INVALID"))
+                .andExpect(jsonPath("$.message").value("Invalid password reset code."));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with unknown email should return 400 PASSWORD_RESET_CODE_INVALID")
+    void resetPassword_unknownEmail_shouldReturn400() throws Exception {
+        String resetJson = """
+                {
+                    "email": "nonexistent.reset@example.com",
+                    "code": "123456",
+                    "newPassword": "NewPassword123!"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_CODE_INVALID"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with non-ACTIVE user should return 400 PASSWORD_RESET_CODE_INVALID")
+    void resetPassword_nonActiveUser_shouldReturn400() throws Exception {
+        String email = "reset.controller.suspended@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "OldPassword123!"));
+        authService.verifyEmail(new VerifyEmailRequest(reg.userId(), getLatestVerificationCode(reg.userId())));
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(String.format("{\"email\":\"%s\"}", email)))
+                .andExpect(status().isOk());
+
+        String resetCode = getLatestResetCode(reg.userId());
+
+        // Suspend user afterwards
+        UserEntity user = userRepository.findById(reg.userId()).orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+
+        String resetJson = String.format("""
+                {
+                    "email": "%s",
+                    "code": "%s",
+                    "newPassword": "NewPassword123!"
+                }
+                """, email, resetCode);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("PASSWORD_RESET_CODE_INVALID"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with short password should return 400 VALIDATION_FAILED")
+    void resetPassword_shortPassword_shouldReturn400() throws Exception {
+        String resetJson = """
+                {
+                    "email": "short.pwd@example.com",
+                    "code": "123456",
+                    "newPassword": "short"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password with password > 72 chars or > 72 UTF-8 bytes should return 400 VALIDATION_FAILED")
+    void resetPassword_oversizedPassword_shouldReturn400() throws Exception {
+        String longPassword = "A".repeat(73);
+        String resetJson = String.format("""
+                {
+                    "email": "oversized.pwd@example.com",
+                    "code": "123456",
+                    "newPassword": "%s"
+                }
+                """, longPassword);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(resetJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // UTF-8 byte length test (> 72 bytes even if chars <= 72)
+        String multiBytePwd = "🔑".repeat(20); // 20 * 4 = 80 bytes
+        String byteOverJson = String.format("""
+                {
+                    "email": "bytes.pwd@example.com",
+                    "code": "123456",
+                    "newPassword": "%s"
+                }
+                """, multiBytePwd);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(byteOverJson))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));

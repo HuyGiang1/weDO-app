@@ -14,6 +14,9 @@ import com.wedo.backend.auth.dto.ResendVerificationResponse;
 import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
+import com.wedo.backend.auth.dto.ForgotPasswordRequest;
+import com.wedo.backend.auth.dto.ForgotPasswordResponse;
+import com.wedo.backend.auth.dto.ResetPasswordRequest;
 import com.wedo.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -92,6 +95,18 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
         authService.logout(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ForgotPasswordResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        ForgotPasswordResponse response = authService.forgotPassword(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
         return ResponseEntity.noContent().build();
     }
 }

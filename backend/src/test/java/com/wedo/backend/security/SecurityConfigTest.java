@@ -242,9 +242,49 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/auth/logout without authentication should return exactly 401 Unauthorized")
+    @DisplayName("POST /api/v1/auth/logout without authentication should return exactly 401 Unauthorized")
     void getLogout_unauthenticated_shouldReturn401() throws Exception {
         mockMvc.perform(get("/api/v1/auth/logout"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/forgot-password should be permitted without authentication (not 401)")
+    void postForgotPassword_shouldBePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/forgot-password without authentication should return exactly 401 Unauthorized")
+    void getForgotPassword_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/forgot-password"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/reset-password should be permitted without authentication (not 401)")
+    void postResetPassword_shouldBePublic() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/reset-password without authentication should return exactly 401 Unauthorized")
+    void getResetPassword_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/reset-password"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value(401))

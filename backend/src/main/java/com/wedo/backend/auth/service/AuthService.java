@@ -2,6 +2,8 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.ForgotPasswordRequest;
+import com.wedo.backend.auth.dto.ForgotPasswordResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
 import com.wedo.backend.auth.dto.LogoutRequest;
@@ -9,6 +11,7 @@ import com.wedo.backend.auth.dto.RefreshTokenRequest;
 import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
 import com.wedo.backend.auth.dto.RegisterResponse;
+import com.wedo.backend.auth.dto.ResetPasswordRequest;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
 import com.wedo.backend.auth.dto.UserSummaryDto;
@@ -19,7 +22,9 @@ import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
 import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
+import com.wedo.backend.auth.event.PasswordResetRequestedEvent;
 import com.wedo.backend.auth.exception.LoginAttemptException;
+import com.wedo.backend.auth.exception.PasswordResetAttemptException;
 import com.wedo.backend.auth.exception.RefreshSessionStatusException;
 import com.wedo.backend.auth.exception.VerificationAttemptException;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
@@ -63,8 +68,10 @@ public class AuthService {
     private static final String USERS_USERNAME_KEY_CONSTRAINT = "users_username_key";
     private static final String POSTGRES_UNIQUE_VIOLATION_SQL_STATE = "23505";
     private static final Duration EMAIL_VERIFICATION_TTL = Duration.ofMinutes(15);
+    private static final Duration PASSWORD_RESET_TTL = Duration.ofMinutes(15);
     private static final Duration RESEND_COOLDOWN = Duration.ofSeconds(60);
     private static final int MAX_VERIFICATION_ATTEMPTS = 5;
+    private static final int MAX_RESET_ATTEMPTS = 5;
 
     private final UserRepository userRepository;
     private final UserCredentialRepository userCredentialRepository;
@@ -531,12 +538,30 @@ public class AuthService {
         String rawToken = request.refreshToken();
         String tokenHash = RefreshTokenService.hashToken(rawToken);
 
+        // Step 1: Pre-read session without lock to resolve userId (scalar projection to avoid caching stale entity in L1)
+        Optional<UUID> preUserIdOpt = refreshSessionRepository.findUserIdByTokenHash(tokenHash);
+        if (preUserIdOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+        UUID preUserId = preUserIdOpt.get();
+
+        // Step 2: Acquire stable per-user UserCredential lock first
+        Optional<UserCredentialEntity> credentialOpt = userCredentialRepository.findByUserIdWithLock(preUserId);
+        if (credentialOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        // Step 3: Re-read and acquire lock on RefreshSession
         Optional<RefreshSessionEntity> sessionOpt = refreshSessionRepository.findByTokenHashWithLock(tokenHash);
         if (sessionOpt.isEmpty()) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
         RefreshSessionEntity session = sessionOpt.get();
+        if (!session.getUserId().equals(preUserId)) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
         Instant now = clock.instant();
 
         if (session.getRevokedAt() != null) {
@@ -617,6 +642,162 @@ public class AuthService {
 
         session.setRevokedAt(now);
         refreshSessionRepository.save(session);
+    }
+
+    @Transactional
+    public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+        if (request == null || request.email() == null || request.email().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        Optional<UserEntity> userOpt = userRepository.findByEmail(normalizedEmail);
+
+        if (userOpt.isEmpty()) {
+            return ForgotPasswordResponse.ofDefault();
+        }
+
+        UserEntity user = userOpt.get();
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            return ForgotPasswordResponse.ofDefault();
+        }
+
+        // Lock UserCredential row to serialize concurrent forgot/reset requests for this user
+        Optional<UserCredentialEntity> credentialOpt = userCredentialRepository.findByUserIdWithLock(user.getId());
+        if (credentialOpt.isEmpty()) {
+            return ForgotPasswordResponse.ofDefault();
+        }
+
+        Instant now = clock.instant();
+
+        // Find all current unconsumed PASSWORD_RESET tokens and terminally invalidate them
+        List<AuthTokenEntity> oldTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+                        user.getId(),
+                        AuthTokenType.PASSWORD_RESET
+                );
+        for (AuthTokenEntity oldToken : oldTokens) {
+            oldToken.setConsumedAt(now);
+        }
+        if (!oldTokens.isEmpty()) {
+            authTokenRepository.saveAll(oldTokens);
+        }
+
+        // Generate fresh 6-digit OTP and HMAC-SHA256 hash
+        String rawCode = verificationCodeGenerator.generate();
+        String tokenHash = authTokenHasher.hash(user.getId(), AuthTokenType.PASSWORD_RESET, rawCode);
+
+        AuthTokenEntity newToken = new AuthTokenEntity(
+                UUID.randomUUID(),
+                user.getId(),
+                AuthTokenType.PASSWORD_RESET,
+                tokenHash,
+                now.plus(PASSWORD_RESET_TTL),
+                0,
+                null,
+                now
+        );
+        authTokenRepository.save(newToken);
+
+        eventPublisher.publishEvent(new PasswordResetRequestedEvent(
+                user.getId(),
+                normalizedEmail,
+                rawCode
+        ));
+
+        return ForgotPasswordResponse.ofDefault();
+    }
+
+    @Transactional(noRollbackFor = PasswordResetAttemptException.class)
+    public void resetPassword(ResetPasswordRequest request) {
+        if (request == null || request.email() == null || request.email().isBlank()
+                || request.code() == null || request.code().isBlank()
+                || request.newPassword() == null || request.newPassword().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
+        Optional<UserEntity> userOpt = userRepository.findByEmail(normalizedEmail);
+
+        if (userOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        UserEntity user = userOpt.get();
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        // Acquire stable per-user UserCredential lock
+        Optional<UserCredentialEntity> credentialOpt = userCredentialRepository.findByUserIdWithLock(user.getId());
+        if (credentialOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+        UserCredentialEntity credential = credentialOpt.get();
+
+        // Query unconsumed PASSWORD_RESET tokens newest first
+        List<AuthTokenEntity> unconsumedTokens = authTokenRepository
+                .findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+                        user.getId(),
+                        AuthTokenType.PASSWORD_RESET
+                );
+
+        if (unconsumedTokens.isEmpty()) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        Instant now = clock.instant();
+
+        // Select authoritative token (newest)
+        AuthTokenEntity authoritativeToken = unconsumedTokens.get(0);
+
+        // Cleanup any older unconsumed tokens in legacy/inconsistent state
+        if (unconsumedTokens.size() > 1) {
+            for (int i = 1; i < unconsumedTokens.size(); i++) {
+                unconsumedTokens.get(i).setConsumedAt(now);
+            }
+            authTokenRepository.saveAll(unconsumedTokens.subList(1, unconsumedTokens.size()));
+        }
+
+        // Check A: Expiry (exact now == expiresAt is expired)
+        if (!now.isBefore(authoritativeToken.getExpiresAt())) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        // Check B: Max attempts (attempts >= 5 rejects without further increment)
+        if (authoritativeToken.getAttempts() >= MAX_RESET_ATTEMPTS) {
+            throw new BusinessException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        // Check C: Validate OTP hash
+        boolean matches = authTokenHasher.matches(
+                user.getId(),
+                AuthTokenType.PASSWORD_RESET,
+                request.code(),
+                authoritativeToken.getTokenHash()
+        );
+
+        if (!matches) {
+            int newAttempts = authoritativeToken.getAttempts() + 1;
+            authoritativeToken.setAttempts(newAttempts);
+            authTokenRepository.save(authoritativeToken);
+            throw new PasswordResetAttemptException(ErrorCode.PASSWORD_RESET_CODE_INVALID);
+        }
+
+        // OTP VALID: Terminal consumption of authoritative reset token
+        authoritativeToken.setConsumedAt(now);
+        authTokenRepository.save(authoritativeToken);
+
+        // Password & Lockout mutation
+        credential.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        credential.setFailedAttempts(0);
+        credential.setLockedUntil(null);
+        credential.setPasswordChangedAt(now);
+        credential.setUpdatedAt(now);
+        userCredentialRepository.save(credential);
+
+        // Revoke all active refresh sessions of user (preserves replacedBySessionId on rotated rows)
+        refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
     }
 
     private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {

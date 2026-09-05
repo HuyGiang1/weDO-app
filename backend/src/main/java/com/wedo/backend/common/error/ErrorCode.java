@@ -22,6 +22,7 @@ public enum ErrorCode {
     ACCOUNT_DEACTIVATED(HttpStatus.FORBIDDEN, "Account has been deactivated."),
     ACCOUNT_LOCKED(HttpStatus.LOCKED, "Account is temporarily locked."),
     REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "Invalid refresh token."),
+    PASSWORD_RESET_CODE_INVALID(HttpStatus.BAD_REQUEST, "Invalid password reset code."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

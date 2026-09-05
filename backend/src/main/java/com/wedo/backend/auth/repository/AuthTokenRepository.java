@@ -27,6 +27,11 @@ public interface AuthTokenRepository extends JpaRepository<AuthTokenEntity, UUID
             AuthTokenType tokenType
     );
 
+    List<AuthTokenEntity> findAllByUserIdAndTokenTypeAndConsumedAtIsNullOrderByCreatedAtDescIdDesc(
+            UUID userId,
+            AuthTokenType tokenType
+    );
+
     boolean existsByUserIdAndTokenTypeAndTokenHashAndConsumedAtIsNotNull(
             UUID userId,
             AuthTokenType tokenType,

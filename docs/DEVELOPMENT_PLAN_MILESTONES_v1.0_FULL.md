@@ -112,7 +112,7 @@ Sub-milestones:
 - [x] M2.5  Verify Email + Resend
 - [x] M2.6  Username Availability + Complete Profile
 - [x] M2.7  Login
-- [ ] M2.8  Refresh Token Rotation
+- [x] M2.8  Refresh Token Rotation
 - [ ] M2.9  Logout
 - [ ] M2.10 Forgot / Reset Password
 - [ ] M2.11 Current User + Protected Endpoint

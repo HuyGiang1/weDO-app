@@ -585,7 +585,7 @@ Taken username:
   - `device_name`: `null` (device metadata omitted in M2.7).
   - `ip_address`: `null` (IP tracking omitted in M2.7).
 
-**Milestone Boundary: M2.7 vs. M2.8:**
+**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9:**
 - **M2.7 (Implemented in commit `e74f08e`):**
   - Initial login credential verification with timing-mitigated anti-enumeration.
   - Status disclosure ordering and account lockout semantics.
@@ -599,10 +599,15 @@ Taken username:
   - Concurrency-safe same-token handling via row-level `PESSIMISTIC_WRITE` lock.
   - Reuse of previously rotated token is rejected with `401 REFRESH_TOKEN_INVALID` without broad session revocation.
   - Enforcing account status control point (revoking current session on non-ACTIVE status).
-- **Still NOT implemented in M2.8:**
-  - Logout endpoint (`POST /api/v1/auth/logout`, M2.9).
-  - User-wide or descendant-family revocation.
-  - Device binding / session management UI / absolute family lifetime (M2.12).
+- **M2.9 (Implemented in commit `7eaadeb`):**
+  - Public endpoint `POST /api/v1/auth/logout` at Spring Security level.
+  - Narrow matched-session revocation (`revokedAt = now`, `replacedBySessionId = null`).
+  - Idempotent handling of existing non-rotated revoked sessions (returns HTTP 204 without mutating `revokedAt`).
+  - Refresh/logout concurrency safety via row-level lock serialization (`findByTokenHashWithLock`).
+- **Still NOT implemented in M2.9:**
+  - Logout all devices / user-wide session revocation.
+  - Access-token blacklist or Redis revocation store.
+  - Session management UI / device binding / absolute family lifetime (M2.12).
 
 **Security & Configuration Notes:**
 - Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
@@ -736,8 +741,99 @@ Taken username:
 
 ### AUTH-08 Logout
 
-**Endpoint:** `POST /api/v1/auth/logout`  
-Revokes refresh session/token.
+- **Endpoint:** `POST /api/v1/auth/logout`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. Credential authentication is performed using `refreshToken` in request body. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/logout` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `LogoutRequest`
+- **Response:** HTTP `204 No Content` (Empty body, no `LogoutResponse` DTO).
+
+**Request Schema:**
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+*(No metadata fields such as `deviceId`, `deviceName`, `pushToken`, or IP metadata are accepted in M2.9.)*
+
+**Request Validation Rules:**
+- `refreshToken`:
+  - Required (`@NotBlank(message = "Refresh token must not be blank")`).
+  - Opaque random credential.
+  - No strict 43-character regex validation, no JWT parsing.
+  - `null`, empty `""`, or whitespace-only token fails validation → HTTP 400 `VALIDATION_FAILED`.
+
+**Logout Scope & Active Session Revocation:**
+- Narrow current-session revocation: revokes only the matched refresh session.
+- Does NOT revoke all sessions for the user, does NOT revoke all devices, does NOT traverse replacement descendants, does NOT revoke token family, does NOT blacklist access JWTs.
+- For an existing active/current session (`revokedAt == null && now < expiresAt`):
+  - Sets `revokedAt = now`.
+  - `replacedBySessionId` remains `null`.
+  - Atomically commits transaction (`@Transactional`).
+  - Returns HTTP `204 No Content`.
+  - No replacement session is created, and no new token is issued.
+
+**Idempotent Non-Rotated Revoked Session Semantics:**
+- If an existing session in the database has:
+  - `revokedAt != null` AND `replacedBySessionId == null`
+- Logout returns HTTP `204 No Content` without mutating the database.
+- The original `revokedAt` timestamp is strictly preserved (never overwritten).
+- *Semantic Distinction:* An existing refresh session that is already revoked without a replacement is treated as an idempotent logout success. The database schema does not store revocation reasons, so this state may originate from a prior logout, account-status revocation, or future administrative revocation.
+
+**Rotated Token Semantics:**
+- If an old token that has already been rotated (`revokedAt != null && replacedBySessionId != null`) is submitted:
+  - Returns HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - Does NOT return 204.
+  - Does NOT revoke the replacement session ($S_2$).
+  - Does NOT traverse descendant chains or revoke user sessions.
+  - Reason: Old rotated credentials no longer represent the current concrete refresh session.
+
+**Unknown & Expired Token Semantics:**
+- **Unknown/Random Token:**
+  - Token hash absent from `refresh_sessions` → HTTP 401 `REFRESH_TOKEN_INVALID` (`"Invalid refresh token."`). Does not silently return 204 for unknown credentials.
+- **Expired Active Session:**
+  - If `revokedAt == null` and `now >= expiresAt` (exact boundary `now == expiresAt` is expired/invalid) → HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - No `revokedAt` mutation occurs merely because the session is expired.
+
+**Service Check Order:**
+1. Hash incoming raw token via `RefreshTokenService.hashToken(rawToken)`.
+2. Lock matched row via `refreshSessionRepository.findByTokenHashWithLock(tokenHash)`.
+3. If absent → throw `REFRESH_TOKEN_INVALID` (401).
+4. If `revokedAt != null`:
+   - If `replacedBySessionId != null` → throw `REFRESH_TOKEN_INVALID` (401).
+   - If `replacedBySessionId == null` → return normally (idempotent 204).
+5. If `now >= expiresAt` (`!now.isBefore(session.getExpiresAt())`) → throw `REFRESH_TOKEN_INVALID` (401).
+6. Otherwise (active current session) → `session.setRevokedAt(now)`, save, return normally (204).
+*(Note: Checking revoked-without-replacement before expiry ensures an already-revoked session remains idempotent even after its original expiration timestamp).*
+
+**Account Status Independence:**
+- Logout does NOT require `ACTIVE` user account status.
+- The implementation does not load the `User` entity to authorize logout.
+- A valid refresh session belonging to an unverified (`PENDING_VERIFICATION`), suspended (`SUSPENDED`), or deactivated (`DEACTIVATED`) account can be revoked successfully.
+- Reason: Logout is credential revocation, not access-granting. Does not emit `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, or `ACCOUNT_DEACTIVATED`.
+
+**Locking & Concurrency:**
+- Logout reuses the exact same row-level lock as refresh: `findByTokenHashWithLock`. Operations on the same refresh session row are serialized without user-global locking.
+- **Refresh vs. Logout Race:**
+  - *Outcome A (Logout wins lock):* $S_1$ revoked with `replacedBy = null` → Logout returns 204. Refresh wakes, observes $S_1$ revoked → fails with 401 `REFRESH_TOKEN_INVALID`. No replacement session $S_2$ is created.
+  - *Outcome B (Refresh wins lock):* Refresh rotates $S_1 \rightarrow S_2$ → Refresh returns 200. Logout wakes with raw $S_1$, observes $S_1$ revoked with `replacedBy = S2.id` → fails with 401 `REFRESH_TOKEN_INVALID`. Replacement session $S_2$ remains active.
+- **Double Logout Concurrency:**
+  - Two concurrent logout requests for the same active session serialize on the row lock: the first revokes the session, the second observes the already-revoked state and succeeds idempotently without overwriting `revokedAt`.
+
+**Access Token Limitation Post-Logout:**
+- Logout revokes the refresh session in the database only.
+- Any already-issued stateless JWT access token remains cryptographically valid until its existing expiration timestamp (up to the remaining portion of its 15-minute TTL).
+- No access-token blacklist or Redis revocation store exists in M2.9. Logout does NOT instantly invalidate an already-issued access token.
+- **Client Responsibility:** Upon receiving HTTP 204, the client must clear `accessToken`, `refreshToken`, and local authenticated state from client-side storage.
+
+**Session State Terminology Summary:**
+- **Active / Current:** `revokedAt == null`.
+- **Revoked without replacement:** `revokedAt != null` AND `replacedBySessionId == null`.
+- **Rotated:** `revokedAt != null` AND `replacedBySessionId != null`.
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/logout` is public only at the filter-chain level; the refresh token in the body serves as the credential. Public route does not mean unconditional success.
+- No `JwtAuthenticationFilter` is required for logout.
 
 ### AUTH-09 Forgot Password
 
@@ -1972,7 +2068,7 @@ ACCOUNT_LOCKED
 
 *Authentication Error Status & Disclosure Semantics:*
 - `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
-- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired token, revoked token, or previously rotated token during refresh rotation.
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired token, revoked token, or previously rotated token during refresh rotation and logout.
 - `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, or when attempting refresh with a structurally valid credential for an unverified account (in which case the current refresh session is revoked).
 - `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, or when attempting refresh with a valid credential for a suspended account (current session is revoked).
 - `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, or when attempting refresh with a valid credential for a deactivated account (current session is revoked).
@@ -2148,6 +2244,7 @@ UsernameAvailabilityResponse
 LoginRequest / LoginResponse
 UserSummaryDto
 RefreshTokenRequest / RefreshTokenResponse
+LogoutRequest
 ForgotPasswordRequest
 ResetPasswordRequest
 ChangePasswordRequest

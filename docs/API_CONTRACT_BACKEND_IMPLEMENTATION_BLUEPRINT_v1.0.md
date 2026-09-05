@@ -585,7 +585,7 @@ Taken username:
   - `device_name`: `null` (device metadata omitted in M2.7).
   - `ip_address`: `null` (IP tracking omitted in M2.7).
 
-**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9:**
+**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10:**
 - **M2.7 (Implemented in commit `e74f08e`):**
   - Initial login credential verification with timing-mitigated anti-enumeration.
   - Status disclosure ordering and account lockout semantics.
@@ -604,10 +604,19 @@ Taken username:
   - Narrow matched-session revocation (`revokedAt = now`, `replacedBySessionId = null`).
   - Idempotent handling of existing non-rotated revoked sessions (returns HTTP 204 without mutating `revokedAt`).
   - Refresh/logout concurrency safety via row-level lock serialization (`findByTokenHashWithLock`).
-- **Still NOT implemented in M2.9:**
-  - Logout all devices / user-wide session revocation.
-  - Access-token blacklist or Redis revocation store.
+- **M2.10 (Implemented in commit `6fe6194`):**
+  - Public endpoint `POST /api/v1/auth/forgot-password` at Spring Security level with neutral HTTP 200 response.
+  - Public endpoint `POST /api/v1/auth/reset-password` at Spring Security level with HTTP 204 success and unified `PASSWORD_RESET_CODE_INVALID` HTTP 400 error.
+  - One-time 6-digit `PASSWORD_RESET` OTP lifecycle with HMAC-SHA256 hash storage, 15m TTL, max 5 attempts with attempt persistence, and authoritative newest token selection.
+  - Successful password mutation clearing prior temporary login lockout (`failedAttempts = 0`, `lockedUntil = null`).
+  - Mandatory revocation of all active refresh sessions for the user (`revokedAt = now WHERE revokedAt IS NULL`).
+  - Per-user security barrier (`UserCredential` -> `RefreshSession`) serializing credential-mutating flows and hardening refresh lock ordering.
+- **Still NOT implemented in M2.10:**
+  - Real email delivery provider / JavaMailSender / SendGrid / SES.
+  - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
+  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`).
   - Session management UI / device binding / absolute family lifetime (M2.12).
+  - Current user / protected endpoint (`GET /api/v1/me` - M2.11).
 
 **Security & Configuration Notes:**
 - Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
@@ -713,8 +722,20 @@ Taken username:
 - After S1 rotates to S2, the server cannot reconstruct raw S2 for a duplicate S1 request.
 - True idempotent replay of refresh requests is not supported with this security model; raw refresh tokens are never persisted to solve retry behavior.
 
-**Different-Session Concurrency:**
-- Two independent valid refresh sessions for the same user can rotate concurrently without blocking each other (locks are row-level per session, no user-global serialization).
+**Hardened Lock Ordering & Concurrency (M2.10 Update):**
+- In M2.10, `refreshToken` was hardened to participate in the global per-user security barrier (`UserCredential` $\rightarrow$ `RefreshSession`).
+- **Lock Ordering Algorithm:**
+  1. Hash raw incoming refresh token.
+  2. Preliminary non-authoritative lookup via scalar projection (`findUserIdByTokenHash(tokenHash)`) to resolve `userId` without caching a stale `RefreshSessionEntity` in Hibernate L1 cache.
+  3. Acquire exclusive lock on `UserCredential` (`userCredentialRepository.findByUserIdWithLock(userId)`).
+  4. Authoritative re-read and lock on `RefreshSession` (`refreshSessionRepository.findByTokenHashWithLock(tokenHash)`).
+  5. Verify session `userId` matches locked credential `userId`.
+  6. Revalidate locked session state (`revokedAt == null`, `now < expiresAt`, user account status).
+  7. Perform rotation $S_1 \rightarrow S_2$.
+- **Same-User Concurrency Semantic Change:**
+  - Multiple concurrent refresh requests belonging to the **same user** are serialized through the `UserCredential` row lock.
+  - Two different valid refresh sessions for the same user serialize, but both succeed sequentially if otherwise valid.
+  - Concurrent operations across **different users** remain completely independent and non-blocking.
 
 **Sliding Session Lifetime:**
 - Refresh token TTL: 14 days sliding (`security.refresh-token.ttl: 14d`).
@@ -837,13 +858,205 @@ Taken username:
 
 ### AUTH-09 Forgot Password
 
-**Endpoint:** `POST /api/v1/auth/forgot-password`  
-Response must remain neutral whether an email exists, preventing account enumeration.
+- **Endpoint:** `POST /api/v1/auth/forgot-password`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/forgot-password` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `ForgotPasswordRequest`
+- **Response DTO:** `ForgotPasswordResponse` (HTTP 200 OK)
+
+**Request Schema:**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+*(Contains only `email`. No `userId` or client metadata accepted.)*
+
+**Request Validation Rules:**
+- `email`:
+  - Required (`@NotBlank(message = "Email must not be blank")`).
+  - Standard format (`@Email(message = "Email must be a valid email address")`).
+  - Validation failure → HTTP 400 `VALIDATION_FAILED`.
+
+**Email Normalization:**
+- Canonicalized consistently across all auth flows: `trim().toLowerCase(Locale.ROOT)`.
+
+**Success Response Schema (HTTP 200 OK):**
+
+```json
+{
+  "message": "If an account with this email exists, password reset instructions have been sent."
+}
+```
+
+*(Contains strictly `message`. No `userId`, account status, or OTP information is returned.)*
+
+**Response Neutrality & Anti-Enumeration Semantics:**
+- The endpoint returns the exact same HTTP 200 status and response body for:
+  - Known `ACTIVE` accounts
+  - Unknown / non-existent emails
+  - `PENDING_VERIFICATION` accounts
+  - `SUSPENDED` accounts
+  - `DEACTIVATED` accounts
+- *Disclosure Semantics:* The endpoint uses the same outward HTTP status and response body for known, unknown, and ineligible accounts to reduce direct account enumeration through response semantics. (Note: The implementation does not claim absolute timing indistinguishability against statistical side-channel analysis).
+- For unknown or ineligible accounts, no database token or fake user entity is created.
+
+**Token Issuance & Lifecycle (`PASSWORD_RESET`):**
+- Generated only for existing accounts in `ACTIVE` status:
+  1. Resolves user by canonical email.
+  2. Acquires exclusive row lock on `UserCredential` (`findByUserIdWithLock(userId)`).
+  3. Queries current unconsumed `PASSWORD_RESET` tokens.
+  4. Terminally invalidates all prior unconsumed tokens (`consumedAt = now`).
+  5. Generates a fresh 6-digit numeric OTP via `VerificationCodeGenerator`.
+  6. Hashes raw code with HMAC-SHA256 pepper via `AuthTokenHasher.hash(userId, PASSWORD_RESET, rawCode)`.
+  7. Persists new `AuthTokenEntity`:
+     - `tokenType = PASSWORD_RESET`
+     - `tokenHash = hash` (raw code is **never** persisted or logged)
+     - `attempts = 0`
+     - `consumedAt = null`
+     - `expiresAt = now + 15m` (TTL: 15 minutes)
+  8. Publishes `PasswordResetRequestedEvent(userId, normalizedEmail, rawCode)`.
+  9. Returns generic HTTP 200 `ForgotPasswordResponse`.
+
+**Domain Event & Email Delivery Integration Seam:**
+- The backend publishes `PasswordResetRequestedEvent` containing `(userId, email, rawCode)` for downstream delivery integration.
+- M2.10 does not yet include a production mail listener/provider (no `JavaMailSender`, SendGrid, or AWS SES).
+- There is currently no `@TransactionalEventListener(phase = AFTER_COMMIT)` listener registered in production. The event serves as the application handoff boundary seam (consistent with M2.5 email verification).
+- The raw OTP exists transiently only in the in-memory event payload and is never logged.
+
+**Concurrency & Lock Invariant:**
+- Forgot password requests serialize on the `UserCredential` row lock.
+- If two forgot password requests for the same `ACTIVE` user execute concurrently:
+  - The first acquires lock, invalidates prior tokens, creates $T_1$, and commits.
+  - The second waits for lock release, sees $T_1$, invalidates $T_1$, creates $T_2$, and commits.
+- Final invariant: Exactly one unconsumed `PASSWORD_RESET` token exists per user. No database unique constraint is required.
+
+---
 
 ### AUTH-10 Reset Password
 
-**Endpoint:** `POST /api/v1/auth/reset-password`  
-Validate reset token, update hashed password and invalidate existing refresh sessions.
+- **Endpoint:** `POST /api/v1/auth/reset-password`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/reset-password` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `ResetPasswordRequest`
+- **Response:** HTTP `204 No Content` (Empty body, no response DTO).
+
+**Request Schema:**
+
+```json
+{
+  "email": "user@example.com",
+  "code": "123456",
+  "newPassword": "MyNewPassword123!"
+}
+```
+
+**Request Validation Rules:**
+- `email`: Required (`@NotBlank`), valid email format (`@Email`).
+- `code`: Required (`@NotBlank`), exactly 6 numeric digits (`@Pattern(regexp = "^\\d{6}$")`).
+- `newPassword`:
+  - Reuses exact registration password rules:
+  - Required (`@NotBlank`).
+  - Length: 8 to 72 characters (`@Size(min = 8, max = 72)`).
+  - UTF-8 byte length safety: $\le 72$ bytes for BCrypt compatibility.
+- Any request failing syntactic validation returns HTTP 400 `VALIDATION_FAILED`.
+
+**Unified Outward Error Contract:**
+- For all reset authorization, account status, token validity, and verification failures, the endpoint returns a single unified outward error:
+  - **HTTP 400 Bad Request**
+  - **Error Code:** `PASSWORD_RESET_CODE_INVALID`
+  - **Message:** `"Invalid password reset code."`
+- Unified outward policy applies to:
+  - Unknown / non-existent email
+  - Account status not `ACTIVE` (`PENDING_VERIFICATION`, `SUSPENDED`, `DEACTIVATED`)
+  - Missing `UserCredential` row
+  - No active unconsumed reset token in database
+  - Expired reset token (`now >= expiresAt`)
+  - Attempt counter exhausted (`attempts >= 5`)
+  - Incorrect OTP code submitted
+- *Oracle Leakage Prevention:* Emitting a single outward error code prevents attackers from determining whether an email exists, whether an account is suspended/unverified, or whether a reset token has expired vs. reached max attempts.
+- No `PASSWORD_RESET_CODE_EXPIRED`, `PASSWORD_RESET_ATTEMPTS_EXCEEDED`, `ACCOUNT_SUSPENDED`, or `EMAIL_NOT_VERIFIED` errors are exposed on this endpoint.
+
+**Internal Verification Check Order & Token Semantics:**
+1. Canonicalize email (`trim().toLowerCase(Locale.ROOT)`).
+2. Look up user by email $\rightarrow$ if absent $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+3. Verify user status is `ACTIVE` $\rightarrow$ if non-ACTIVE $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+4. Acquire exclusive lock on `UserCredential` (`findByUserIdWithLock(userId)`) $\rightarrow$ if absent $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+5. Query unconsumed `PASSWORD_RESET` tokens newest first (`consumedAt IS NULL ORDER BY createdAt DESC, id DESC`) $\rightarrow$ if empty $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+6. **Authoritative Token Selection:** The newest unconsumed token is authoritative. Any older unconsumed tokens in the database are terminally invalidated (`consumedAt = now`).
+7. **Check A — Expiration Boundary:**
+   - Evaluated using `clock.instant()`.
+   - `now < expiresAt`: Usable.
+   - `now >= expiresAt` (exact boundary `now == expiresAt` and beyond): Expired $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+   - For an expired token: No attempt increment, no password mutation, no refresh session revocation.
+8. **Check B — Max Attempts:**
+   - If `token.attempts >= 5` $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400) without incrementing attempts further.
+9. **Check C — OTP Verification & Attempt Persistence:**
+   - Hashes supplied code via `AuthTokenHasher.hash(userId, PASSWORD_RESET, rawCode)` and compares with `tokenHash`.
+   - **Wrong OTP:**
+     - `token.attempts` is incremented by 1 and persisted to the database.
+     - On the 5th wrong attempt: `attempts` becomes 5, is persisted to DB, and returns `PASSWORD_RESET_CODE_INVALID` (400). Subsequent attempts see `attempts >= 5` and are rejected without further increments.
+     - Throws dedicated `PasswordResetAttemptException` configured with `noRollbackFor = PasswordResetAttemptException.class` so the increment commits even though HTTP 400 is returned.
+10. **Correct OTP:**
+    - `authoritativeToken.consumedAt = now` (one-time use enforced; cannot be reused).
+    - Proceed to password mutation and session revocation.
+
+**consumedAt Terminology & Lifecycle:**
+- In the `auth_tokens` schema, `consumedAt != null` indicates that the token is **terminal and no longer usable**.
+- A non-null `consumedAt` does not necessarily mean the password was reset; it may mean the token was superseded by a subsequent forgot-password request or invalidated during cleanup. The schema does not track explicit revocation reasons.
+
+**Password Mutation Semantics:**
+- Upon valid code verification:
+  - `credential.passwordHash = passwordEncoder.encode(newPassword)`
+  - `credential.failedAttempts = 0` (clears prior failed login attempts)
+  - `credential.lockedUntil = null` (clears prior temporary login lockout)
+  - `credential.passwordChangedAt = now`
+  - `credential.updatedAt = now`
+- Successful password recovery allows a previously locked-out user to log in immediately with their new password.
+
+**Revocation of All Active Refresh Sessions:**
+- As a security requirement, successful password reset revokes **all active refresh sessions** belonging to that user:
+  - SQL: `UPDATE refresh_sessions SET revoked_at = :now WHERE user_id = :userId AND revoked_at IS NULL`
+  - Only updates rows where `revokedAt IS NULL`.
+  - Does **not** overwrite `replacedBySessionId`, preserving historical S1 $\rightarrow$ S2 rotation linkages.
+  - Revokes sessions across all client devices/browsers.
+- No automatic login is performed; no new refresh token or access token is issued. Response is HTTP 204 No Content.
+
+**Access Token Limitation Post-Reset:**
+- Password reset revokes all refresh sessions in the database immediately.
+- However, already-issued stateless JWT access tokens remain cryptographically valid until their existing expiration timestamp (up to the remaining portion of their 15-minute TTL).
+- No access-token blacklist, Redis revocation store, or token-version mechanism exists in M2.10. Password reset does not instantly terminate active HTTP requests with unexpired access JWTs.
+
+---
+
+### Cross-Milestone Security Architecture: Shared Per-User Barrier
+
+**Global Lock Ordering:**
+To serialize security-sensitive per-user credential and session mutations without deadlocks, a strict global lock hierarchy is established:
+$$\text{UserCredential} \longrightarrow \text{RefreshSession}$$
+
+All sensitive operations follow this hierarchy:
+- **Login (`POST /api/v1/auth/login`):** Locks `UserCredential` by `userId`.
+- **Forgot Password (`POST /api/v1/auth/forgot-password`):** Locks `UserCredential` by `userId`.
+- **Reset Password (`POST /api/v1/auth/reset-password`):** Locks `UserCredential` by `userId`, then bulk-revokes active `RefreshSession` rows.
+- **Refresh Token (`POST /api/v1/auth/refresh`):** Preliminary lookup resolves `userId`, locks `UserCredential` by `userId`, then locks `RefreshSession` row.
+
+**Reset vs. Refresh Race Guarantees:**
+When a password reset and a refresh token rotation execute concurrently for the same user:
+- **Case A (Reset acquires `UserCredential` lock first):**
+  - Reset verifies OTP, mutates password, revokes all active refresh sessions, and commits.
+  - Refresh was blocked waiting on `UserCredential` lock. Refresh unblocks, locks its session row, observes `revokedAt != null`, and fails with `401 REFRESH_TOKEN_INVALID`. No replacement session S2 is created.
+- **Case B (Refresh acquires `UserCredential` lock first):**
+  - Refresh verifies session, rotates S1 to S2, and commits.
+  - Reset was blocked waiting on `UserCredential` lock. Reset unblocks, mutates password, and executes bulk revocation (`WHERE userId = :id AND revokedAt IS NULL`), which catches and revokes the newly created active S2 session.
+- **Security Invariant:** In all interleavings, after the `resetPassword` transaction completes commit, **zero active refresh sessions remain** for that user.
+
+**Login vs. Reset Serialization:**
+- If login wins the lock, it completes credential verification and may issue a new session. Reset then executes, changes the password, and revokes the newly issued session.
+- If reset wins the lock, it changes the password. Login unblocks, reads the updated credential hash, and rejects the old password.
+
+**Forgot vs. Reset Serialization:**
+- Forgot and reset requests for the same user serialize on `UserCredential`. Issuing a new token and consuming an existing token cannot corrupt token lifecycle state.
 
 ---
 
@@ -2064,6 +2277,7 @@ USERNAME_ALREADY_EXISTS
 ACCOUNT_SUSPENDED
 ACCOUNT_DEACTIVATED
 ACCOUNT_LOCKED
+PASSWORD_RESET_CODE_INVALID
 ```
 
 *Authentication Error Status & Disclosure Semantics:*
@@ -2073,6 +2287,7 @@ ACCOUNT_LOCKED
 - `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, or when attempting refresh with a valid credential for a suspended account (current session is revoked).
 - `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, or when attempting refresh with a valid credential for a deactivated account (current session is revoked).
 - `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
+- `PASSWORD_RESET_CODE_INVALID` (HTTP 400, `"Invalid password reset code."`): Single unified external error emitted on unknown email, non-ACTIVE account, missing/consumed/expired reset token, exhausted attempts ($\ge 5$), or wrong OTP code during password reset. Emitted as a single error to avoid reset oracle and account status disclosure.
 
 ### Social
 
@@ -2184,6 +2399,7 @@ REIMBURSEMENT_ALREADY_RESOLVED
 ```text
 USER_REGISTERED
 EMAIL_VERIFICATION_REQUESTED
+PASSWORD_RESET_REQUESTED
 FRIEND_REQUEST_SENT
 FRIEND_REQUEST_ACCEPTED
 USER_BLOCKED
@@ -2245,7 +2461,7 @@ LoginRequest / LoginResponse
 UserSummaryDto
 RefreshTokenRequest / RefreshTokenResponse
 LogoutRequest
-ForgotPasswordRequest
+ForgotPasswordRequest / ForgotPasswordResponse
 ResetPasswordRequest
 ChangePasswordRequest
 ```

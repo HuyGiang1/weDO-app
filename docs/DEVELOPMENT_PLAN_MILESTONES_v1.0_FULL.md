@@ -110,7 +110,7 @@ Sub-milestones:
 - [x] M2.3  JWT Foundation
 - [x] M2.4  Register
 - [x] M2.5  Verify Email + Resend
-- [ ] M2.6  Username Availability + Complete Profile
+- [x] M2.6  Username Availability + Complete Profile
 - [ ] M2.7  Login
 - [ ] M2.8  Refresh Token Rotation
 - [ ] M2.9  Logout

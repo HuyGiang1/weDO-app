@@ -4,6 +4,7 @@ import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
+import com.wedo.backend.auth.dto.LogoutRequest;
 import com.wedo.backend.auth.dto.RefreshTokenRequest;
 import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
@@ -1697,5 +1698,335 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 .count();
         // 4 total: S1, A1 (both revoked), S2, A2 (both active)
         assertThat(totalSessions).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("logout with active valid session should revoke session and set replacedBySessionId to null")
+    void logout_activeValidSession_shouldRevokeAndSetReplacedByNull() {
+        String email = "logout.active@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_active", "Log Active", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        RefreshSessionEntity s1Before = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1Before.getRevokedAt()).isNull();
+        assertThat(s1Before.getReplacedBySessionId()).isNull();
+
+        long sessionsBefore = refreshSessionRepository.count();
+
+        authService.logout(new LogoutRequest(raw1));
+
+        RefreshSessionEntity s1After = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1After.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(s1After.getReplacedBySessionId()).isNull();
+
+        long sessionsAfter = refreshSessionRepository.count();
+        assertThat(sessionsAfter).isEqualTo(sessionsBefore);
+    }
+
+    @Test
+    @DisplayName("logout on already non-rotated revoked session should succeed idempotently without overwriting revokedAt")
+    void logout_alreadyNonRotatedRevokedSession_shouldSucceedIdempotentlyWithoutOverwritingRevokedAt() {
+        String email = "logout.idemp.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_idemp_s", "Log Idemp S", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        // First logout at T1
+        Instant t1 = currentInstant;
+        authService.logout(new LogoutRequest(raw1));
+
+        RefreshSessionEntity s1AfterFirst = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1AfterFirst.getRevokedAt()).isEqualTo(t1);
+
+        // Advance clock to T2
+        currentInstant = currentInstant.plusSeconds(300);
+
+        // Second logout at T2
+        authService.logout(new LogoutRequest(raw1));
+
+        RefreshSessionEntity s1AfterSecond = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1AfterSecond.getRevokedAt()).isEqualTo(t1);
+        assertThat(s1AfterSecond.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("logout on rotated session should reject with REFRESH_TOKEN_INVALID and not revoke replacement session")
+    void logout_rotatedSession_shouldRejectWithRefreshTokenInvalid() {
+        String email = "logout.rotated.service@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_rot_s", "Log Rot S", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        // Rotate S1 -> S2
+        RefreshTokenResponse refreshResp = authService.refreshToken(new RefreshTokenRequest(raw1));
+        String raw2 = refreshResp.refreshToken();
+        String hash2 = RefreshTokenService.hashToken(raw2);
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        assertThat(s1.getRevokedAt()).isNotNull();
+        assertThat(s1.getReplacedBySessionId()).isEqualTo(s2.getId());
+        assertThat(s2.getRevokedAt()).isNull();
+
+        // Attempt logout with rotated token raw1
+        assertThatThrownBy(() -> authService.logout(new LogoutRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // S1 unchanged, S2 remains active
+        RefreshSessionEntity s1Reload = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        RefreshSessionEntity s2Reload = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        assertThat(s1Reload.getReplacedBySessionId()).isEqualTo(s2.getId());
+        assertThat(s2Reload.getRevokedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("logout on expired active session at exact boundary now == expiresAt should reject and not mutate session")
+    void logout_expiredActiveSession_exactBoundary_shouldReject() {
+        String email = "logout.exp.boundary@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_exp_b", "Log Exp B", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        Instant expiresAt = s1.getExpiresAt();
+
+        // Set clock to exact expiry
+        currentInstant = expiresAt;
+
+        assertThatThrownBy(() -> authService.logout(new LogoutRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        RefreshSessionEntity s1Reload = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1Reload.getRevokedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("logout on expired active session after expiry should reject and not mutate session")
+    void logout_expiredActiveSession_afterExpiry_shouldReject() {
+        String email = "logout.exp.after@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_exp_a", "Log Exp A", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        Instant expiresAt = s1.getExpiresAt();
+
+        // Set clock after expiry
+        currentInstant = expiresAt.plusSeconds(10);
+
+        assertThatThrownBy(() -> authService.logout(new LogoutRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        RefreshSessionEntity s1Reload = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1Reload.getRevokedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("logout with unknown random token should reject with REFRESH_TOKEN_INVALID")
+    void logout_unknownRandomToken_shouldReject() {
+        assertThatThrownBy(() -> authService.logout(new LogoutRequest("random-unrecognized-token")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+    }
+
+    @Test
+    @DisplayName("logout with valid session belonging to SUSPENDED user should succeed")
+    void logout_suspendedUser_shouldSucceed() {
+        String email = "logout.suspended@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_susp", "Log Susp", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepository.save(user);
+
+        authService.logout(new LogoutRequest(raw1));
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(s1.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("logout with valid session belonging to DEACTIVATED user should succeed")
+    void logout_deactivatedUser_shouldSucceed() {
+        String email = "logout.deactivated@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_deact", "Log Deact", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        UserEntity user = userRepository.findById(userId).orElseThrow();
+        user.setStatus(UserStatus.DEACTIVATED);
+        userRepository.save(user);
+
+        authService.logout(new LogoutRequest(raw1));
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(s1.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("concurrent refresh vs logout on same session should produce a valid serializable outcome")
+    void logout_concurrent_raceWithRefresh_sameSession_shouldBeConsistent() throws Exception {
+        String email = "logout.race@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_race", "Log Race", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<RefreshTokenResponse> refreshFuture = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            return authService.refreshToken(new RefreshTokenRequest(raw1));
+        });
+
+        Future<Boolean> logoutFuture = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            authService.logout(new LogoutRequest(raw1));
+            return true;
+        });
+
+        ready.await();
+        start.countDown();
+
+        boolean refreshSuccess = false;
+        boolean logoutSuccess = false;
+        RefreshTokenResponse refreshResp = null;
+
+        try {
+            refreshResp = refreshFuture.get(10, TimeUnit.SECONDS);
+            refreshSuccess = true;
+        } catch (ExecutionException e) {
+            assertThat(e.getCause())
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        try {
+            logoutFuture.get(10, TimeUnit.SECONDS);
+            logoutSuccess = true;
+        } catch (ExecutionException e) {
+            assertThat(e.getCause())
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        executor.shutdown();
+
+        // Invariant: Exactly one must succeed, one must fail
+        assertThat(refreshSuccess ^ logoutSuccess).isTrue();
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1.getRevokedAt()).isNotNull();
+
+        if (logoutSuccess) {
+            // Case A: Logout won lock
+            assertThat(s1.getReplacedBySessionId()).isNull();
+            long totalSessions = refreshSessionRepository.findAll().stream()
+                    .filter(s -> s.getUserId().equals(userId))
+                    .count();
+            assertThat(totalSessions).isEqualTo(1);
+        } else {
+            // Case B: Refresh won lock
+            assertThat(refreshResp).isNotNull();
+            String hash2 = RefreshTokenService.hashToken(refreshResp.refreshToken());
+            RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+            assertThat(s1.getReplacedBySessionId()).isEqualTo(s2.getId());
+            assertThat(s2.getRevokedAt()).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("concurrent double logout on same session should be idempotent and both succeed")
+    void logout_concurrent_doubleLogout_sameSession_shouldBeIdempotentAndPreserveFirstTimestamp() throws Exception {
+        String email = "logout.double@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_double", "Log Double", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        int threadCount = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Future<Boolean> f1 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            authService.logout(new LogoutRequest(raw1));
+            return true;
+        });
+
+        Future<Boolean> f2 = executor.submit(() -> {
+            ready.countDown();
+            start.await();
+            authService.logout(new LogoutRequest(raw1));
+            return true;
+        });
+
+        ready.await();
+        start.countDown();
+
+        Boolean res1 = f1.get(10, TimeUnit.SECONDS);
+        Boolean res2 = f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        assertThat(res1).isTrue();
+        assertThat(res2).isTrue();
+
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        assertThat(s1.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(s1.getReplacedBySessionId()).isNull();
+
+        long totalSessions = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .count();
+        assertThat(totalSessions).isEqualTo(1);
     }
 }

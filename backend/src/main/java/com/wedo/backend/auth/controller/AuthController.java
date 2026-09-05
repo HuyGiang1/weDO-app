@@ -4,6 +4,7 @@ import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
+import com.wedo.backend.auth.dto.LogoutRequest;
 import com.wedo.backend.auth.dto.RefreshTokenRequest;
 import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
@@ -86,5 +87,11 @@ public class AuthController {
     public ResponseEntity<RefreshTokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         RefreshTokenResponse response = authService.refreshToken(request);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
+        authService.logout(request);
+        return ResponseEntity.noContent().build();
     }
 }

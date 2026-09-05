@@ -4,6 +4,7 @@ import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
 import com.wedo.backend.auth.dto.LoginResponse;
+import com.wedo.backend.auth.dto.LogoutRequest;
 import com.wedo.backend.auth.dto.RefreshTokenRequest;
 import com.wedo.backend.auth.dto.RefreshTokenResponse;
 import com.wedo.backend.auth.dto.RegisterRequest;
@@ -584,6 +585,38 @@ public class AuthService {
                 accessTokenExpiresAt,
                 issuedRefresh.expiresAt()
         );
+    }
+
+    @Transactional
+    public void logout(LogoutRequest request) {
+        if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        String rawToken = request.refreshToken();
+        String tokenHash = RefreshTokenService.hashToken(rawToken);
+
+        Optional<RefreshSessionEntity> sessionOpt = refreshSessionRepository.findByTokenHashWithLock(tokenHash);
+        if (sessionOpt.isEmpty()) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        RefreshSessionEntity session = sessionOpt.get();
+
+        if (session.getRevokedAt() != null) {
+            if (session.getReplacedBySessionId() != null) {
+                throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+            }
+            return;
+        }
+
+        Instant now = clock.instant();
+        if (!now.isBefore(session.getExpiresAt())) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        session.setRevokedAt(now);
+        refreshSessionRepository.save(session);
     }
 
     private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {

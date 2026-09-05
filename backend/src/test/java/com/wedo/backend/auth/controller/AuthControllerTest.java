@@ -35,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -1272,5 +1273,149 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.code").value("ACCOUNT_DEACTIVATED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with valid token should return 204 No Content and empty body")
+    void logout_validToken_shouldReturn204() throws Exception {
+        String email = "logout.valid@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_valid", "Log Valid", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with already non-rotated revoked session should return 204 No Content idempotently")
+    void logout_alreadyNonRotatedRevoked_shouldReturn204() throws Exception {
+        String email = "logout.idemp@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_idemp", "Log Idemp", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        // First call
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        // Second call (idempotent)
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with random unknown token should return 401 REFRESH_TOKEN_INVALID")
+    void logout_invalidRandomToken_shouldReturn401() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "refreshToken": "random-unknown-refresh-token"
+                                }
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_INVALID"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with rotated old token should return 401 REFRESH_TOKEN_INVALID")
+    void logout_rotatedOldToken_shouldReturn401() throws Exception {
+        String email = "logout.rotated@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "log_rotated", "Log Rotated", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+
+        // Rotate raw1 -> raw2
+        authService.refreshToken(new com.wedo.backend.auth.dto.RefreshTokenRequest(raw1));
+
+        String payload = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, raw1);
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_INVALID"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with null refreshToken should return 400 VALIDATION_FAILED")
+    void logout_nullRefreshToken_shouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "refreshToken": null
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with empty refreshToken should return 400 VALIDATION_FAILED")
+    void logout_emptyRefreshToken_shouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "refreshToken": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout with whitespace refreshToken should return 400 VALIDATION_FAILED")
+    void logout_whitespaceRefreshToken_shouldReturn400() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "refreshToken": "   "
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
 }

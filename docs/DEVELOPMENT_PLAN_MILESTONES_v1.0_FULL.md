@@ -107,7 +107,7 @@ Tests:
 Sub-milestones:
 - [x] M2.1  Auth JPA Mapping Foundation
 - [x] M2.2  Security Foundation + BCrypt
-- [ ] M2.3  JWT Foundation
+- [x] M2.3  JWT Foundation
 - [ ] M2.4  Register
 - [ ] M2.5  Verify Email + Resend
 - [ ] M2.6  Username Availability + Complete Profile

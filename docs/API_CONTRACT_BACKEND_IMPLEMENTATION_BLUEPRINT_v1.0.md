@@ -279,16 +279,38 @@ Authentication answers **who the user is**. Authorization answers **whether that
 
 ### AUTH-02 Verify Email
 
-**Endpoint:** `POST /api/v1/auth/verify-email`
+- **Endpoint:** `POST /api/v1/auth/verify-email`
+- **Authentication:** Public
+- **Request DTO:** `VerifyEmailRequest`
 
 ```json
 {
-  "userId": "...",
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
   "code": "123456"
 }
 ```
 
-Validate active token, expiration and attempts; compare hashed code; consume token; set `email_verified_at`. Errors: `VERIFICATION_CODE_INVALID`, `VERIFICATION_CODE_EXPIRED`, `VERIFICATION_ATTEMPTS_EXCEEDED`, `EMAIL_ALREADY_VERIFIED`.
+**Response DTO:** `VerifyEmailResponse` (HTTP 200 OK)
+
+```json
+{
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
+  "status": "ACTIVE",
+  "emailVerifiedAt": "2026-09-05T10:15:30Z",
+  "nextStep": "COMPLETE_PROFILE",
+  "profileCompletionToken": "eyJhbGciOiJIUzI1NiJ9..."
+}
+```
+
+**Business flow:** Validate active token, expiration and attempts; compare hashed code; consume token; update user status to `ACTIVE`; record `email_verified_at`; issue short-lived `profileCompletionToken`.
+
+**Credential semantics:**
+- `profileCompletionToken` is a short-lived **onboarding credential** (TTL: 15 minutes).
+- Purpose is strictly restricted to `COMPLETE_PROFILE`.
+- It is **not** an application access token and **not** a refresh token.
+- It must **not** be used for authenticated/protected application APIs.
+
+**Errors:** `400 VALIDATION_FAILED`, `400 VERIFICATION_CODE_INVALID`, `400 VERIFICATION_CODE_EXPIRED`, `400 VERIFICATION_ATTEMPTS_EXCEEDED`, `404 RESOURCE_NOT_FOUND`, `409 EMAIL_ALREADY_VERIFIED`.
 
 ### AUTH-03 Resend Verification
 
@@ -297,10 +319,13 @@ Uses Redis rate limiting to prevent abuse.
 
 ### AUTH-04 Complete Initial Profile
 
-**Endpoint:** `POST /api/v1/auth/complete-profile`
+- **Endpoint:** `POST /api/v1/auth/complete-profile`
+- **Authentication:** Public at Spring Security level (no `Authorization: Bearer` access token required). Authorization is performed using the `profileCompletionToken` onboarding credential. This is onboarding-only behavior.
+- **Request DTO:** `CompleteProfileRequest`
 
 ```json
 {
+  "profileCompletionToken": "eyJhbGciOiJIUzI1NiJ9...",
   "username": "huygiang",
   "displayName": "Huy Giang",
   "bio": null,
@@ -308,11 +333,119 @@ Uses Redis rate limiting to prevent abuse.
 }
 ```
 
-Username must be unique. Display name is required. Avatar and bio are optional.
+> **CRITICAL SECURITY REQUIREMENT:**
+> The client does **not** submit and is never trusted to supply `userId`. Backend derives `userId` exclusively from the cryptographically validated `profileCompletionToken`. No `SecurityContext` authentication is established.
+
+**Validation & Normalization Rules:**
+- `profileCompletionToken`:
+  - Required, non-blank.
+- `username`:
+  - Required.
+  - 3..30 characters.
+  - Allowed characters: letters A-Z / a-z, digits 0-9, underscore `_` (`^[a-zA-Z0-9_]{3,30}$`).
+  - No whitespace allowed.
+  - Canonical storage in lowercase (`trim().toLowerCase(Locale.ROOT)`).
+  - Uniqueness enforced case-insensitively via DB unique index.
+- `displayName`:
+  - Required.
+  - Max 100 characters (`@Size(min = 1, max = 100)`).
+  - Unicode allowed.
+  - Trimmed before persistence (`trim()`).
+  - Non-unique.
+- `bio`:
+  - Optional.
+  - Max 500 characters (`@Size(max = 500)`).
+  - Trimmed before persistence; blank after trim becomes `null`.
+- `avatarStorageKey`:
+  - Optional.
+  - Max 255 characters (`@Size(max = 255)`).
+  - Preserved exactly as supplied (no normalization in M2.6).
+
+**Business Flow:**
+1. Validate incoming request fields via declarative Bean Validation.
+2. Verify and parse `profileCompletionToken` (purpose = `COMPLETE_PROFILE`, unexpired, valid signature).
+3. Extract `userId` from token subject; retrieve user entity from DB.
+4. Verify user status is `ACTIVE` (return 403 `ACCESS_DENIED` if not).
+5. Verify user has not already completed profile (`username == null`; return 409 `PROFILE_ALREADY_COMPLETED` if already populated).
+6. Check case-insensitive username availability; return 409 `USERNAME_ALREADY_EXISTS` if taken.
+7. Persist canonical profile fields (`username`, `displayName`, `bio`, `avatarStorageKey`) and handle potential concurrent unique constraint violation gracefully.
+8. Return completed profile response.
+
+**Response DTO:** `CompleteProfileResponse` (HTTP 200 OK)
+
+```json
+{
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
+  "username": "huygiang",
+  "displayName": "Huy Giang",
+  "status": "ACTIVE",
+  "nextStep": "LOGIN"
+}
+```
+
+*Note: Returns HTTP 200 OK with `nextStep=LOGIN`. No access token and no refresh token are issued.*
+
+**Error Behavior:**
+- `400 VALIDATION_FAILED`:
+  - Missing/blank token.
+  - Invalid username format (length not 3..30, invalid characters, whitespace).
+  - Invalid DTO fields (`displayName` missing/blank or >100, `bio` >500, `avatarStorageKey` >255).
+- `401 UNAUTHORIZED`:
+  - Malformed profile completion token.
+  - Invalid signature.
+  - Expired token.
+  - Wrong token purpose (not `COMPLETE_PROFILE`).
+  - Invalid token subject (not a valid UUID).
+- `403 ACCESS_DENIED`:
+  - User status is not `ACTIVE`.
+- `404 RESOURCE_NOT_FOUND`:
+  - Verified token subject does not map to any existing user.
+- `409 PROFILE_ALREADY_COMPLETED`:
+  - Username already populated on the user entity.
+- `409 USERNAME_ALREADY_EXISTS`:
+  - Username already taken or DB uniqueness race on insert/update.
+
+**Deferred Onboarding Recovery Requirement for Login:**
+> ProfileCompletionToken TTL: 15 minutes.
+>
+> If it expires before profile completion, the account remains: `status = ACTIVE`, `username == null`.
+>
+> Recovery is intentionally deferred to AUTH Login work:
+> Future M2.7 Login must detect `ACTIVE + username == null` and issue a fresh `ProfileCompletionToken` with `nextStep = COMPLETE_PROFILE` without treating the user as fully onboarded.
 
 ### AUTH-05 Username Availability
 
-**Endpoint:** `GET /api/v1/auth/usernames/{username}/availability`
+- **Endpoint:** `GET /api/v1/auth/usernames/{username}/availability`
+- **Authentication:** Public
+- **Response DTO:** `UsernameAvailabilityResponse` (HTTP 200 OK)
+
+**Validation Rules:**
+- Path variable `{username}` follows the same MVP validation rules as profile completion: 3..30 characters, `^[a-zA-Z0-9_]{3,30}$`.
+- Invalid path username returns `400 VALIDATION_FAILED`.
+- Taken username still returns `200 OK` with `available: false` (do **not** return 409).
+
+**Case-Insensitivity & Canonical Handling:**
+- Username comparison is strictly case-insensitive.
+- Example: If username `huygiang` exists in the database, availability queries for `HuyGiang`, `HUYGIANG`, and `huygiang` all refer to the same logical username and return `available: false`.
+- Response always returns the canonical lowercase username.
+
+**Response Examples (HTTP 200 OK):**
+
+Available username:
+```json
+{
+  "username": "huygiang",
+  "available": true
+}
+```
+
+Taken username:
+```json
+{
+  "username": "huygiang",
+  "available": false
+}
+```
 
 ### AUTH-06 Login
 
@@ -1730,9 +1863,10 @@ Domain events may use Spring `ApplicationEventPublisher` inside the modular mono
 
 ```text
 RegisterRequest / RegisterResponse
-VerifyEmailRequest
-ResendVerificationRequest
-CompleteProfileRequest
+VerifyEmailRequest / VerifyEmailResponse
+ResendVerificationRequest / ResendVerificationResponse
+CompleteProfileRequest / CompleteProfileResponse
+UsernameAvailabilityResponse
 LoginRequest / LoginResponse
 RefreshTokenRequest / RefreshTokenResponse
 ForgotPasswordRequest

@@ -12,3 +12,5 @@ security:
   jwt:
     secret-base64: ${WEDO_JWT_SECRET_BASE64}
     access-token-ttl: ${WEDO_JWT_ACCESS_TOKEN_TTL:15m}
+  auth-token:
+    pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64}

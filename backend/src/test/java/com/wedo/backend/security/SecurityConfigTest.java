@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -81,5 +82,33 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.path").value("/api/v1/non-existent-protected"))
                 .andExpect(jsonPath("$.requestId").value(testRequestId))
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/register should be permitted without authentication")
+    void postRegister_shouldBePublic() throws Exception {
+        String payload = """
+                {
+                    "email": "security.public@example.com",
+                    "password": "Password123!"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userId").isNotEmpty())
+                .andExpect(jsonPath("$.email").value("security.public@example.com"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/register without authentication should return exactly 401 Unauthorized")
+    void getRegister_unauthenticated_shouldReturn401() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/register"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 }

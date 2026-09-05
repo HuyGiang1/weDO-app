@@ -19,3 +19,5 @@ security:
   jwt:
     secret-base64: HtYDoxLoUE6DB2ghGul6hVTMTMpg0ysFkJPvuDWf8aU=
     access-token-ttl: 15m
+  auth-token:
+    pepper-base64: t6rY9uI2oP5aD8k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3h=

@@ -8,6 +8,7 @@ public enum ErrorCode {
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access is denied."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "Resource was not found."),
     CONFLICT(HttpStatus.CONFLICT, "Request conflicts with the current state."),
+    EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "An account with this email already exists."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

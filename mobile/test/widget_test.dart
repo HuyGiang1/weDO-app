@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app/app.dart';
 
 void main() {
-  testWidgets('WeDoApp mounts and displays initial WelcomeScreen', (WidgetTester tester) async {
+  testWidgets('WeDoApp mounts and displays initial WelcomeScreen', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const WeDoApp());
 
     expect(find.text('WeDo'), findsOneWidget);
@@ -11,9 +13,7 @@ void main() {
     expect(find.text('Login'), findsOneWidget);
   });
 
-  testWidgets('Welcome Login stays on Welcome until LoginScreen exists', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('Welcome Login reaches LoginScreen', (WidgetTester tester) async {
     await tester.pumpWidget(const WeDoApp());
 
     final loginButton = find.text('Login');
@@ -21,11 +21,11 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Squad up.'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Register Login stays on Register until LoginScreen exists', (
+  testWidgets('Register Login reaches LoginScreen', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const WeDoApp());
@@ -41,7 +41,7 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Join WeDo'), findsOneWidget);
+    expect(find.text('Welcome Back'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

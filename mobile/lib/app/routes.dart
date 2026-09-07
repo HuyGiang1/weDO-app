@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../features/auth/presentation/screens/register_screen.dart';
+import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
 
@@ -34,7 +35,7 @@ abstract final class AppRoutes {
               Navigator.of(context).pushNamed(register);
             },
             onLoginPressed: () {
-              // App-level wiring seam: connect when LoginScreen exists.
+              Navigator.of(context).pushNamed(login);
             },
           ),
           settings: settings,
@@ -43,8 +44,15 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           builder: (context) => RegisterScreen(
             onLoginPressed: () {
-              // App-level wiring seam: will connect to LoginScreen when implemented
+              Navigator.of(context).pushNamed(login);
             },
+          ),
+          settings: settings,
+        );
+      case login:
+        return MaterialPageRoute<void>(
+          builder: (context) => LoginScreen(
+            onCreateAccount: () => Navigator.of(context).pushNamed(register),
           ),
           settings: settings,
         );

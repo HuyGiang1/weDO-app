@@ -288,9 +288,22 @@ HTTP Request
   - Public endpoint + expired Bearer credential → HTTP 401 `AUTH_TOKEN_EXPIRED`.
   - *Rationale:* When a client explicitly supplies Bearer credentials, the backend validates them rather than silently ignoring invalid credentials.
 
-### 4.5 Refresh Token
+### 4.5 Refresh Token & Absolute Family Lifetime
 
-High-entropy opaque random session credential (not a JWT). Raw token is returned only to client; SHA-256 hash is persisted in the database (`refresh_sessions.token_hash`). Configured with a 14-day sliding TTL (`security.refresh-token.ttl: 14d`). Refresh rotation invalidates the old token/session S1 atomically (`revoked_at = now`, `replaced_by_session_id = S2.id`) and produces a new access token and a replacement refresh token/session S2.
+High-entropy opaque random session credential (not a JWT; 256-bit secure random, Base64 URL-safe without padding, 43 characters). Raw token is returned only to client in response body; SHA-256 lowercase hex digest is persisted in the database (`refresh_sessions.token_hash`).
+
+- **Sliding Session Lifetime:** Configured with a 14-day sliding TTL (`security.refresh-token.ttl: 14d`, environment override `WEDO_REFRESH_TOKEN_TTL`).
+- **Absolute Family Lifetime:** Configured with a 30-day maximum lifetime cap for an entire login session family (`security.refresh-token.max-family-lifetime: 30d`, environment override `WEDO_REFRESH_TOKEN_MAX_FAMILY_LIFETIME`).
+- **Sliding vs. Absolute Lifetime Distinction:**
+  - *Sliding TTL:* Applies per refresh-session node ($T_{\text{now}} + 14d$).
+  - *Absolute Family Lifetime:* Fixed maximum deadline for an entire login family established at login ($T_{\text{login}} + 30d$). Repeated refresh operations extend the sliding session node but cannot slide past the fixed family deadline. When the family deadline is reached, the refresh session becomes permanently invalid, requiring re-authentication.
+- **Access JWT Decoupling & Status-Blindness:**
+  - Refresh family hardening does NOT alter access JWT claims (`sub`, `iat`, `exp`, 15 minutes TTL).
+  - No `sid`, `familyId`, `absoluteExp`, or `deviceId` claims are embedded in the access JWT.
+  - Already-issued access JWTs remain cryptographically usable until their expiration (`exp`), even after refresh credentials or families become invalid or revoked (no distributed access-token blacklist).
+- **Session Metadata vs. Cryptographic Device-Binding Limitation:**
+  - Refresh sessions capture optional client device display metadata (`deviceName`) and server-observed remote IP address (`ipAddress`) for auditing and session display.
+  - This metadata does NOT provide cryptographic device binding, hardware keystore proofs, device certificates, DPoP, mTLS, or client device fingerprinting.
 
 ### 4.6 Security Error Handling & Error Envelope Consolidation
 
@@ -522,6 +535,8 @@ Taken username:
 
 - **Endpoint:** `POST /api/v1/auth/login`
 - **Authentication:** Public endpoint at Spring Security level. (Note: `GET /api/v1/auth/login` remains protected/unauthorized. No `Authorization: Bearer` access token required for login.)
+- **Request Headers:**
+  - `X-Device-Name` (optional string): Client display/device identifier (max 100 characters).
 - **Request DTO:** `LoginRequest`
 - **Response DTO:** `LoginResponse` (HTTP 200 OK)
 
@@ -534,9 +549,9 @@ Taken username:
 }
 ```
 
-*(No client metadata fields such as `deviceId`, `deviceName`, `pushToken`, `rememberMe`, or `ipAddress` are accepted in M2.7.)*
+*(Request body remains strictly `email` and `password`. Optional client display metadata is accepted via the `X-Device-Name` HTTP header. Existing clients omitting the header remain fully compatible. No `deviceId`, `pushToken`, `rememberMe`, or client-supplied IP addresses are accepted in the request body.)*
 
-**Request Validation Rules:**
+**Request Validation & Metadata Normalization Rules:**
 - `email`:
   - Required (`@NotBlank`).
   - Valid email syntax (`@Email`).
@@ -545,6 +560,19 @@ Taken username:
   - Required (`@NotBlank`).
   - Max 72 UTF-8 bytes: technical safety constraint for BCrypt hashing (not a password-strength rule).
   - Note: No minimum length (e.g. min 8), uppercase/lowercase, or special-character requirements are enforced at login.
+- `X-Device-Name` (HTTP header):
+  - Optional header.
+  - `null` or blank (whitespace-only) → normalized internally to `null`.
+  - Trimmed.
+  - Length $\le 100$ characters → accepted and stored.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Device name must not exceed 100 characters"`). No silent truncation.
+  - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
+- IP Address (Server-Observed Metadata):
+  - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
+  - Null or blank → `null`.
+  - Length $\le 45$ characters (accommodates IPv4 and IPv6 string forms) → stored.
+  - Length $> 45$ characters → fail-safe normalized to `null` to avoid database `VARCHAR(45)` column overflow.
+  - Current backend does NOT trust forwarded headers (`X-Forwarded-For`) without verified reverse-proxy termination. IP address is display/audit metadata only; no authentication, authorization, or account locking decisions are based on IP.
 
 **Authentication & Anti-Enumeration Semantics:**
 - Unknown email or incorrect password:
@@ -644,19 +672,22 @@ Taken username:
 - `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters). **Not a JWT**.
   - Client transmission: Raw token returned only to client in response body.
   - Server persistence: Raw token is **never stored**. Its SHA-256 lowercase hex digest is stored in `refresh_sessions.token_hash`.
-  - Default TTL: 14 days (`security.refresh-token.ttl`).
+  - Default sliding TTL: 14 days (`security.refresh-token.ttl`).
+  - Default absolute family lifetime: 30 days (`security.refresh-token.max-family-lifetime`).
 
-**Refresh Session State (M2.7):**
-- On fully onboarded login, a single record is inserted into `refresh_sessions`:
+**Refresh Session State (M2.12):**
+- On fully onboarded login at timestamp $T_0$, a single record is inserted into `refresh_sessions`:
   - `user_id`: Authenticated user ID.
   - `token_hash`: SHA-256 hash of the issued refresh token.
-  - `expires_at`: `now + 14 days`.
+  - `created_at`: $T_0$.
+  - `expires_at`: $\min(T_0 + 14d, T_0 + 30d) = T_0 + 14d$.
+  - `absolute_expires_at`: $T_0 + 30d$ (fixed 30-day family deadline derived from `security.refresh-token.max-family-lifetime`).
   - `revoked_at`: `null`.
   - `replaced_by_session_id`: `null`.
-  - `device_name`: `null` (device metadata omitted in M2.7).
-  - `ip_address`: `null` (IP tracking omitted in M2.7).
+  - `device_name`: Normalized `X-Device-Name` (or `null`).
+  - `ip_address`: Normalized remote IP from `HttpServletRequest.getRemoteAddr()` (or `null`).
 
-**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10 vs. M2.11:**
+**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10 vs. M2.11 vs. M2.12:**
 - **M2.7 (Implemented in commit `e74f08e`):**
   - Initial login credential verification with timing-mitigated anti-enumeration.
   - Status disclosure ordering and account lockout semantics.
@@ -691,15 +722,28 @@ Taken username:
   - Missing DB user on valid cryptographic token translates to HTTP 401 `AUTH_TOKEN_INVALID` (not 404).
   - Security error writer consolidation (`SecurityErrorResponseWriter`) across entry point, access denied handler, and JWT filter.
   - Dedicated access-token error codes: `AUTH_TOKEN_INVALID` and `AUTH_TOKEN_EXPIRED`.
-- **Still NOT implemented in M2.11:**
+- **M2.12 (Implemented in commit `859f361`):**
+  - Enforcing fixed 30-day absolute refresh-family lifetime (`security.refresh-token.max-family-lifetime: 30d`, environment override `WEDO_REFRESH_TOKEN_MAX_FAMILY_LIFETIME`).
+  - Login establishes `absoluteExpiresAt = now + 30d` and derives `expiresAt = min(now + 14d, absoluteExpiresAt)` from a single business clock instant.
+  - Non-legacy refresh rotation inherits the existing family deadline; repeated refreshes cannot slide the absolute deadline.
+  - Child refresh expiry is clamped to the absolute family deadline (`min(now + 14d, familyDeadline)`).
+  - Legacy pre-V11 session migration transition policy: sessions with `null` absolute expiry receive fixed `now + 30d` family deadline on first post-V11 refresh, inherited across subsequent rotations.
+  - Unified refresh error contract: `now >= expiresAt` and `now >= absoluteExpiresAt` reject with HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - Optional `X-Device-Name` request header capture and normalization ($\le 100$ characters valid, $> 100$ rejected with HTTP 400 `VALIDATION_FAILED`).
+  - Server-observed remote IP capture via `HttpServletRequest.getRemoteAddr()` ($\le 45$ characters stored, $> 45$ fail-safe to `null`).
+  - Session metadata propagation: refresh inherits previous device name if header is omitted/blank, and updates remote IP.
+  - Flyway migration `V11__session_family_hardening.sql`: adds nullable `absolute_expires_at TIMESTAMPTZ NULL` without table rewrite or historical backfill.
+  - Preserving per-user lock serialization barrier (`UserCredential` → `RefreshSession`) and same-token race safety.
+- **Still NOT implemented after M2.12:**
   - Real email delivery provider / JavaMailSender / SendGrid / SES.
   - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
-  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`).
-  - Session management UI / device binding / absolute family lifetime (M2.12).
+  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`, USER-06).
+  - Session-management REST APIs (list active sessions, revoke session by ID, revoke other sessions, logout-all endpoint).
+  - Current-session identification (`sid` JWT claim or refresh response session ID).
+  - Cryptographic device binding (DPoP, mTLS, device public keys, hardware keystore proofs).
+  - Client device fingerprinting or FCM `user_devices` push token integration.
   - Roles / permissions / RBAC (`PermissionService`).
-  - Global account-status DB validation in `JwtAuthenticationFilter`.
-  - `tokenVersion` or token revocation lists.
-  - Flutter auth integration.
+  - Flutter mobile authentication UI and screens (M2.13+).
   - Media / avatar CDN URL resolution.
 
 **Security & Configuration Notes:**
@@ -709,6 +753,7 @@ Taken username:
   - `security.jwt.access-token-ttl: 15m`
   - `security.profile-completion-token.ttl: 15m`
   - `security.refresh-token.ttl: 14d`
+  - `security.refresh-token.max-family-lifetime: 30d`
   - `security.login.max-failed-attempts: 5`
   - `security.login.lock-duration: 15m`
 
@@ -716,6 +761,8 @@ Taken username:
 
 - **Endpoint:** `POST /api/v1/auth/refresh`
 - **Authentication:** Public endpoint at Spring Security level. Credential authentication is performed using `refreshToken` in request body. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/refresh` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request Headers:**
+  - `X-Device-Name` (optional string): Client display/device identifier (max 100 characters).
 - **Request DTO:** `RefreshTokenRequest`
 - **Response DTO:** `RefreshTokenResponse` (HTTP 200 OK)
 
@@ -727,14 +774,27 @@ Taken username:
 }
 ```
 
-*(No client metadata fields such as `deviceId`, `deviceName`, `pushToken`, or IP metadata are accepted in M2.8.)*
+*(Request body remains strictly `refreshToken`. Optional client display metadata is accepted via the `X-Device-Name` HTTP header. Existing clients omitting the header remain fully compatible. No `sessionId` or `deviceId` fields are added to the request body or access JWT.)*
 
-**Request Validation Rules:**
+**Request Validation & Metadata Normalization Rules:**
 - `refreshToken`:
   - Required (`@NotBlank(message = "Refresh token must not be blank")`).
   - Opaque random credential.
   - Note: No strict 43-character regex validation is applied (avoids freezing token representation; invalid tokens naturally fail lookup).
   - No JWT parsing.
+- `X-Device-Name` (HTTP header):
+  - Optional header.
+  - `null` or blank (whitespace-only) → normalized internally to `null`.
+  - Trimmed.
+  - Length $\le 100$ characters → accepted and stored.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Device name must not exceed 100 characters"`). No silent truncation.
+  - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
+- IP Address (Server-Observed Metadata):
+  - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
+  - Null or blank → `null`.
+  - Length $\le 45$ characters (accommodates IPv4 and IPv6 string forms) → stored.
+  - Length $> 45$ characters → fail-safe normalized to `null` to avoid database `VARCHAR(45)` column overflow.
+  - Current backend does NOT trust forwarded headers (`X-Forwarded-For`) without verified reverse-proxy termination. IP address is display/audit metadata only; no authentication, authorization, or account locking decisions are based on IP.
 
 **Success Response Schema (HTTP 200 OK):**
 
@@ -750,31 +810,89 @@ Taken username:
 
 *(Response contains only token credentials and timestamps. No `UserSummaryDto` and no device/session metadata are included.)*
 
-**Happy-Path Rotation Semantics:**
+**Happy-Path Rotation & Family Hardening Semantics (M2.12):**
 - Incoming raw refresh token is hashed using SHA-256 (`RefreshTokenService.hashToken`).
-- Matched `refresh_sessions` row is locked exclusively using `PESSIMISTIC_WRITE` (`findByTokenHashWithLock`).
-- Verifies session validity (not revoked, not expired) and account status (`ACTIVE`).
-- Issues a new application access token (JWT 15m) and extracts expiration timestamp via `JwtService`.
-- Issues a new refresh token and creates replacement session S2 via `RefreshTokenService.issue` (Sliding 14 days).
-- Updates previous session S1: `S1.revokedAt = now`, `S1.replacedBySessionId = S2.id`.
-- Atomically commits transaction (`@Transactional`).
+- Under the per-user barrier (`UserCredential` $\rightarrow$ `RefreshSession`), matched `refresh_sessions` row $S_1$ is locked exclusively using `PESSIMISTIC_WRITE` (`findByTokenHashWithLock`).
+- Verifies locked session validity:
+  1. Record exists in `refresh_sessions`.
+  2. `revokedAt == null` (unrevoked).
+  3. `now < expiresAt` (sliding expiration boundary).
+  4. `absoluteExpiresAt == null || now < absoluteExpiresAt` (absolute family deadline boundary).
+  5. Associated user exists and status is `ACTIVE`.
+- Evaluates Family Deadline:
+  - *Non-legacy session (`S1.absoluteExpiresAt != null`):* `familyDeadline = S1.absoluteExpiresAt`. The deadline is strictly fixed from the original login family and is **never recalculated** from current timestamp $T_1$.
+  - *Legacy pre-V11 session (`S1.absoluteExpiresAt == null`):* Applies migration transition policy, establishing `familyDeadline = now + 30d`.
+- Calculates Child Expiration & Clamping:
+  - Sliding deadline: `slidingDeadline = now + 14d`.
+  - Effective child expiry: `S2.expiresAt = min(slidingDeadline, familyDeadline)`.
+  - Child family deadline: `S2.absoluteExpiresAt = familyDeadline`.
+- Propagates Metadata:
+  - Device name: If a valid non-blank `X-Device-Name` is supplied in the refresh request, $S_2.\text{deviceName}$ takes the new normalized value. Otherwise, $S_2$ inherits $S_1.\text{deviceName}$.
+  - IP address: $S_2.\text{ipAddress}$ captures the current normalized request remote address (`request.getRemoteAddr()`).
+  - Historical integrity: $S_1$'s stored `device_name` and `ip_address` are strictly preserved in the database for audit history.
+- Executes atomic state transition:
+  - Issues new application access token (JWT 15m) via `JwtService`.
+  - Issues replacement refresh session $S_2$ via `RefreshTokenService.issue`.
+  - Rotates parent session: `S1.revokedAt = now`, `S1.replacedBySessionId = S2.id`.
+  - Atomically commits transaction (`@Transactional`).
 - The previous refresh token becomes invalid immediately upon successful rotation.
 
 **Session Validity & Expiration Rules:**
 - A refresh session is usable only when:
   1. The session record exists in `refresh_sessions`.
   2. `revokedAt == null` (unrevoked).
-  3. `now < expiresAt` (strictly before expiry; exact `now == expiresAt` is expired/invalid).
-  4. The associated user exists and is valid for refresh.
-- Expired session:
-  - Returns `401 REFRESH_TOKEN_INVALID`.
+  3. `now < expiresAt` (strictly before sliding expiry; exact `now == expiresAt` is expired/invalid).
+  4. `absoluteExpiresAt == null || now < absoluteExpiresAt` (strictly before absolute family deadline; exact `now == absoluteExpiresAt` or `now > absoluteExpiresAt` is expired/invalid).
+  5. The associated user exists and is valid for refresh.
+- Expired session (sliding expiry reached OR absolute family deadline reached/exceeded):
+  - Returns HTTP 401 `REFRESH_TOKEN_INVALID`.
   - No replacement session is created.
   - The expired row's `revokedAt` is not mutated merely because of expiry (historical state preserved).
 
 **Unified Credential Error Contract:**
 - `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`):
-  - Single, unified external error code for all refresh credential failures: unknown/random token, expired token, revoked token, and previously rotated token.
-  - No separate external error codes (such as `REFRESH_TOKEN_EXPIRED`, `REFRESH_TOKEN_REUSED`, or `REFRESH_SESSION_REVOKED`) are exposed in M2.8.
+  - Single, unified external error code for all refresh credential failures: unknown/random token, expired sliding session (`now >= expiresAt`), absolute family deadline reached/exceeded (`absoluteExpiresAt != null && now >= absoluteExpiresAt`), revoked token, and previously rotated token.
+  - No separate external error codes (such as `REFRESH_TOKEN_EXPIRED`, `REFRESH_FAMILY_EXPIRED`, `REFRESH_TOKEN_REUSED`, or `REFRESH_SESSION_REVOKED`) are exposed.
+  - Outward behavior is unified: client discards the invalid refresh token and redirects the user to login. Internal expiration reasons, timestamps, or family identities are never leaked.
+
+**Family Lifetime & Deadline Clamping Model (M2.12):**
+- Refresh sliding TTL: 14 days (`security.refresh-token.ttl: 14d`).
+- Refresh absolute family lifetime: 30 days (`security.refresh-token.max-family-lifetime: 30d`).
+- **Example Timeline:**
+  - *Login at Day 0 ($T_0$):* Family deadline is established as Day 30 ($T_0 + 30d$). $S_1$ sliding expiry is Day 14 ($T_0 + 14d$).
+  - *Refresh at Day 10 ($T_{10}$):* Sliding deadline would be Day 24 ($T_{10} + 14d$). Since $\text{Day 24} < \text{Day 30}$, $S_2.\text{expiresAt} = \text{Day 24}$, and $S_2.\text{absoluteExpiresAt} = \text{Day 30}$.
+  - *Refresh at Day 20 ($T_{20}$):* Normal sliding deadline would be Day 34 ($T_{20} + 14d$). Because Day 34 exceeds the family deadline (Day 30), child expiration is clamped: $S_3.\text{expiresAt} = \min(\text{Day 34}, \text{Day 30}) = \text{Day 30}$, with $S_3.\text{absoluteExpiresAt} = \text{Day 30}$.
+  - *Attempted Refresh at Day 30 ($T_{30}$):* At exact boundary $T \ge \text{Day 30}$, `now >= absoluteExpiresAt` fails validation → returns HTTP 401 `REFRESH_TOKEN_INVALID`. The family cannot slide further, requiring a fresh login.
+
+**Legacy Pre-V11 Migration Transition Policy:**
+- In database migration V11, column `absolute_expires_at` is added as `TIMESTAMPTZ NULL` because existing legacy session rows cannot reconstruct the original family-login timestamp without historical audit logs.
+- Legacy rows have `absolute_expires_at IS NULL`.
+- On the first successful post-V11 refresh of an active legacy session at $T_1$:
+  - Transition family deadline is established as `familyDeadline = T1 + 30d`.
+  - Replacement session $S_2$ receives that fixed deadline (`S2.absoluteExpiresAt = familyDeadline`) and effective expiry `S2.expiresAt = min(T1 + 14d, familyDeadline)`.
+  - Historical parent row $S_1$ remains with `absoluteExpiresAt == null` and `revokedAt = T1` (historical state unchanged).
+  - All subsequent rotations ($S_2 \rightarrow S_3$) strictly inherit `familyDeadline`.
+  - This is documented as a *migration transition policy*, not a retroactive historical backfill.
+
+**Database Migration V11 & Schema Notes:**
+- Migration file: `backend/src/main/resources/db/migration/V11__session_family_hardening.sql`.
+- SQL definition:
+  ```sql
+  ALTER TABLE refresh_sessions
+      ADD COLUMN IF NOT EXISTS absolute_expires_at TIMESTAMPTZ NULL;
+  ```
+- *Migration Performance & Concurrency:* Adding a nullable column without a DEFAULT in PostgreSQL avoids rewriting table data and avoids taking prolonged exclusive table locks.
+- *Schema Minimality:* No default value, no retroactive backfill, no `family_id` or `root_session_id` column, no new index, and no separate family table.
+- *Purpose:* Persist the fixed family deadline per refresh-session node.
+
+**RefreshSessionEntity & Internal Issue Invariant:**
+- `RefreshSessionEntity` includes:
+  - `absoluteExpiresAt: Instant` (nullable).
+  - `null` is permitted for legacy pre-V11 rows; new post-V11 issued sessions always receive a non-null family deadline.
+- Internal issuance invariant via `RefreshTokenService.issue(userId, createdAt, expiresAt, absoluteExpiresAt, metadata)`:
+  - Enforces non-null `userId`, `createdAt`, `expiresAt`, `absoluteExpiresAt`.
+  - Guarantees invariant: `expiresAt <= absoluteExpiresAt` (checked via `IllegalArgumentException("expiresAt must not be after absoluteExpiresAt")`).
+  - This is an internal architectural lifecycle invariant, not a client request validation rule.
 
 **Account Status Control Point:**
 - Refresh serves as an authoritative control point for account state.
@@ -792,21 +910,21 @@ Taken username:
 - If an already-rotated token (`revokedAt != null` and `replacedBySessionId != null`) is submitted:
   - Returns `401 REFRESH_TOKEN_INVALID`.
   - The replacement session remains active.
-  - M2.8 intentionally does not perform broad compromise revocation (such as revoking descendant chains or all user sessions), because legitimate duplicate/concurrent retries cannot be distinguished reliably from malicious reuse with the current schema.
+  - The architecture intentionally does not perform broad compromise revocation (such as revoking descendant chains or all user sessions), because legitimate duplicate/concurrent retries cannot be distinguished reliably from malicious reuse with the current schema.
 
 **Concurrent Same-Token Handling:**
 - Two concurrent refresh requests using the exact same refresh token (e.g., client race condition or network retry):
   - The first request acquires `PESSIMISTIC_WRITE` lock on the old session, rotates S1 to S2, and succeeds (HTTP 200).
   - The second request waits for lock release, then observes S1 as already revoked, and fails with `401 REFRESH_TOKEN_INVALID`.
   - Exactly one replacement session S2 is created and remains active.
-  - Enforced by row-level locking without user-wide revocation.
+  - Enforced by row-level locking without user-wide revocation. M2.12 family checks do not weaken this concurrency invariant.
 
 **Raw Token Storage Limitation:**
 - The server stores only the SHA-256 hash of refresh tokens (`refresh_sessions.token_hash`), never raw tokens.
 - After S1 rotates to S2, the server cannot reconstruct raw S2 for a duplicate S1 request.
 - True idempotent replay of refresh requests is not supported with this security model; raw refresh tokens are never persisted to solve retry behavior.
 
-**Hardened Lock Ordering & Concurrency (M2.10 Update):**
+**Hardened Lock Ordering & Concurrency (M2.10 & M2.12 Update):**
 - In M2.10, `refreshToken` was hardened to participate in the global per-user security barrier (`UserCredential` $\rightarrow$ `RefreshSession`).
 - **Lock Ordering Algorithm:**
   1. Hash raw incoming refresh token.
@@ -814,27 +932,23 @@ Taken username:
   3. Acquire exclusive lock on `UserCredential` (`userCredentialRepository.findByUserIdWithLock(userId)`).
   4. Authoritative re-read and lock on `RefreshSession` (`refreshSessionRepository.findByTokenHashWithLock(tokenHash)`).
   5. Verify session `userId` matches locked credential `userId`.
-  6. Revalidate locked session state (`revokedAt == null`, `now < expiresAt`, user account status).
+  6. Revalidate locked session state (`revokedAt == null`, `now < expiresAt`, `absoluteExpiresAt == null || now < absoluteExpiresAt`, user account status). M2.12 family checks execute strictly after the authoritative session row is locked under this barrier.
   7. Perform rotation $S_1 \rightarrow S_2$.
-- **Same-User Concurrency Semantic Change:**
+- **Same-User Concurrency Semantics:**
   - Multiple concurrent refresh requests belonging to the **same user** are serialized through the `UserCredential` row lock.
   - Two different valid refresh sessions for the same user serialize, but both succeed sequentially if otherwise valid.
   - Refresh operations for different users do not contend on the same per-user `UserCredential` lock and may proceed independently, subject to normal database/runtime resource contention.
-
-**Sliding Session Lifetime:**
-- Refresh token TTL: 14 days sliding (`security.refresh-token.ttl: 14d`).
-- Each successful rotation creates a new session with `expiresAt = rotation_time + 14 days`.
-- Continued active use extends the session. No absolute family lifetime is enforced in M2.8 (deferred to M2.12 session hardening).
+  - Under currently audited lock paths, no lock-order cycle has been identified.
 
 **Token Architecture & Terminology:**
-- `accessToken`: Application JWT authentication credential (`tokenType: "Bearer"`, TTL: 15 minutes, minimal claims: `sub`, `iat`, `exp`).
-- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters, sliding 14 days). **Not a JWT**. Raw token returned only to client; SHA-256 stored server-side.
+- `accessToken`: Application JWT authentication credential (`tokenType: "Bearer"`, TTL: 15 minutes, minimal claims: `sub`, `iat`, `exp`). No `sid`, `familyId`, or `deviceId` claims.
+- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters, sliding 14 days, capped by 30-day absolute family lifetime). **Not a JWT**. Raw token returned only to client; SHA-256 stored server-side.
 - `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes).
 
-**Refresh Session State (M2.8):**
+**Refresh Session State (M2.12):**
 - On successful rotation:
-  - Previous session S1: `revoked_at = now`, `replaced_by_session_id = S2.id`.
-  - New session S2: `revoked_at = null`, `replaced_by_session_id = null`, `expires_at = now + 14 days`.
+  - Previous session S1: `revoked_at = now`, `replaced_by_session_id = S2.id`. Historical `device_name`, `ip_address`, and `absolute_expires_at` are preserved.
+  - New session S2: `revoked_at = null`, `replaced_by_session_id = null`, `created_at = now`, `expires_at = min(now + 14d, familyDeadline)`, `absolute_expires_at = familyDeadline`, `device_name = propagated_device_name`, `ip_address = request_remote_ip`.
 - Session rows are permanently preserved for audit and reuse detection (no hard delete).
 
 **Security & Configuration Notes:**
@@ -843,6 +957,7 @@ Taken username:
 - Relevant configuration settings:
   - `security.jwt.access-token-ttl: 15m`
   - `security.refresh-token.ttl: 14d`
+  - `security.refresh-token.max-family-lifetime: 30d`
 
 ### AUTH-08 Logout
 
@@ -1123,7 +1238,15 @@ All sensitive operations follow this hierarchy:
 - **Login (`POST /api/v1/auth/login`):** Locks `UserCredential` by `userId`.
 - **Forgot Password (`POST /api/v1/auth/forgot-password`):** Locks `UserCredential` by `userId`.
 - **Reset Password (`POST /api/v1/auth/reset-password`):** Locks `UserCredential` by `userId`, then bulk-revokes active `RefreshSession` rows.
-- **Refresh Token (`POST /api/v1/auth/refresh`):** Preliminary lookup resolves `userId`, locks `UserCredential` by `userId`, then locks `RefreshSession` row.
+- **Refresh Token (`POST /api/v1/auth/refresh`):** Preliminary lookup resolves `userId`, locks `UserCredential` by `userId`, then locks `RefreshSession` row. M2.12 family deadline and expiration checks happen strictly after the authoritative locked session is loaded.
+
+*Deadlock Auditing Note:* Under currently audited lock paths, no lock-order cycle has been identified.
+
+**Concurrent Same-Token Handling Invariant:**
+When two concurrent refresh requests submit the exact same raw refresh token (e.g., client race condition or network retry):
+- Exactly one rotation succeeds (HTTP 200).
+- The competing request waits for lock release, re-reads the session row, observes `revokedAt != null`, and receives HTTP 401 `REFRESH_TOKEN_INVALID`.
+- Exactly one replacement session $S_2$ is persisted and remains active. M2.12 family hardening does not weaken this concurrency guarantee.
 
 **Reset vs. Refresh Race Guarantees:**
 When a password reset and a refresh token rotation execute concurrently for the same user:
@@ -2426,7 +2549,7 @@ PASSWORD_RESET_CODE_INVALID
 - `AUTH_TOKEN_EXPIRED` (HTTP 401, `"Authentication token has expired."`): Emitted when a Bearer access JWT has expired (`exp < now`).
 - `AUTH_TOKEN_INVALID` (HTTP 401, `"Invalid authentication token."`): Emitted when a Bearer token is malformed, has an invalid cryptographic signature, contains a non-UUID subject, has a blank token string following the Bearer scheme, represents a profile-completion token or opaque refresh token, or when the authenticated user ID no longer exists in the database during protected resource lookup (`GET /api/v1/me`). Parser exception details are never leaked.
 - `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password during login. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
-- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired token, revoked token, or previously rotated token during refresh rotation and logout.
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired sliding session (`now >= expiresAt`), absolute family deadline reached or exceeded (`absoluteExpiresAt != null && now >= absoluteExpiresAt`), revoked session, or previously rotated token during refresh rotation and logout. No separate family-expired error code is exposed to clients; client behavior remains uniform: discard the invalid refresh session and require interactive login.
 - `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, when attempting refresh with a valid credential for an unverified account (current session is revoked), or when accessing `GET /api/v1/me` with an unverified account.
 - `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, when attempting refresh with a valid credential for a suspended account (current session is revoked), or when accessing `GET /api/v1/me` with a suspended account.
 - `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, when attempting refresh with a valid credential for a deactivated account (current session is revoked), or when accessing `GET /api/v1/me` with a deactivated account.
@@ -2615,6 +2738,13 @@ ForgotPasswordRequest / ForgotPasswordResponse
 ResetPasswordRequest
 ChangePasswordRequest
 ```
+
+### Auth Internal Value Objects
+
+```text
+SessionClientMetadata (record: String deviceName, String ipAddress)
+```
+*Note on `SessionClientMetadata`:* Internal metadata value object capturing normalized client display name and remote IP address. This is not an external request JSON body. Populated in controller layer from the optional `X-Device-Name` HTTP header and `HttpServletRequest.getRemoteAddr()`.
 
 ### User / Social
 

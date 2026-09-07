@@ -11,4 +11,6 @@ abstract final class AppSpacing {
   static const double maxContentWidth = 448.0;
   static const double maxIllustrationWidth = 320.0;
   static const double buttonHeight = 52.0;
+  static const double buttonHeightLarge = 56.0;
+  static const double inputHeight = 56.0;
 }

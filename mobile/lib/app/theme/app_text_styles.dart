@@ -41,4 +41,40 @@ abstract final class AppTextStyles {
     color: AppColors.primary,
     letterSpacing: 0.2,
   );
+
+  static const TextStyle label = TextStyle(
+    fontSize: 14.0,
+    fontWeight: FontWeight.w600,
+    color: AppColors.onSurface,
+  );
+
+  static const TextStyle bodyMedium = TextStyle(
+    fontSize: 16.0,
+    fontWeight: FontWeight.w400,
+    color: AppColors.onSurfaceVariant,
+  );
+
+  static const TextStyle bodySmall = TextStyle(
+    fontSize: 14.0,
+    fontWeight: FontWeight.w400,
+    color: AppColors.onSurfaceVariant,
+  );
+
+  static const TextStyle link = TextStyle(
+    fontSize: 14.0,
+    fontWeight: FontWeight.w600,
+    color: AppColors.primary,
+  );
+
+  static const TextStyle input = TextStyle(
+    fontSize: 15.0,
+    fontWeight: FontWeight.w400,
+    color: AppColors.onSurface,
+  );
+
+  static const TextStyle inputHint = TextStyle(
+    fontSize: 15.0,
+    fontWeight: FontWeight.w400,
+    color: AppColors.onSurfaceVariant,
+  );
 }

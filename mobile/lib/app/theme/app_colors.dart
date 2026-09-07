@@ -16,6 +16,10 @@ abstract final class AppColors {
   static const Color onSurfaceVariant = Color(0xFF4A4455);
   static const Color onPrimary = Color(0xFFFFFFFF);
 
+  // Inputs & Validation
+  static const Color inputBackground = Color(0xFFF2F4F6);
+  static const Color error = Color(0xFFBA1A1A);
+
   // Outlines / Borders
   static const Color outlineVariant = Color(0xFFCCC3D8);
 }

@@ -14,6 +14,7 @@ import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResetPasswordRequest;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.SessionClientMetadata;
 import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.dto.VerifyEmailResponse;
@@ -2624,5 +2625,245 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 .filter(s -> s.getUserId().equals(userId) && s.getRevokedAt() == null)
                 .count();
         assertThat(activeSessions).isEqualTo(2);
+    }
+
+    // ==========================================
+    // M2.12 Session Family Hardening & Metadata Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("M2.12 login: should set createdAt, sliding expiresAt (now+14d), absoluteExpiresAt (now+30d), and store metadata")
+    void login_shouldSetFamilyDeadlineAndMetadata() {
+        String email = "m212.login@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_login", "M212 Login", null, null));
+
+        Instant t0 = currentInstant;
+        SessionClientMetadata metadata = SessionClientMetadata.of("  MacBook Pro M3  ", "192.168.1.50");
+        LoginResponse response = authService.login(new LoginRequest(email, "Password123!"), metadata);
+
+        String hash = RefreshTokenService.hashToken(response.refreshToken());
+        RefreshSessionEntity session = refreshSessionRepository.findByTokenHash(hash).orElseThrow();
+
+        assertThat(session.getCreatedAt()).isEqualTo(t0);
+        assertThat(session.getExpiresAt()).isEqualTo(t0.plus(Duration.ofDays(14)));
+        assertThat(session.getAbsoluteExpiresAt()).isEqualTo(t0.plus(Duration.ofDays(30)));
+        assertThat(session.getDeviceName()).isEqualTo("MacBook Pro M3");
+        assertThat(session.getIpAddress()).isEqualTo("192.168.1.50");
+        assertThat(session.getRevokedAt()).isNull();
+        assertThat(session.getReplacedBySessionId()).isNull();
+    }
+
+    @Test
+    @DisplayName("M2.12 login: absent or blank device name should store null deviceName, valid IP stored")
+    void login_absentOrBlankDeviceName_shouldStoreNull() {
+        String email = "m212.blankdev@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_blank", "M212 Blank", null, null));
+
+        // 1. Blank device name
+        SessionClientMetadata blankMeta = SessionClientMetadata.of("   ", "10.0.0.1");
+        LoginResponse resp1 = authService.login(new LoginRequest(email, "Password123!"), blankMeta);
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(resp1.refreshToken())).orElseThrow();
+        assertThat(s1.getDeviceName()).isNull();
+        assertThat(s1.getIpAddress()).isEqualTo("10.0.0.1");
+
+        // 2. Missing (null) device name
+        SessionClientMetadata nullMeta = SessionClientMetadata.of(null, "2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+        LoginResponse resp2 = authService.login(new LoginRequest(email, "Password123!"), nullMeta);
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(resp2.refreshToken())).orElseThrow();
+        assertThat(s2.getDeviceName()).isNull();
+        assertThat(s2.getIpAddress()).isEqualTo("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+    }
+
+    @Test
+    @DisplayName("M2.12 refresh non-legacy: S2 inherits exact S1.absoluteExpiresAt across multiple rotations without sliding")
+    void refresh_nonLegacy_shouldInheritAbsoluteExpiresAtAcrossMultipleRotations() {
+        String email = "m212.nonlegacy@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_rot", "M212 Rot", null, null));
+
+        Instant t0 = currentInstant;
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"), SessionClientMetadata.of("iPhone 15", "1.1.1.1"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        Instant originalFamilyDeadline = s1.getAbsoluteExpiresAt();
+        assertThat(originalFamilyDeadline).isEqualTo(t0.plus(Duration.ofDays(30)));
+
+        // Rotation 1 (S1 -> S2) at t0 + 2 days
+        currentInstant = t0.plus(Duration.ofDays(2));
+        RefreshTokenResponse rot1 = authService.refreshToken(
+                new RefreshTokenRequest(raw1),
+                SessionClientMetadata.of("iPad Air", "2.2.2.2")
+        );
+        String raw2 = rot1.refreshToken();
+        String hash2 = RefreshTokenService.hashToken(raw2);
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(hash2).orElseThrow();
+        RefreshSessionEntity s1Reloaded = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+
+        assertThat(s1Reloaded.getRevokedAt()).isEqualTo(currentInstant);
+        assertThat(s1Reloaded.getReplacedBySessionId()).isEqualTo(s2.getId());
+        assertThat(s1Reloaded.getDeviceName()).isEqualTo("iPhone 15"); // S1 historical metadata preserved
+        assertThat(s1Reloaded.getIpAddress()).isEqualTo("1.1.1.1");
+
+        assertThat(s2.getCreatedAt()).isEqualTo(currentInstant);
+        assertThat(s2.getExpiresAt()).isEqualTo(currentInstant.plus(Duration.ofDays(14)));
+        assertThat(s2.getAbsoluteExpiresAt()).isEqualTo(originalFamilyDeadline); // Exact inheritance, no sliding
+        assertThat(s2.getDeviceName()).isEqualTo("iPad Air"); // Updated device
+        assertThat(s2.getIpAddress()).isEqualTo("2.2.2.2");
+
+        // Rotation 2 (S2 -> S3) at t0 + 10 days, without device-name header (inherit S2 device name)
+        currentInstant = t0.plus(Duration.ofDays(10));
+        RefreshTokenResponse rot2 = authService.refreshToken(
+                new RefreshTokenRequest(raw2),
+                SessionClientMetadata.of(null, "3.3.3.3")
+        );
+        String raw3 = rot2.refreshToken();
+        String hash3 = RefreshTokenService.hashToken(raw3);
+        RefreshSessionEntity s3 = refreshSessionRepository.findByTokenHash(hash3).orElseThrow();
+
+        assertThat(s3.getCreatedAt()).isEqualTo(currentInstant);
+        assertThat(s3.getExpiresAt()).isEqualTo(currentInstant.plus(Duration.ofDays(14)));
+        assertThat(s3.getAbsoluteExpiresAt()).isEqualTo(originalFamilyDeadline); // Still exact original deadline!
+        assertThat(s3.getDeviceName()).isEqualTo("iPad Air"); // Inherited from S2
+        assertThat(s3.getIpAddress()).isEqualTo("3.3.3.3");
+    }
+
+    @Test
+    @DisplayName("M2.12 refresh effective expiry boundary: child expiresAt clamped to absoluteExpiresAt when near deadline")
+    void refresh_nearFamilyDeadline_shouldClampExpiresAtToAbsoluteExpiresAt() {
+        String email = "m212.near@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_near", "M212 Near", null, null));
+
+        Instant t0 = currentInstant;
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(raw1)).orElseThrow();
+        Instant familyDeadline = s1.getAbsoluteExpiresAt();
+        // Ensure s1 sliding expiry is active when testing at the 25-day mark
+        s1.setExpiresAt(familyDeadline);
+        refreshSessionRepository.save(s1);
+
+        // Advance time to 5 days before family deadline (t0 + 25 days)
+        // Now + 14d would be t0 + 39d, which exceeds familyDeadline (t0 + 30d)
+        currentInstant = familyDeadline.minus(Duration.ofDays(5));
+        RefreshTokenResponse rotResp = authService.refreshToken(new RefreshTokenRequest(raw1));
+
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(rotResp.refreshToken())).orElseThrow();
+        assertThat(s2.getExpiresAt()).isEqualTo(familyDeadline); // Clamped to absoluteExpiresAt!
+        assertThat(s2.getExpiresAt()).isBefore(currentInstant.plus(Duration.ofDays(14)));
+        assertThat(s2.getAbsoluteExpiresAt()).isEqualTo(familyDeadline);
+    }
+
+    @Test
+    @DisplayName("M2.12 family deadline boundary: now < absolute succeeds, now == absolute and now > absolute rejected with REFRESH_TOKEN_INVALID")
+    void refresh_familyDeadline_boundaryChecks() {
+        String email = "m212.bound@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_bound", "M212 Bound", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        RefreshSessionEntity s1 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(raw1)).orElseThrow();
+        Instant absoluteDeadline = s1.getAbsoluteExpiresAt();
+
+        // 1. Boundary: now == absoluteExpiresAt -> REJECTED
+        currentInstant = absoluteDeadline;
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // 2. Boundary: now > absoluteExpiresAt -> REJECTED
+        currentInstant = absoluteDeadline.plusSeconds(5);
+        assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(raw1)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // 3. Boundary: now < absoluteExpiresAt -> SUCCEEDS
+        // (Also ensure sliding expiresAt has not expired)
+        s1.setExpiresAt(absoluteDeadline);
+        refreshSessionRepository.save(s1);
+
+        currentInstant = absoluteDeadline.minusSeconds(1);
+        RefreshTokenResponse successResp = authService.refreshToken(new RefreshTokenRequest(raw1));
+        assertThat(successResp.refreshToken()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("M2.12 legacy transition: pre-V11 session with null absoluteExpiresAt receives now+30d on first refresh, second refresh inherits it")
+    void refresh_legacySession_shouldTransitionCleanly() {
+        String email = "m212.legacy@example.com";
+        UUID userId = registerAndVerifyUser(email);
+        String token = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(token, "m212_leg", "M212 Leg", null, null));
+
+        Instant t0 = currentInstant;
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String raw1 = loginResp.refreshToken();
+        String hash1 = RefreshTokenService.hashToken(raw1);
+
+        // Simulate legacy pre-V11 session in database: absoluteExpiresAt == null
+        RefreshSessionEntity legacyS1 = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+        legacyS1.setAbsoluteExpiresAt(null);
+        refreshSessionRepository.save(legacyS1);
+
+        // First post-V11 refresh at t0 + 1 day
+        currentInstant = t0.plus(Duration.ofDays(1));
+        RefreshTokenResponse rot1 = authService.refreshToken(new RefreshTokenRequest(raw1));
+        String raw2 = rot1.refreshToken();
+        RefreshSessionEntity s2 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(raw2)).orElseThrow();
+        RefreshSessionEntity s1Reloaded = refreshSessionRepository.findByTokenHash(hash1).orElseThrow();
+
+        // S1 remains historical row with null absoluteExpiresAt
+        assertThat(s1Reloaded.getAbsoluteExpiresAt()).isNull();
+        assertThat(s1Reloaded.getRevokedAt()).isEqualTo(currentInstant);
+
+        // S2 receives transition family deadline = currentInstant + 30d
+        Instant establishedFamilyDeadline = currentInstant.plus(Duration.ofDays(30));
+        assertThat(s2.getAbsoluteExpiresAt()).isEqualTo(establishedFamilyDeadline);
+        assertThat(s2.getExpiresAt()).isEqualTo(currentInstant.plus(Duration.ofDays(14)));
+
+        // Second refresh at t0 + 5 days
+        currentInstant = t0.plus(Duration.ofDays(5));
+        RefreshTokenResponse rot2 = authService.refreshToken(new RefreshTokenRequest(raw2));
+        String raw3 = rot2.refreshToken();
+        RefreshSessionEntity s3 = refreshSessionRepository.findByTokenHash(RefreshTokenService.hashToken(raw3)).orElseThrow();
+
+        // S3 inherits exact establishedFamilyDeadline, does NOT slide another 30d
+        assertThat(s3.getAbsoluteExpiresAt()).isEqualTo(establishedFamilyDeadline);
+    }
+
+    @Test
+    @DisplayName("M2.12 metadata normalization: device length rejection and IP length fail-safe")
+    void sessionClientMetadata_normalization_rules() {
+        // Device > 100 chars -> VALIDATION_FAILED
+        String longDevice = "a".repeat(101);
+        assertThatThrownBy(() -> SessionClientMetadata.of(longDevice, "127.0.0.1"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+
+        // Device <= 100 chars -> accepted
+        String maxDevice = "a".repeat(100);
+        SessionClientMetadata meta100 = SessionClientMetadata.of(maxDevice, "127.0.0.1");
+        assertThat(meta100.deviceName()).hasSize(100);
+
+        // IP > 45 chars -> fail-safe null
+        String longIp = "b".repeat(46);
+        SessionClientMetadata metaLongIp = SessionClientMetadata.of("Phone", longIp);
+        assertThat(metaLongIp.ipAddress()).isNull();
+
+        // Normal IPv4 and IPv6
+        SessionClientMetadata metaIpv4 = SessionClientMetadata.of("Phone", "192.168.1.1");
+        assertThat(metaIpv4.ipAddress()).isEqualTo("192.168.1.1");
+
+        SessionClientMetadata metaIpv6 = SessionClientMetadata.of("Phone", "2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+        assertThat(metaIpv6.ipAddress()).isEqualTo("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
     }
 }

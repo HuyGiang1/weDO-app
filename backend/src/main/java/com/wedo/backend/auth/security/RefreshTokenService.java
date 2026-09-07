@@ -1,5 +1,6 @@
 package com.wedo.backend.auth.security;
 
+import com.wedo.backend.auth.dto.SessionClientMetadata;
 import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.repository.RefreshSessionRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -26,44 +26,68 @@ public class RefreshTokenService {
     ) {}
 
     private final RefreshSessionRepository refreshSessionRepository;
-    private final Clock clock;
     private final Duration refreshTokenTtl;
+    private final Duration maxFamilyLifetime;
     private final SecureRandom secureRandom;
 
     public RefreshTokenService(
             RefreshSessionRepository refreshSessionRepository,
-            Clock clock,
-            @Value("${security.refresh-token.ttl:14d}") Duration refreshTokenTtl
+            @Value("${security.refresh-token.ttl:14d}") Duration refreshTokenTtl,
+            @Value("${security.refresh-token.max-family-lifetime:30d}") Duration maxFamilyLifetime
     ) {
         if (refreshSessionRepository == null) {
             throw new IllegalArgumentException("RefreshSessionRepository must not be null");
         }
-        if (clock == null) {
-            throw new IllegalArgumentException("Clock must not be null");
-        }
         if (refreshTokenTtl == null || refreshTokenTtl.isZero() || refreshTokenTtl.isNegative()) {
             throw new IllegalStateException("Refresh token TTL must be positive");
         }
+        if (maxFamilyLifetime == null || maxFamilyLifetime.isZero() || maxFamilyLifetime.isNegative()) {
+            throw new IllegalStateException("Max family lifetime must be positive");
+        }
         this.refreshSessionRepository = refreshSessionRepository;
-        this.clock = clock;
         this.refreshTokenTtl = refreshTokenTtl;
+        this.maxFamilyLifetime = maxFamilyLifetime;
         this.secureRandom = new SecureRandom();
     }
 
-    public IssuedRefreshToken issue(UUID userId) {
+    public Duration getRefreshTokenTtl() {
+        return refreshTokenTtl;
+    }
+
+    public Duration getMaxFamilyLifetime() {
+        return maxFamilyLifetime;
+    }
+
+    public IssuedRefreshToken issue(
+            UUID userId,
+            Instant createdAt,
+            Instant expiresAt,
+            Instant absoluteExpiresAt,
+            SessionClientMetadata metadata
+    ) {
         if (userId == null) {
             throw new IllegalArgumentException("userId must not be null");
         }
+        if (createdAt == null) {
+            throw new IllegalArgumentException("createdAt must not be null");
+        }
+        if (expiresAt == null) {
+            throw new IllegalArgumentException("expiresAt must not be null");
+        }
+        if (absoluteExpiresAt == null) {
+            throw new IllegalArgumentException("absoluteExpiresAt must not be null");
+        }
+        if (expiresAt.isAfter(absoluteExpiresAt)) {
+            throw new IllegalArgumentException("expiresAt must not be after absoluteExpiresAt");
+        }
+        SessionClientMetadata safeMetadata = metadata != null ? metadata : SessionClientMetadata.empty();
 
         byte[] randomBytes = new byte[32];
         secureRandom.nextBytes(randomBytes);
         String rawToken = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
 
         String tokenHash = hashToken(rawToken);
-
         UUID sessionId = UUID.randomUUID();
-        Instant now = clock.instant();
-        Instant expiresAt = now.plus(refreshTokenTtl);
 
         RefreshSessionEntity session = new RefreshSessionEntity(
                 sessionId,
@@ -72,9 +96,10 @@ public class RefreshTokenService {
                 expiresAt,
                 null,
                 null,
-                null,
-                null,
-                now
+                safeMetadata.deviceName(),
+                safeMetadata.ipAddress(),
+                createdAt,
+                absoluteExpiresAt
         );
         refreshSessionRepository.save(session);
 

@@ -17,7 +17,9 @@ import com.wedo.backend.auth.dto.VerifyEmailResponse;
 import com.wedo.backend.auth.dto.ForgotPasswordRequest;
 import com.wedo.backend.auth.dto.ForgotPasswordResponse;
 import com.wedo.backend.auth.dto.ResetPasswordRequest;
+import com.wedo.backend.auth.dto.SessionClientMetadata;
 import com.wedo.backend.auth.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -81,14 +84,26 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        LoginResponse response = authService.login(request);
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            @RequestHeader(value = "X-Device-Name", required = false) String rawDeviceName,
+            HttpServletRequest servletRequest
+    ) {
+        String rawIpAddress = servletRequest != null ? servletRequest.getRemoteAddr() : null;
+        SessionClientMetadata metadata = SessionClientMetadata.of(rawDeviceName, rawIpAddress);
+        LoginResponse response = authService.login(request, metadata);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<RefreshTokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
-        RefreshTokenResponse response = authService.refreshToken(request);
+    public ResponseEntity<RefreshTokenResponse> refresh(
+            @Valid @RequestBody RefreshTokenRequest request,
+            @RequestHeader(value = "X-Device-Name", required = false) String rawDeviceName,
+            HttpServletRequest servletRequest
+    ) {
+        String rawIpAddress = servletRequest != null ? servletRequest.getRemoteAddr() : null;
+        SessionClientMetadata metadata = SessionClientMetadata.of(rawDeviceName, rawIpAddress);
+        RefreshTokenResponse response = authService.refreshToken(request, metadata);
         return ResponseEntity.ok(response);
     }
 

@@ -41,10 +41,17 @@ public class RefreshSessionEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "absolute_expires_at")
+    private Instant absoluteExpiresAt;
+
     protected RefreshSessionEntity() {
     }
 
     public RefreshSessionEntity(UUID id, UUID userId, String tokenHash, Instant expiresAt, Instant revokedAt, UUID replacedBySessionId, String deviceName, String ipAddress, Instant createdAt) {
+        this(id, userId, tokenHash, expiresAt, revokedAt, replacedBySessionId, deviceName, ipAddress, createdAt, null);
+    }
+
+    public RefreshSessionEntity(UUID id, UUID userId, String tokenHash, Instant expiresAt, Instant revokedAt, UUID replacedBySessionId, String deviceName, String ipAddress, Instant createdAt, Instant absoluteExpiresAt) {
         this.id = id;
         this.userId = userId;
         this.tokenHash = tokenHash;
@@ -54,6 +61,7 @@ public class RefreshSessionEntity {
         this.deviceName = deviceName;
         this.ipAddress = ipAddress;
         this.createdAt = createdAt;
+        this.absoluteExpiresAt = absoluteExpiresAt;
     }
 
     public UUID getId() {
@@ -126,6 +134,14 @@ public class RefreshSessionEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Instant getAbsoluteExpiresAt() {
+        return absoluteExpiresAt;
+    }
+
+    public void setAbsoluteExpiresAt(Instant absoluteExpiresAt) {
+        this.absoluteExpiresAt = absoluteExpiresAt;
     }
 
     @Override

@@ -1,5 +1,6 @@
 package com.wedo.backend.auth.security;
 
+import com.wedo.backend.auth.dto.SessionClientMetadata;
 import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.repository.RefreshSessionRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -8,10 +9,8 @@ import org.mockito.ArgumentCaptor;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -25,21 +24,24 @@ class RefreshTokenServiceTest {
 
     private final RefreshSessionRepository repository = mock(RefreshSessionRepository.class);
     private final Instant now = Instant.parse("2026-09-05T10:00:00Z");
-    private final Clock clock = Clock.fixed(now, ZoneOffset.UTC);
     private final Duration ttl = Duration.ofDays(14);
-    private final RefreshTokenService service = new RefreshTokenService(repository, clock, ttl);
+    private final Duration maxFamilyLifetime = Duration.ofDays(30);
+    private final RefreshTokenService service = new RefreshTokenService(repository, ttl, maxFamilyLifetime);
 
     @Test
-    @DisplayName("issue should generate 43-char URL-safe raw token, store SHA-256 hex, and persist session")
+    @DisplayName("issue should generate 43-char URL-safe raw token, store SHA-256 hex, and persist session with metadata and family deadline")
     void issueSuccess() throws Exception {
         UUID userId = UUID.randomUUID();
+        Instant expiresAt = now.plus(ttl);
+        Instant absoluteExpiresAt = now.plus(maxFamilyLifetime);
+        SessionClientMetadata metadata = SessionClientMetadata.of("TestDevice", "127.0.0.1");
 
-        RefreshTokenService.IssuedRefreshToken issued = service.issue(userId);
+        RefreshTokenService.IssuedRefreshToken issued = service.issue(userId, now, expiresAt, absoluteExpiresAt, metadata);
 
         assertThat(issued.rawToken()).isNotBlank();
         assertThat(issued.rawToken()).hasSize(43);
         assertThat(issued.rawToken()).doesNotContain("=", "+", "/");
-        assertThat(issued.expiresAt()).isEqualTo(now.plus(ttl));
+        assertThat(issued.expiresAt()).isEqualTo(expiresAt);
         assertThat(issued.sessionId()).isNotNull();
 
         ArgumentCaptor<RefreshSessionEntity> captor = ArgumentCaptor.forClass(RefreshSessionEntity.class);
@@ -48,12 +50,13 @@ class RefreshTokenServiceTest {
 
         assertThat(saved.getId()).isEqualTo(issued.sessionId());
         assertThat(saved.getUserId()).isEqualTo(userId);
-        assertThat(saved.getExpiresAt()).isEqualTo(now.plus(ttl));
+        assertThat(saved.getExpiresAt()).isEqualTo(expiresAt);
+        assertThat(saved.getAbsoluteExpiresAt()).isEqualTo(absoluteExpiresAt);
         assertThat(saved.getCreatedAt()).isEqualTo(now);
         assertThat(saved.getRevokedAt()).isNull();
         assertThat(saved.getReplacedBySessionId()).isNull();
-        assertThat(saved.getDeviceName()).isNull();
-        assertThat(saved.getIpAddress()).isNull();
+        assertThat(saved.getDeviceName()).isEqualTo("TestDevice");
+        assertThat(saved.getIpAddress()).isEqualTo("127.0.0.1");
 
         // Hash verification
         assertThat(saved.getTokenHash()).isNotEqualTo(issued.rawToken());
@@ -71,9 +74,11 @@ class RefreshTokenServiceTest {
     @DisplayName("two consecutive issues should produce distinct tokens, hashes, and session IDs")
     void twoIssuesAreDistinct() {
         UUID userId = UUID.randomUUID();
+        Instant expiresAt = now.plus(ttl);
+        Instant absoluteExpiresAt = now.plus(maxFamilyLifetime);
 
-        RefreshTokenService.IssuedRefreshToken first = service.issue(userId);
-        RefreshTokenService.IssuedRefreshToken second = service.issue(userId);
+        RefreshTokenService.IssuedRefreshToken first = service.issue(userId, now, expiresAt, absoluteExpiresAt, SessionClientMetadata.empty());
+        RefreshTokenService.IssuedRefreshToken second = service.issue(userId, now, expiresAt, absoluteExpiresAt, SessionClientMetadata.empty());
 
         assertThat(first.rawToken()).isNotEqualTo(second.rawToken());
         assertThat(first.sessionId()).isNotEqualTo(second.sessionId());
@@ -84,23 +89,71 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    @DisplayName("issue should reject null userId")
-    void issueNullUserId() {
-        assertThatThrownBy(() -> service.issue(null))
+    @DisplayName("issue should reject invalid lifecycle and programming invariant arguments")
+    void issueRejectsInvalidArguments() {
+        UUID userId = UUID.randomUUID();
+        Instant expiresAt = now.plus(ttl);
+        Instant absoluteExpiresAt = now.plus(maxFamilyLifetime);
+
+        assertThatThrownBy(() -> service.issue(null, now, expiresAt, absoluteExpiresAt, SessionClientMetadata.empty()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("userId must not be null");
+
+        assertThatThrownBy(() -> service.issue(userId, null, expiresAt, absoluteExpiresAt, SessionClientMetadata.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("createdAt must not be null");
+
+        assertThatThrownBy(() -> service.issue(userId, now, null, absoluteExpiresAt, SessionClientMetadata.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("expiresAt must not be null");
+
+        assertThatThrownBy(() -> service.issue(userId, now, expiresAt, null, SessionClientMetadata.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("absoluteExpiresAt must not be null");
+
+        // expiresAt > absoluteExpiresAt invariant
+        Instant invalidExpiresAt = absoluteExpiresAt.plusSeconds(1);
+        assertThatThrownBy(() -> service.issue(userId, now, invalidExpiresAt, absoluteExpiresAt, SessionClientMetadata.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("expiresAt must not be after absoluteExpiresAt");
     }
 
     @Test
-    @DisplayName("constructor should reject zero or negative TTL")
-    void constructorRejectsInvalidTtl() {
-        assertThatThrownBy(() -> new RefreshTokenService(repository, clock, Duration.ZERO))
+    @DisplayName("constructor should reject invalid configuration durations and null repository")
+    void constructorRejectsInvalidDurations() {
+        assertThatThrownBy(() -> new RefreshTokenService(null, ttl, maxFamilyLifetime))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThatThrownBy(() -> new RefreshTokenService(repository, null, maxFamilyLifetime))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Refresh token TTL must be positive");
 
-        assertThatThrownBy(() -> new RefreshTokenService(repository, clock, Duration.ofDays(-1)))
+        assertThatThrownBy(() -> new RefreshTokenService(repository, Duration.ZERO, maxFamilyLifetime))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Refresh token TTL must be positive");
+
+        assertThatThrownBy(() -> new RefreshTokenService(repository, Duration.ofDays(-1), maxFamilyLifetime))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Refresh token TTL must be positive");
+
+        assertThatThrownBy(() -> new RefreshTokenService(repository, ttl, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Max family lifetime must be positive");
+
+        assertThatThrownBy(() -> new RefreshTokenService(repository, ttl, Duration.ZERO))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Max family lifetime must be positive");
+
+        assertThatThrownBy(() -> new RefreshTokenService(repository, ttl, Duration.ofDays(-1)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Max family lifetime must be positive");
+    }
+
+    @Test
+    @DisplayName("getters should return configured duration values")
+    void gettersReturnConfiguredValues() {
+        assertThat(service.getRefreshTokenTtl()).isEqualTo(ttl);
+        assertThat(service.getMaxFamilyLifetime()).isEqualTo(maxFamilyLifetime);
     }
 
     @Test

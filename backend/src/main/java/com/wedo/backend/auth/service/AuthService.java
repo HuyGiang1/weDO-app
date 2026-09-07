@@ -14,6 +14,7 @@ import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.ResetPasswordRequest;
 import com.wedo.backend.auth.dto.ResendVerificationRequest;
 import com.wedo.backend.auth.dto.ResendVerificationResponse;
+import com.wedo.backend.auth.dto.SessionClientMetadata;
 import com.wedo.backend.auth.dto.UserSummaryDto;
 import com.wedo.backend.auth.dto.UsernameAvailabilityResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
@@ -429,6 +430,11 @@ public class AuthService {
 
     @Transactional(noRollbackFor = LoginAttemptException.class)
     public LoginResponse login(LoginRequest request) {
+        return login(request, SessionClientMetadata.empty());
+    }
+
+    @Transactional(noRollbackFor = LoginAttemptException.class)
+    public LoginResponse login(LoginRequest request, SessionClientMetadata metadata) {
         String normalizedEmail = request.email().trim().toLowerCase(Locale.ROOT);
         Optional<UserEntity> userOpt = userRepository.findByEmail(normalizedEmail);
 
@@ -509,7 +515,19 @@ public class AuthService {
 
         String accessToken = jwtService.generateAccessToken(user.getId());
         Instant accessTokenExpiresAt = jwtService.extractExpiration(accessToken);
-        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(user.getId());
+
+        SessionClientMetadata safeMetadata = metadata != null ? metadata : SessionClientMetadata.empty();
+        Instant absoluteExpiresAt = now.plus(refreshTokenService.getMaxFamilyLifetime());
+        Instant slidingExpiresAt = now.plus(refreshTokenService.getRefreshTokenTtl());
+        Instant effectiveExpiresAt = slidingExpiresAt.isBefore(absoluteExpiresAt) ? slidingExpiresAt : absoluteExpiresAt;
+
+        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(
+                user.getId(),
+                now,
+                effectiveExpiresAt,
+                absoluteExpiresAt,
+                safeMetadata
+        );
 
         UserSummaryDto userSummary = new UserSummaryDto(
                 user.getId(),
@@ -531,6 +549,11 @@ public class AuthService {
 
     @Transactional(noRollbackFor = RefreshSessionStatusException.class)
     public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
+        return refreshToken(request, SessionClientMetadata.empty());
+    }
+
+    @Transactional(noRollbackFor = RefreshSessionStatusException.class)
+    public RefreshTokenResponse refreshToken(RefreshTokenRequest request, SessionClientMetadata metadata) {
         if (request == null || request.refreshToken() == null || request.refreshToken().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
@@ -572,6 +595,10 @@ public class AuthService {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
+        if (session.getAbsoluteExpiresAt() != null && !now.isBefore(session.getAbsoluteExpiresAt())) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
         Optional<UserEntity> userOpt = userRepository.findById(session.getUserId());
         if (userOpt.isEmpty()) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
@@ -598,7 +625,25 @@ public class AuthService {
         String accessToken = jwtService.generateAccessToken(user.getId());
         Instant accessTokenExpiresAt = jwtService.extractExpiration(accessToken);
 
-        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(user.getId());
+        Instant familyDeadline = (session.getAbsoluteExpiresAt() == null)
+                ? now.plus(refreshTokenService.getMaxFamilyLifetime())
+                : session.getAbsoluteExpiresAt();
+
+        Instant slidingDeadline = now.plus(refreshTokenService.getRefreshTokenTtl());
+        Instant effectiveExpiresAt = slidingDeadline.isBefore(familyDeadline) ? slidingDeadline : familyDeadline;
+
+        SessionClientMetadata safeMetadata = metadata != null ? metadata : SessionClientMetadata.empty();
+        String childDeviceName = safeMetadata.deviceName() != null ? safeMetadata.deviceName() : session.getDeviceName();
+        String childIpAddress = safeMetadata.ipAddress();
+        SessionClientMetadata childMetadata = new SessionClientMetadata(childDeviceName, childIpAddress);
+
+        RefreshTokenService.IssuedRefreshToken issuedRefresh = refreshTokenService.issue(
+                user.getId(),
+                now,
+                effectiveExpiresAt,
+                familyDeadline,
+                childMetadata
+        );
 
         session.setRevokedAt(now);
         session.setReplacedBySessionId(issuedRefresh.sessionId());

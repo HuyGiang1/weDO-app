@@ -195,5 +195,28 @@ class AuthJpaMappingTest extends AbstractPostgresIntegrationTest {
         assertThat(foundSession).isPresent();
         assertThat(foundSession.get().getDeviceName()).isEqualTo("iPhone 15 Pro");
         assertThat(foundSession.get().getUserId()).isEqualTo(userId);
+        assertThat(foundSession.get().getAbsoluteExpiresAt()).isNull();
+
+        // 7. RefreshSession with non-null absoluteExpiresAt (post-V11)
+        UUID session2Id = UUID.randomUUID();
+        String session2TokenHash = "sha256_hash_refresh_session_" + session2Id;
+        Instant absExp = now.truncatedTo(java.time.temporal.ChronoUnit.MICROS).plusSeconds(30 * 86400);
+        RefreshSessionEntity session2 = new RefreshSessionEntity(
+                session2Id,
+                userId,
+                session2TokenHash,
+                now.plusSeconds(14 * 86400),
+                null,
+                null,
+                "Pixel 8",
+                "10.0.0.1",
+                now,
+                absExp
+        );
+        refreshSessionRepository.save(session2);
+        Optional<RefreshSessionEntity> foundSession2 = refreshSessionRepository.findByTokenHash(session2TokenHash);
+        assertThat(foundSession2).isPresent();
+        assertThat(foundSession2.get().getDeviceName()).isEqualTo("Pixel 8");
+        assertThat(foundSession2.get().getAbsoluteExpiresAt()).isEqualTo(absExp);
     }
 }

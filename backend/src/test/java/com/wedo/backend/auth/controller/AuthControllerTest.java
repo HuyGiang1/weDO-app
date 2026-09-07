@@ -8,9 +8,12 @@ import com.wedo.backend.auth.dto.RegisterResponse;
 import com.wedo.backend.auth.dto.VerifyEmailRequest;
 import com.wedo.backend.auth.entity.AuthTokenEntity;
 import com.wedo.backend.auth.entity.AuthTokenType;
+import com.wedo.backend.auth.entity.RefreshSessionEntity;
 import com.wedo.backend.auth.event.EmailVerificationRequestedEvent;
 import com.wedo.backend.auth.event.PasswordResetRequestedEvent;
 import com.wedo.backend.auth.repository.AuthTokenRepository;
+import com.wedo.backend.auth.repository.RefreshSessionRepository;
+import com.wedo.backend.auth.security.RefreshTokenService;
 import com.wedo.backend.auth.service.AuthService;
 import com.wedo.backend.auth.security.ProfileCompletionTokenService;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
@@ -53,6 +56,9 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private AuthTokenRepository authTokenRepository;
+
+    @Autowired
+    private RefreshSessionRepository refreshSessionRepository;
 
     @Autowired
     private ProfileCompletionTokenService profileCompletionTokenService;
@@ -1689,6 +1695,116 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
         mockMvc.perform(post("/api/v1/auth/reset-password")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(byteOverJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    // ==========================================
+    // M2.12 Device / Session Security Hardening Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with valid X-Device-Name header should return 200 and store trimmed device name")
+    void login_withOptionalDeviceName_shouldSucceedAndStoreDeviceName() throws Exception {
+        String email = "ctrl.m212.dev@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        UUID userId = reg.userId();
+        String code = getLatestVerificationCode(userId);
+        authService.verifyEmail(new VerifyEmailRequest(userId, code));
+        String profileToken = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(profileToken, "ctrl_m212_dev", "Ctrl Dev", null, null));
+
+        String loginJson = String.format("""
+                {
+                    "email": "%s",
+                    "password": "Password123!"
+                }
+                """, email);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .header("X-Device-Name", "  Chrome on Windows  ")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty());
+
+        RefreshSessionEntity session = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(session.getDeviceName()).isEqualTo("Chrome on Windows");
+        assertThat(session.getAbsoluteExpiresAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login with X-Device-Name exceeding 100 characters should return 400 VALIDATION_FAILED")
+    void login_withDeviceNameOver100_shouldReturn400ValidationFailed() throws Exception {
+        String loginJson = """
+                {
+                    "email": "any.user@example.com",
+                    "password": "Password123!"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .header("X-Device-Name", "a".repeat(101))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with valid X-Device-Name header should return 200 and update device name")
+    void refresh_withOptionalDeviceName_shouldSucceed() throws Exception {
+        String email = "ctrl.m212.ref@example.com";
+        RegisterResponse reg = authService.register(new RegisterRequest(email, "Password123!"));
+        UUID userId = reg.userId();
+        String code = getLatestVerificationCode(userId);
+        authService.verifyEmail(new VerifyEmailRequest(userId, code));
+        String profileToken = profileCompletionTokenService.generate(userId);
+        authService.completeProfile(new CompleteProfileRequest(profileToken, "ctrl_m212_ref", "Ctrl Ref", null, null));
+
+        LoginResponse loginResp = authService.login(new LoginRequest(email, "Password123!"));
+        String rawRefresh = loginResp.refreshToken();
+
+        String refreshJson = String.format("""
+                {
+                    "refreshToken": "%s"
+                }
+                """, rawRefresh);
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Device-Name", "Safari on macOS")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty());
+
+        RefreshSessionEntity activeSession = refreshSessionRepository.findAll().stream()
+                .filter(s -> s.getUserId().equals(userId) && s.getRevokedAt() == null)
+                .findFirst()
+                .orElseThrow();
+        assertThat(activeSession.getDeviceName()).isEqualTo("Safari on macOS");
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/refresh with X-Device-Name exceeding 100 characters should return 400 VALIDATION_FAILED")
+    void refresh_withDeviceNameOver100_shouldReturn400ValidationFailed() throws Exception {
+        String refreshJson = """
+                {
+                    "refreshToken": "some_dummy_refresh_token"
+                }
+                """;
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .header("X-Device-Name", "b".repeat(101))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshJson))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));

@@ -4,36 +4,72 @@ import 'package:mobile/app/routes.dart';
 import 'package:mobile/features/auth/presentation/screens/verify_email_screen.dart';
 
 void main() {
-  group('AppRoutes VerifyEmail route', () {
-    test('returns no route when VerifyEmail arguments are absent or invalid', () {
-      expect(
-        AppRoutes.onGenerateRoute(
-          const RouteSettings(name: AppRoutes.verifyEmail),
-        ),
-        isNull,
-      );
-      expect(
-        AppRoutes.onGenerateRoute(
-          const RouteSettings(
-            name: AppRoutes.verifyEmail,
-            arguments: 'user@wedo.social',
+  group('AppRoutes ResetPassword route', () {
+    test(
+      'returns no route when ResetPassword arguments are absent or blank',
+      () {
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(name: AppRoutes.resetPassword),
           ),
-        ),
-        isNull,
-      );
-      expect(
-        AppRoutes.onGenerateRoute(
-          const RouteSettings(
-            name: AppRoutes.verifyEmail,
-            arguments: VerifyEmailRouteArgs(
-              email: '',
-              initialCooldownSeconds: 0,
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.resetPassword,
+              arguments: ResetPasswordRouteArgs(email: '   '),
             ),
           ),
+          isNull,
+        );
+      },
+    );
+
+    test('builds ResetPassword route only with supplied email arguments', () {
+      final route = AppRoutes.onGenerateRoute(
+        const RouteSettings(
+          name: AppRoutes.resetPassword,
+          arguments: ResetPasswordRouteArgs(email: 'reset@wedo.social'),
         ),
-        isNull,
       );
+      expect(route, isNotNull);
+      expect(route!.settings.arguments, isA<ResetPasswordRouteArgs>());
     });
+  });
+  group('AppRoutes VerifyEmail route', () {
+    test(
+      'returns no route when VerifyEmail arguments are absent or invalid',
+      () {
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(name: AppRoutes.verifyEmail),
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.verifyEmail,
+              arguments: 'user@wedo.social',
+            ),
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.verifyEmail,
+              arguments: VerifyEmailRouteArgs(
+                email: '',
+                initialCooldownSeconds: 0,
+              ),
+            ),
+          ),
+          isNull,
+        );
+      },
+    );
 
     testWidgets('uses only the supplied route arguments', (tester) async {
       final route = AppRoutes.onGenerateRoute(

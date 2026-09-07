@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
+import '../features/auth/presentation/screens/reset_password_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
 
@@ -20,6 +21,12 @@ class VerifyEmailRouteArgs {
   });
 }
 
+class ResetPasswordRouteArgs {
+  final String email;
+
+  const ResetPasswordRouteArgs({required this.email});
+}
+
 /// Application route definitions and Navigator 1.0 generator.
 abstract final class AppRoutes {
   static const String welcome = '/';
@@ -27,6 +34,7 @@ abstract final class AppRoutes {
   static const String verifyEmail = '/verify-email';
   static const String login = '/login';
   static const String forgotPassword = '/forgot-password';
+  static const String resetPassword = '/reset-password';
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -65,6 +73,21 @@ abstract final class AppRoutes {
           builder: (context) => ForgotPasswordScreen(
             onBack: () => Navigator.of(context).maybePop(),
             onReturnToLogin: () => Navigator.of(context).maybePop(),
+          ),
+          settings: settings,
+        );
+      case resetPassword:
+        final arguments = settings.arguments;
+        if (arguments is! ResetPasswordRouteArgs ||
+            arguments.email.trim().isEmpty) {
+          return null;
+        }
+        return MaterialPageRoute<void>(
+          builder: (context) => ResetPasswordScreen(
+            email: arguments.email,
+            onBackToLogin: () => Navigator.of(context).popUntil(
+              (route) => route.settings.name == login || route.isFirst,
+            ),
           ),
           settings: settings,
         );

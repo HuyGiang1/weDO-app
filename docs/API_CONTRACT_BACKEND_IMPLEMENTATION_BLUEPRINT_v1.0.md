@@ -1181,7 +1181,7 @@ When a password reset and a refresh token rotation execute concurrently for the 
   - *Implementation Decision:* Current backend stores validated storage keys and does not yet contain a media/CDN URL resolver. The API returns `avatarStorageKey` directly rather than an invented CDN URL. If media architecture later resolves presigned/public URLs, contract may evolve.
 - `bio` (string | null): Profile biography text, or null.
 - `status` (string enum): Current account status (`ACTIVE`). Only accounts in `ACTIVE` status can view profile.
-- `emailVerified` (boolean): Verification state, computed as `emailVerifiedAt != null`. The underlying `emailVerifiedAt` timestamp is not exposed in the `/me` response.
+- `emailVerified` (boolean): The /me contract requires verification state rather than the internal verification timestamp, so M2.11 exposes `emailVerified` as a boolean derived from `emailVerifiedAt != null`. The underlying `emailVerifiedAt` timestamp is not exposed.
 
 **Field Exclusions & Privacy:**
 - `createdAt` is explicitly omitted from `MyProfileResponse` in M2.11.
@@ -1190,7 +1190,7 @@ When a password reset and a refresh token rotation execute concurrently for the 
 **Database Lookup & Account Status Enforcement:**
 - **Zero Filter DB Hit:** `JwtAuthenticationFilter` performs zero database queries. Only resource flows needing user data perform database reads.
 - **Resource Lookup:** `UserService` queries `UserRepository.findById(userId)`.
-- **User Record Not Found:** If a cryptographically valid token contains a user UUID that does not exist in the database (e.g., deleted account), the endpoint returns HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`), NOT 404.
+- **User Record Not Found:** If a cryptographically valid token contains a user UUID that does not exist in the database (e.g., deleted account), `UserService` throws `BusinessException(ErrorCode.AUTH_TOKEN_INVALID)`, returning HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`), NOT 404.
 - **Account Status Policy:**
   - `ACTIVE`: HTTP 200 OK with `MyProfileResponse`.
   - `SUSPENDED`: HTTP 403 Forbidden with `ACCOUNT_SUSPENDED` (`"Account has been suspended."`).

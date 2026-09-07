@@ -1,5 +1,6 @@
 import 'dart:convert' show utf8;
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
@@ -105,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final email = _emailController.text.trim();
+      final email = _emailController.text.trim().toLowerCase();
       final password = _passwordController.text;
 
       if (widget.onSubmit != null) {
@@ -132,9 +133,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             return SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight,
-                ),
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
@@ -300,16 +299,10 @@ class _FooterSection extends StatelessWidget {
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        const Text(
-          'Already have an account? ',
-          style: AppTextStyles.bodySmall,
-        ),
+        const Text('Already have an account? ', style: AppTextStyles.bodySmall),
         GestureDetector(
           onTap: onLoginPressed,
-          child: const Text(
-            'Login',
-            style: AppTextStyles.link,
-          ),
+          child: const Text('Login', style: AppTextStyles.link),
         ),
       ],
     );

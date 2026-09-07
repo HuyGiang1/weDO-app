@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/ui/widgets/app_password_field.dart';
@@ -21,7 +22,9 @@ void main() {
   }
 
   group('RegisterScreen Widget Tests', () {
-    testWidgets('renders title, subtitle, form fields, button, and footer', (tester) async {
+    testWidgets('renders title, subtitle, form fields, button, and footer', (
+      tester,
+    ) async {
       await tester.pumpWidget(buildSubject());
 
       // Header
@@ -32,7 +35,10 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
       final image = tester.widget<Image>(find.byType(Image));
       expect(image.image, isA<AssetImage>());
-      expect((image.image as AssetImage).assetName, equals('assets/images/wedo_logo.png'));
+      expect(
+        (image.image as AssetImage).assetName,
+        equals('assets/images/wedo_logo.png'),
+      );
 
       // Form labels
       expect(find.text('Email'), findsOneWidget);
@@ -49,7 +55,10 @@ void main() {
       await tester.pumpWidget(buildSubject());
 
       // Password field obscure text initially true
-      final passwordFieldFinder = find.widgetWithText(AppPasswordField, 'Password');
+      final passwordFieldFinder = find.widgetWithText(
+        AppPasswordField,
+        'Password',
+      );
       expect(passwordFieldFinder, findsOneWidget);
 
       final textFieldInsidePassword = find.descendant(
@@ -91,49 +100,60 @@ void main() {
       expect(find.text('Please confirm your password'), findsOneWidget);
     });
 
-    testWidgets('validates email format, password length, and password confirmation', (tester) async {
-      await tester.pumpWidget(buildSubject());
+    testWidgets(
+      'validates email format, password length, and password confirmation',
+      (tester) async {
+        await tester.pumpWidget(buildSubject());
 
-      final emailInput = find.descendant(
-        of: find.widgetWithText(AppTextField, 'Email'),
-        matching: find.byType(TextField),
-      );
-      final passwordInput = find.descendant(
-        of: find.widgetWithText(AppPasswordField, 'Password'),
-        matching: find.byType(TextField),
-      );
-      final confirmPasswordInput = find.descendant(
-        of: find.widgetWithText(AppPasswordField, 'Confirm Password'),
-        matching: find.byType(TextField),
-      );
+        final emailInput = find.descendant(
+          of: find.widgetWithText(AppTextField, 'Email'),
+          matching: find.byType(TextField),
+        );
+        final passwordInput = find.descendant(
+          of: find.widgetWithText(AppPasswordField, 'Password'),
+          matching: find.byType(TextField),
+        );
+        final confirmPasswordInput = find.descendant(
+          of: find.widgetWithText(AppPasswordField, 'Confirm Password'),
+          matching: find.byType(TextField),
+        );
 
-      // 1. Invalid email & too short password
-      await tester.enterText(emailInput, 'invalid-email');
-      await tester.enterText(passwordInput, 'short');
-      await tester.enterText(confirmPasswordInput, 'short');
+        // 1. Invalid email & too short password
+        await tester.enterText(emailInput, 'invalid-email');
+        await tester.enterText(passwordInput, 'short');
+        await tester.enterText(confirmPasswordInput, 'short');
 
-      final buttonFinder = find.text('Create Account');
-      await tester.ensureVisible(buttonFinder);
-      await tester.tap(buttonFinder);
-      await tester.pumpAndSettle();
+        final buttonFinder = find.text('Create Account');
+        await tester.ensureVisible(buttonFinder);
+        await tester.tap(buttonFinder);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Please enter a valid email address'), findsOneWidget);
-      expect(find.text('Password must be at least 8 characters'), findsOneWidget);
+        expect(find.text('Please enter a valid email address'), findsOneWidget);
+        expect(
+          find.text('Password must be at least 8 characters'),
+          findsOneWidget,
+        );
 
-      // 2. Valid email, valid password, but mismatched confirmation
-      await tester.enterText(emailInput, 'user@wedo.social');
-      await tester.enterText(passwordInput, 'validPassword123');
-      await tester.enterText(confirmPasswordInput, 'differentPassword123');
+        // 2. Valid email, valid password, but mismatched confirmation
+        await tester.enterText(emailInput, 'user@wedo.social');
+        await tester.enterText(passwordInput, 'validPassword123');
+        await tester.enterText(confirmPasswordInput, 'differentPassword123');
 
-      await tester.tap(buttonFinder);
-      await tester.pumpAndSettle();
+        await tester.tap(buttonFinder);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Please enter a valid email address'), findsNothing);
-      expect(find.text('Password must be at least 8 characters'), findsNothing);
-      expect(find.text('Passwords do not match'), findsOneWidget);
-    });
+        expect(find.text('Please enter a valid email address'), findsNothing);
+        expect(
+          find.text('Password must be at least 8 characters'),
+          findsNothing,
+        );
+        expect(find.text('Passwords do not match'), findsOneWidget);
+      },
+    );
 
-    testWidgets('submits trimmed email and password when valid', (tester) async {
+    testWidgets('normalizes email and preserves raw password when valid', (
+      tester,
+    ) async {
       String? submittedEmail;
       String? submittedPassword;
       var successCalled = false;
@@ -163,7 +183,7 @@ void main() {
         matching: find.byType(TextField),
       );
 
-      await tester.enterText(emailInput, '  valid@wedo.social  ');
+      await tester.enterText(emailInput, '  Test.User@Example.COM  ');
       await tester.enterText(passwordInput, 'secretPass123');
       await tester.enterText(confirmPasswordInput, 'secretPass123');
 
@@ -172,12 +192,14 @@ void main() {
       await tester.tap(buttonFinder);
       await tester.pumpAndSettle();
 
-      expect(submittedEmail, equals('valid@wedo.social'));
+      expect(submittedEmail, equals('test.user@example.com'));
       expect(submittedPassword, equals('secretPass123'));
       expect(successCalled, isTrue);
     });
 
-    testWidgets('does not call onRegistrationSuccess if onSubmit is null', (tester) async {
+    testWidgets('does not call onRegistrationSuccess if onSubmit is null', (
+      tester,
+    ) async {
       var successCalled = false;
 
       await tester.pumpWidget(
@@ -267,7 +289,9 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('fires onLoginPressed when footer Login is tapped', (tester) async {
+    testWidgets('fires onLoginPressed when footer Login is tapped', (
+      tester,
+    ) async {
       var loginPressed = false;
 
       await tester.pumpWidget(
@@ -286,7 +310,9 @@ void main() {
       expect(loginPressed, isTrue);
     });
 
-    testWidgets('renders without overflow at normal phone sizes', (tester) async {
+    testWidgets('renders without overflow at normal phone sizes', (
+      tester,
+    ) async {
       // 390 x 844 (standard modern smartphone)
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;

@@ -25,6 +25,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Welcome Create Account reaches RegisterScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const WeDoApp());
+
+    final createAccountButton = find.text('Create Account');
+    await tester.ensureVisible(createAccountButton);
+    await tester.tap(createAccountButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Join WeDo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Register Login reaches LoginScreen', (
     WidgetTester tester,
   ) async {
@@ -61,6 +75,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Forgot Password?'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Login Create Account reaches RegisterScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const WeDoApp());
+
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    final createAccountButton = find.text('Create Account');
+    await tester.ensureVisible(createAccountButton);
+    await tester.tap(createAccountButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Join WeDo'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

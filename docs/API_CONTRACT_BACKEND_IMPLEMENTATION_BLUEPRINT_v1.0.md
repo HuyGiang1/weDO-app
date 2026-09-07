@@ -565,7 +565,7 @@ Taken username:
   - `null` or blank (whitespace-only) → normalized internally to `null`.
   - Trimmed.
   - Length $\le 100$ characters → accepted and stored.
-  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Device name must not exceed 100 characters"`). No silent truncation.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Request validation failed."`). No silent truncation.
   - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
 - IP Address (Server-Observed Metadata):
   - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
@@ -732,7 +732,7 @@ Taken username:
   - Optional `X-Device-Name` request header capture and normalization ($\le 100$ characters valid, $> 100$ rejected with HTTP 400 `VALIDATION_FAILED`).
   - Server-observed remote IP capture via `HttpServletRequest.getRemoteAddr()` ($\le 45$ characters stored, $> 45$ fail-safe to `null`).
   - Session metadata propagation: refresh inherits previous device name if header is omitted/blank, and updates remote IP.
-  - Flyway migration `V11__session_family_hardening.sql`: adds nullable `absolute_expires_at TIMESTAMPTZ NULL` without table rewrite or historical backfill.
+  - Flyway migration `V11__session_family_hardening.sql`: adds nullable `absolute_expires_at TIMESTAMPTZ` without table rewrite or historical backfill.
   - Preserving per-user lock serialization barrier (`UserCredential` → `RefreshSession`) and same-token race safety.
 - **Still NOT implemented after M2.12:**
   - Real email delivery provider / JavaMailSender / SendGrid / SES.
@@ -787,7 +787,7 @@ Taken username:
   - `null` or blank (whitespace-only) → normalized internally to `null`.
   - Trimmed.
   - Length $\le 100$ characters → accepted and stored.
-  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Device name must not exceed 100 characters"`). No silent truncation.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Request validation failed."`). No silent truncation.
   - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
 - IP Address (Server-Observed Metadata):
   - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
@@ -865,7 +865,7 @@ Taken username:
   - *Attempted Refresh at Day 30 ($T_{30}$):* At exact boundary $T \ge \text{Day 30}$, `now >= absoluteExpiresAt` fails validation → returns HTTP 401 `REFRESH_TOKEN_INVALID`. The family cannot slide further, requiring a fresh login.
 
 **Legacy Pre-V11 Migration Transition Policy:**
-- In database migration V11, column `absolute_expires_at` is added as `TIMESTAMPTZ NULL` because existing legacy session rows cannot reconstruct the original family-login timestamp without historical audit logs.
+- In database migration V11, column `absolute_expires_at TIMESTAMPTZ` is added (implicitly nullable as no NOT NULL constraint is declared) because existing legacy session rows cannot reconstruct the original family-login timestamp without historical audit logs.
 - Legacy rows have `absolute_expires_at IS NULL`.
 - On the first successful post-V11 refresh of an active legacy session at $T_1$:
   - Transition family deadline is established as `familyDeadline = T1 + 30d`.
@@ -879,7 +879,7 @@ Taken username:
 - SQL definition:
   ```sql
   ALTER TABLE refresh_sessions
-      ADD COLUMN IF NOT EXISTS absolute_expires_at TIMESTAMPTZ NULL;
+      ADD COLUMN absolute_expires_at TIMESTAMPTZ;
   ```
 - *Migration Performance & Concurrency:* Adding a nullable column without a DEFAULT in PostgreSQL avoids rewriting table data and avoids taking prolonged exclusive table locks.
 - *Schema Minimality:* No default value, no retroactive backfill, no `family_id` or `root_session_id` column, no new index, and no separate family table.

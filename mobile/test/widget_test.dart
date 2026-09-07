@@ -44,4 +44,23 @@ void main() {
     expect(find.text('Welcome Back'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Login Forgot Password reaches ForgotPasswordScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const WeDoApp());
+
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    final forgotPassword = find.text('Forgot Password?');
+    await tester.ensureVisible(forgotPassword);
+    await tester.tap(forgotPassword);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot Password?'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

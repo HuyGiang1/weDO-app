@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
@@ -25,6 +26,7 @@ abstract final class AppRoutes {
   static const String register = '/register';
   static const String verifyEmail = '/verify-email';
   static const String login = '/login';
+  static const String forgotPassword = '/forgot-password';
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -53,6 +55,16 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           builder: (context) => LoginScreen(
             onCreateAccount: () => Navigator.of(context).pushNamed(register),
+            onForgotPassword: () =>
+                Navigator.of(context).pushNamed(forgotPassword),
+          ),
+          settings: settings,
+        );
+      case forgotPassword:
+        return MaterialPageRoute<void>(
+          builder: (context) => ForgotPasswordScreen(
+            onBack: () => Navigator.of(context).maybePop(),
+            onReturnToLogin: () => Navigator.of(context).maybePop(),
           ),
           settings: settings,
         );

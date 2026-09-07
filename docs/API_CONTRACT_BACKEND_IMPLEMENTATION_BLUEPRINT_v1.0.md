@@ -234,25 +234,96 @@ Do not casually hard-delete membership, message, activity, expense, settlement o
 
 ## 4. Authentication & Security Model
 
-### 4.1 Authentication
+### 4.1 Authentication & Stateless SecurityContext
 
-MVP uses Email + Password with Spring Security, JWT access tokens, server-revocable refresh tokens and `PasswordEncoder`.
+The backend uses Email + Password authentication with Spring Security, JWT access tokens, server-revocable refresh tokens, and `PasswordEncoder`.
 
-The current user identity is always derived from authentication context; the client must never be trusted to submit `currentUserId` for authorization.
+- **Stateless Session Policy:** `SessionCreationPolicy.STATELESS`. The `SecurityContext` exists in memory per request only. There is no `HttpSession` persistence across requests. Every protected request must supply credentials via `Authorization: Bearer <access-token>`.
+- **Principal Integrity:** The current user identity is always derived from the authenticated `SecurityContext`; clients are never trusted to supply `currentUserId` for authorization.
+- **Authenticated Principal Contract:** `AuthenticatedUserPrincipal` contains strictly the authenticated `userId: UUID`. The `SecurityContext` does NOT hold `UserEntity`, passwords, emails, usernames, account status, or raw JWT strings. Authentication is populated as `UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList())` with null credentials and an empty authorities list (no synthetic roles or permissions).
 
-### 4.2 Access token
+### 4.2 Access JWT Architecture & Claim Contract
 
-Short-lived, recommended 15-60 minutes. Contains only stable/minimal identity claims such as user ID and expiration. Do not encode volatile group roles into JWT.
+- **Lifespan:** Short-lived 15 minutes (`security.jwt.access-token-ttl: 15m`).
+- **Cryptographic Claim Contract:**
+  - `sub`: User ID formatted as a standard UUID string.
+  - `iat`: Issued-at epoch seconds.
+  - `exp`: Expiration epoch seconds.
+  - No `username`, `email`, `status`, `roles`, `permissions`, or `jti` are included in the access JWT claims.
+- **Token Purpose Separation:** Access JWTs and profile-completion tokens are signed using distinct configuration keys (`security.jwt.secret-base64` vs. `security.profile-completion.secret-base64`). Under current cryptographic configuration, a profile-completion token cannot pass access-JWT verification.
 
-### 4.3 Refresh token
+### 4.3 Bearer Authentication Flow & Filter Responsibilities
+
+**Request Pipeline Flow:**
+```text
+HTTP Request
+  → RequestIdFilter
+  → JwtAuthenticationFilter
+  → SecurityContextHolder
+  → AuthorizationFilter
+  → Resource Controller
+```
+
+- **JwtAuthenticationFilter Implementation:**
+  - Extends `OncePerRequestFilter`.
+  - Defined as a plain class (not a Spring `@Component`), instantiated directly inside `SecurityConfig` and attached via `http.addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)`. This avoids accidental duplicate Servlet container filter registration.
+- **Filter Responsibility & Zero-DB-Hit Access Layer:**
+  - `JwtAuthenticationFilter` strictly answers: *"Is this Bearer access JWT cryptographically valid, and which userId does it represent?"*
+  - It does NOT query `users`, `user_credentials`, `refresh_sessions`, or `auth_tokens`.
+  - It does NOT check current account status, refresh tokens, revoke sessions, or load JPA entities.
+  - Fresh database state and account status enforcement are intentionally deferred to resource services (such as `UserService` for `GET /api/v1/me`) that actually require entity data.
+
+### 4.4 Authorization Header Policy & Public Endpoint Semantics
+
+- **Authorization Header Evaluation:**
+  - Absent or blank header: Filter is a no-op and delegates to the filter chain.
+  - Non-Bearer header (e.g., `Basic ...`, `Digest ...`, `Custom ...`): Filter ignores the header and delegates to the filter chain.
+  - Scheme matching: Case-insensitive comparison (`Bearer`, `bearer`, `BEARER`).
+  - Blank/missing token with Bearer scheme: Emits HTTP 401 `AUTH_TOKEN_INVALID`.
+- **Public Endpoint + Bearer Credential Semantics:**
+  - `JwtAuthenticationFilter` executes for all incoming requests (including public endpoints).
+  - Public endpoint + no `Authorization` header → normal public execution.
+  - Public endpoint + non-Bearer `Authorization` → filter ignores it, normal public execution.
+  - Public endpoint + invalid/malformed Bearer credential → HTTP 401 `AUTH_TOKEN_INVALID`.
+  - Public endpoint + expired Bearer credential → HTTP 401 `AUTH_TOKEN_EXPIRED`.
+  - *Rationale:* When a client explicitly supplies Bearer credentials, the backend validates them rather than silently ignoring invalid credentials.
+
+### 4.5 Refresh Token
 
 High-entropy opaque random session credential (not a JWT). Raw token is returned only to client; SHA-256 hash is persisted in the database (`refresh_sessions.token_hash`). Configured with a 14-day sliding TTL (`security.refresh-token.ttl: 14d`). Refresh rotation invalidates the old token/session S1 atomically (`revoked_at = now`, `replaced_by_session_id = S2.id`) and produces a new access token and a replacement refresh token/session S2.
 
-### 4.4 Authentication vs authorization
+### 4.6 Security Error Handling & Error Envelope Consolidation
+
+Security errors are rendered consistently via `SecurityErrorResponseWriter`, shared by:
+- `RestAuthenticationEntryPoint`: Invoked when an unauthenticated request attempts to access a protected resource. Emits HTTP 401 `UNAUTHORIZED` (`"Authentication is required."`).
+- `RestAccessDeniedHandler`: Invoked when an authenticated request lacks required authorization. Emits HTTP 403 `ACCESS_DENIED` (`"Access is denied."`).
+- `JwtAuthenticationFilter`: Invoked when Bearer credentials fail validation. Emits HTTP 401 `AUTH_TOKEN_EXPIRED` (`"Authentication token has expired."`) or HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`).
+
+**Canonical Error Envelope:**
+All security filters and entry points output the standard application error envelope:
+```json
+{
+  "timestamp": "2026-09-07T03:15:30.123Z",
+  "status": 401,
+  "code": "AUTH_TOKEN_INVALID",
+  "message": "Invalid authentication token.",
+  "path": "/api/v1/me",
+  "requestId": "4fa85f64-5717-4562-b3fc-2c963f66afa6"
+}
+```
+The `requestId` is resolved from `RequestIdFilter` via MDC (or header fallback) and synchronized to the `X-Request-ID` response header. Internal JWT parser exceptions are never exposed to clients.
+
+### 4.7 Status-Blind Access JWT Limitation & Password Reset Interaction
+
+- **Status-Blind Limitation:** Because `JwtAuthenticationFilter` performs no per-request user database queries, a cryptographically valid access JWT belonging to an account whose status changes (e.g., suspended or deactivated) after token issuance may establish authentication until the token expires (up to 15 minutes). Protected endpoints that query database user state (such as `GET /api/v1/me`) enforce current database status.
+- **Password Reset Interaction:** Password reset revokes all active refresh sessions in the database, but already-issued access JWTs remain cryptographically valid until expiration. There is no distributed access-token blacklist in the current architecture.
+
+### 4.8 Authentication vs Authorization
 
 Authentication answers **who the user is**. Authorization answers **whether that authenticated user may perform an action** based on current membership, role, ownership, privacy, block and domain state.
 
 ---
+
 
 ## 5. Authentication API
 
@@ -585,7 +656,7 @@ Taken username:
   - `device_name`: `null` (device metadata omitted in M2.7).
   - `ip_address`: `null` (IP tracking omitted in M2.7).
 
-**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10:**
+**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10 vs. M2.11:**
 - **M2.7 (Implemented in commit `e74f08e`):**
   - Initial login credential verification with timing-mitigated anti-enumeration.
   - Status disclosure ordering and account lockout semantics.
@@ -611,16 +682,29 @@ Taken username:
   - Successful password mutation clearing prior temporary login lockout (`failedAttempts = 0`, `lockedUntil = null`).
   - Mandatory revocation of all active refresh sessions for the user (`revokedAt = now WHERE revokedAt IS NULL`).
   - Per-user security barrier (`UserCredential` -> `RefreshSession`) serializing credential-mutating flows and hardening refresh lock ordering.
-- **Still NOT implemented in M2.10:**
+- **M2.11 (Implemented in commit `c6655b9`):**
+  - Access JWT consumption and Bearer authentication filter (`JwtAuthenticationFilter`).
+  - Stateless `SecurityContext` population with immutable `AuthenticatedUserPrincipal(userId)`.
+  - Protected endpoint `GET /api/v1/me` via `UserController` (`@AuthenticationPrincipal AuthenticatedUserPrincipal`).
+  - Current-user database lookup in `UserService` (`userRepository.findById(userId)`).
+  - Current account-status enforcement at `/me` (`ACTIVE` → 200, `SUSPENDED` → 403 `ACCOUNT_SUSPENDED`, `DEACTIVATED` → 403 `ACCOUNT_DEACTIVATED`, `PENDING_VERIFICATION` → 403 `EMAIL_NOT_VERIFIED`).
+  - Missing DB user on valid cryptographic token translates to HTTP 401 `AUTH_TOKEN_INVALID` (not 404).
+  - Security error writer consolidation (`SecurityErrorResponseWriter`) across entry point, access denied handler, and JWT filter.
+  - Dedicated access-token error codes: `AUTH_TOKEN_INVALID` and `AUTH_TOKEN_EXPIRED`.
+- **Still NOT implemented in M2.11:**
   - Real email delivery provider / JavaMailSender / SendGrid / SES.
   - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
   - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`).
   - Session management UI / device binding / absolute family lifetime (M2.12).
-  - Current user / protected endpoint (`GET /api/v1/me` - M2.11).
+  - Roles / permissions / RBAC (`PermissionService`).
+  - Global account-status DB validation in `JwtAuthenticationFilter`.
+  - `tokenVersion` or token revocation lists.
+  - Flutter auth integration.
+  - Media / avatar CDN URL resolution.
 
 **Security & Configuration Notes:**
 - Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
-- No `JwtAuthenticationFilter` is present in M2.7/M2.8.
+- `JwtAuthenticationFilter` is introduced in M2.11 as a zero-DB-hit filter executing before `UsernamePasswordAuthenticationFilter`.
 - Default configuration settings:
   - `security.jwt.access-token-ttl: 15m`
   - `security.profile-completion-token.ttl: 15m`
@@ -1064,9 +1148,63 @@ When a password reset and a refresh token rotation execute concurrently for the 
 
 ### USER-01 Get My Profile
 
-`GET /api/v1/me`
+- **Endpoint:** `GET /api/v1/me`
+- **Authentication:** Protected (Requires `Authorization: Bearer <accessToken>`)
+- **Controller:** `UserController` (`@AuthenticationPrincipal AuthenticatedUserPrincipal principal`)
+- **Service:** `UserService.getCurrentUser(principal.userId())`
+- **Success Response:** HTTP 200 OK
+- **Response DTO:** `MyProfileResponse`
 
-Returns private profile fields appropriate to the current user: ID, username, email, phone, displayName, avatarUrl, bio, account status and verification state.
+**Response Schema:**
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "username": "johndoe",
+  "email": "user@example.com",
+  "phone": "+1234567890",
+  "displayName": "John Doe",
+  "avatarStorageKey": "avatars/user-123.jpg",
+  "bio": "Hello world",
+  "status": "ACTIVE",
+  "emailVerified": true
+}
+```
+
+**Field Specifications (Exactly 9 Fields):**
+- `id` (UUID): User unique identifier.
+- `username` (string | null): Unique user handle, or null if not yet set.
+- `email` (string): Normalized primary email address.
+- `phone` (string | null): Contact phone number, or null.
+- `displayName` (string | null): Public display name, or null.
+- `avatarStorageKey` (string | null): Storage identifier/key for user avatar, or null.
+  - *Implementation Decision:* Current backend stores validated storage keys and does not yet contain a media/CDN URL resolver. The API returns `avatarStorageKey` directly rather than an invented CDN URL. If media architecture later resolves presigned/public URLs, contract may evolve.
+- `bio` (string | null): Profile biography text, or null.
+- `status` (string enum): Current account status (`ACTIVE`). Only accounts in `ACTIVE` status can view profile.
+- `emailVerified` (boolean): Verification state, computed as `emailVerifiedAt != null`. The underlying `emailVerifiedAt` timestamp is not exposed in the `/me` response.
+
+**Field Exclusions & Privacy:**
+- `createdAt` is explicitly omitted from `MyProfileResponse` in M2.11.
+- Sensitive credential internals (`passwordHash`, `failedAttempts`, `lockedUntil`, credentials, refresh sessions) are strictly omitted.
+
+**Database Lookup & Account Status Enforcement:**
+- **Zero Filter DB Hit:** `JwtAuthenticationFilter` performs zero database queries. Only resource flows needing user data perform database reads.
+- **Resource Lookup:** `UserService` queries `UserRepository.findById(userId)`.
+- **User Record Not Found:** If a cryptographically valid token contains a user UUID that does not exist in the database (e.g., deleted account), the endpoint returns HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`), NOT 404.
+- **Account Status Policy:**
+  - `ACTIVE`: HTTP 200 OK with `MyProfileResponse`.
+  - `SUSPENDED`: HTTP 403 Forbidden with `ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - `DEACTIVATED`: HTTP 403 Forbidden with `ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+  - `PENDING_VERIFICATION`: HTTP 403 Forbidden with `EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - *Note:* This check is performed inside `UserService` after database retrieval; it is not performed globally in `JwtAuthenticationFilter`.
+
+**Error Responses:**
+- `401 UNAUTHORIZED`: Emitted by entry point when `Authorization` header is missing or empty on this protected endpoint.
+- `401 AUTH_TOKEN_EXPIRED`: Emitted when the supplied Bearer access JWT has expired.
+- `401 AUTH_TOKEN_INVALID`: Emitted when Bearer access JWT is malformed, invalid signature, non-UUID subject, opaque refresh token, profile-completion token, or user is not found in database.
+- `403 ACCOUNT_SUSPENDED`: Authenticated account is suspended in database.
+- `403 ACCOUNT_DEACTIVATED`: Authenticated account is deactivated in database.
+- `403 EMAIL_NOT_VERIFIED`: Authenticated account is pending verification in database.
 
 ### USER-02 Update Profile
 
@@ -2264,9 +2402,11 @@ Potential action types: RSVP_REQUIRED, POLL_VOTE_REQUIRED, TASK_DUE, SETTLEMENT_
 
 ## 25. Core Error Code Catalogue
 
-### Authentication
+### Authentication & Security
 
 ```text
+UNAUTHORIZED
+ACCESS_DENIED
 AUTH_INVALID_CREDENTIALS
 AUTH_TOKEN_EXPIRED
 AUTH_TOKEN_INVALID
@@ -2280,12 +2420,16 @@ ACCOUNT_LOCKED
 PASSWORD_RESET_CODE_INVALID
 ```
 
-*Authentication Error Status & Disclosure Semantics:*
-- `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
+*Authentication & Security Error Status & Disclosure Semantics:*
+- `UNAUTHORIZED` (HTTP 401, `"Authentication is required."`): Emitted by `RestAuthenticationEntryPoint` when an unauthenticated request attempts to access a protected endpoint (missing, blank, or non-Bearer authorization header).
+- `ACCESS_DENIED` (HTTP 403, `"Access is denied."`): Emitted by `RestAccessDeniedHandler` when an authenticated principal lacks required authority or permission.
+- `AUTH_TOKEN_EXPIRED` (HTTP 401, `"Authentication token has expired."`): Emitted when a Bearer access JWT has expired (`exp < now`).
+- `AUTH_TOKEN_INVALID` (HTTP 401, `"Invalid authentication token."`): Emitted when a Bearer token is malformed, has an invalid cryptographic signature, contains a non-UUID subject, has a blank token string following the Bearer scheme, represents a profile-completion token or opaque refresh token, or when the authenticated user ID no longer exists in the database during protected resource lookup (`GET /api/v1/me`). Parser exception details are never leaked.
+- `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password during login. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
 - `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired token, revoked token, or previously rotated token during refresh rotation and logout.
-- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, or when attempting refresh with a structurally valid credential for an unverified account (in which case the current refresh session is revoked).
-- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, or when attempting refresh with a valid credential for a suspended account (current session is revoked).
-- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, or when attempting refresh with a valid credential for a deactivated account (current session is revoked).
+- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, when attempting refresh with a valid credential for an unverified account (current session is revoked), or when accessing `GET /api/v1/me` with an unverified account.
+- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, when attempting refresh with a valid credential for a suspended account (current session is revoked), or when accessing `GET /api/v1/me` with a suspended account.
+- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, when attempting refresh with a valid credential for a deactivated account (current session is revoked), or when accessing `GET /api/v1/me` with a deactivated account.
 - `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
 - `PASSWORD_RESET_CODE_INVALID` (HTTP 400, `"Invalid password reset code."`): Single unified external error emitted on unknown email, non-ACTIVE account, missing/consumed/expired reset token, exhausted attempts ($\ge 5$), or wrong OTP code during password reset. Emitted as a single error to reduce reset-flow and account-state oracle leakage through normal response semantics (without claiming timing indistinguishability).
 
@@ -2449,6 +2593,12 @@ Domain events may use Spring `ApplicationEventPublisher` inside the modular mono
 
 ## 27. DTO Catalogue
 
+### Security Principals
+
+```text
+AuthenticatedUserPrincipal (record: UUID userId)
+```
+
 ### Auth
 
 ```text
@@ -2479,6 +2629,10 @@ FriendRequestResponse
 FriendResponse
 BlockedUserResponse
 ```
+
+*Profile DTO Differentiation:*
+- `UserSummaryDto`: Embedded in authentication responses (`LoginResponse`), containing summary fields (`id`, `username`, `email`, `displayName`, `avatarUrl`).
+- `MyProfileResponse`: Dedicated private profile response for `GET /api/v1/me`. Contains exactly 9 fields: `id`, `username`, `email`, `phone`, `displayName`, `avatarStorageKey`, `bio`, `status`, `emailVerified`. Does NOT expose `createdAt`, `emailVerifiedAt`, or credential/session internals.
 
 ### Group
 

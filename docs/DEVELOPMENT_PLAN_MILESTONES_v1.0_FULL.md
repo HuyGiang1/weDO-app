@@ -115,7 +115,7 @@ Sub-milestones:
 - [x] M2.8  Refresh Token Rotation
 - [x] M2.9  Logout
 - [x] M2.10 Forgot / Reset Password
-- [ ] M2.11 Current User + Protected Endpoint
+- [x] M2.11 Current User + Protected Endpoint
 - [ ] M2.12 Device / Session Security Hardening
 - [ ] M2.13 Flutter Auth Screens
 - [ ] M2.14 Secure Storage + Dio Auth Interceptor

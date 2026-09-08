@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../data/auth_failure.dart';
 import '../data/auth_repository.dart';
+import 'screens/complete_profile_screen.dart';
+import 'screens/create_username_screen.dart';
 
 /// Owns only the transient Register -> Verify Email onboarding seam.
 class AuthFlowCoordinator {
   final AuthRepository _repository;
   String? _registeredUserId;
   String? _profileCompletionToken;
+  String? _selectedUsername;
   bool get hasProfileCompletionToken => _profileCompletionToken != null;
 
   AuthFlowCoordinator(this._repository);
@@ -55,6 +58,75 @@ class AuthFlowCoordinator {
         throw StateError('Unexpected verify step');
       }
       _profileCompletionToken = result.profileCompletionToken;
+      if (context.mounted) {
+        Navigator.of(context).pushNamed(
+          '/create-username',
+          arguments: CreateUsernameFlowArgs(
+            onCheckAvailability: (username) => checkUsername(context, username),
+            onContinue: (username) => selectUsername(context, username),
+          ),
+        );
+      }
+    } on AuthException catch (error) {
+      if (context.mounted) {
+        _show(context, _message(error.failure));
+      }
+    }
+  }
+
+  Future<UsernameAvailability> checkUsername(
+    BuildContext context,
+    String username,
+  ) async {
+    try {
+      final result = await _repository.checkUsernameAvailability(username);
+      return result.available
+          ? UsernameAvailability.available
+          : UsernameAvailability.unavailable;
+    } on AuthException {
+      rethrow;
+    }
+  }
+
+  Future<void> selectUsername(BuildContext context, String username) async {
+    _selectedUsername = username;
+    if (context.mounted) {
+      Navigator.of(context).pushNamed(
+        '/complete-profile',
+        arguments: CompleteProfileFlowArgs(
+          username: username,
+          onContinue: (data) => completeProfile(context, data),
+        ),
+      );
+    }
+  }
+
+  Future<void> completeProfile(
+    BuildContext context,
+    CompleteProfileData data,
+  ) async {
+    final token = _profileCompletionToken;
+    final username = _selectedUsername;
+    if (token == null || username == null) {
+      return;
+    }
+    try {
+      final result = await _repository.completeProfile(
+        profileCompletionToken: token,
+        username: username,
+        displayName: data.displayName,
+        bio: data.bio,
+        avatarStorageKey: null,
+      );
+      if (result.nextStep != 'LOGIN') {
+        throw StateError('Unexpected complete-profile step');
+      }
+      _profileCompletionToken = null;
+      _selectedUsername = null;
+      _registeredUserId = null;
+      if (context.mounted) {
+        Navigator.of(context).pushNamed('/login');
+      }
     } on AuthException catch (error) {
       if (context.mounted) {
         _show(context, _message(error.failure));
@@ -106,5 +178,23 @@ class VerifyEmailFlowArgs {
     required this.email,
     required this.onVerify,
     required this.onResend,
+  });
+}
+
+class CreateUsernameFlowArgs {
+  final Future<UsernameAvailability> Function(String) onCheckAvailability;
+  final Future<void> Function(String) onContinue;
+  const CreateUsernameFlowArgs({
+    required this.onCheckAvailability,
+    required this.onContinue,
+  });
+}
+
+class CompleteProfileFlowArgs {
+  final String username;
+  final Future<void> Function(CompleteProfileData) onContinue;
+  const CompleteProfileFlowArgs({
+    required this.username,
+    required this.onContinue,
   });
 }

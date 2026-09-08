@@ -10,6 +10,8 @@ import 'package:mobile/features/auth/data/auth_repository.dart';
 import 'package:mobile/features/auth/data/models/auth_models.dart';
 import 'package:mobile/features/auth/presentation/auth_flow_coordinator.dart';
 import 'package:mobile/features/auth/presentation/screens/verify_email_screen.dart';
+import 'package:mobile/features/auth/presentation/screens/create_username_screen.dart';
+import 'package:mobile/features/auth/presentation/screens/complete_profile_screen.dart';
 
 void main() {
   testWidgets(
@@ -52,6 +54,205 @@ void main() {
       expect(api.registerCalls, 1);
       expect(find.textContaining('test@example.com'), findsOneWidget);
       expect(find.text('Resend Code'), findsOneWidget);
+    },
+  );
+  testWidgets(
+    'complete profile network failure retains onboarding state and retry reaches Login',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      var loginRoutes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == '/login') loginRoutes++;
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+      await coordinator.register(context, 'a@b.c', 'p');
+      await tester.pump();
+      await coordinator.verify(context, '001234');
+      await tester.pump();
+      await coordinator.selectUsername(context, 'user_name');
+      await tester.pump();
+      api.completeFailure = const ApiException(
+        transportFailure: ApiTransportFailure.network,
+      );
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'user_name',
+          displayName: 'Name',
+          bio: null,
+        ),
+      );
+      await tester.pump();
+      expect(loginRoutes, 0);
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      expect(find.byType(SnackBar), findsOneWidget);
+      api.completeFailure = null;
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'user_name',
+          displayName: 'Name',
+          bio: null,
+        ),
+      );
+      await tester.pump();
+      expect(loginRoutes, 1);
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+    },
+  );
+  testWidgets(
+    'username race keeps onboarding state and allows another username selection',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      var loginRoutes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == '/login') loginRoutes++;
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+      await coordinator.register(context, 'a@b.c', 'p');
+      await tester.pump();
+      await coordinator.verify(context, '001234');
+      await tester.pump();
+      expect(
+        await coordinator.checkUsername(context, 'taken'),
+        UsernameAvailability.available,
+      );
+      await coordinator.selectUsername(context, 'taken');
+      await tester.pump();
+      api.completeFailure = const ApiException(code: 'USERNAME_ALREADY_EXISTS');
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'taken',
+          displayName: 'Name',
+          bio: null,
+        ),
+      );
+      await tester.pump();
+      expect(loginRoutes, 0);
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      expect(find.byType(SnackBar), findsOneWidget);
+      api.completeFailure = null;
+      await coordinator.selectUsername(context, 'other');
+      await tester.pump();
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'other',
+          displayName: 'Name',
+          bio: null,
+        ),
+      );
+      await tester.pump();
+      expect(loginRoutes, 1);
+    },
+  );
+  testWidgets(
+    'verify to username availability then complete profile uses memory-only onboarding state',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (_) =>
+              MaterialPageRoute<void>(builder: (_) => const SizedBox()),
+        ),
+      );
+      await coordinator.register(context, 'a@b.c', 'p');
+      await tester.pump();
+      await coordinator.verify(context, '001234');
+      await tester.pump();
+      expect(
+        await coordinator.checkUsername(context, 'User_Name'),
+        UsernameAvailability.available,
+      );
+      api.available = false;
+      expect(
+        await coordinator.checkUsername(context, 'other'),
+        UsernameAvailability.unavailable,
+      );
+      api.available = true;
+      await coordinator.selectUsername(context, 'user_name');
+      await tester.pump();
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'user_name',
+          displayName: 'Name',
+          bio: 'bio',
+        ),
+      );
+      expect(api.completeToken, 'secret');
+      expect(api.completeUsername, 'user_name');
+      expect(api.completeAvatar, isNull);
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
     },
   );
   testWidgets(
@@ -206,6 +407,9 @@ class FlowApi extends AuthApi {
   FlowApi() : super(Dio());
   int registerCalls = 0;
   String? code, resendUserId;
+  bool available = true;
+  String? completeToken, completeUsername, completeAvatar;
+  ApiException? completeFailure;
   ApiException? failure;
   @override
   Future<RegisterResult> register({
@@ -243,6 +447,32 @@ class FlowApi extends AuthApi {
     if (failure != null) throw failure!;
     resendUserId = id;
     return ResendVerificationResult(userId: id, cooldownSeconds: 37);
+  }
+
+  @override
+  Future<UsernameAvailabilityResult> checkUsernameAvailability(
+    String username,
+  ) async =>
+      UsernameAvailabilityResult(username: username, available: available);
+  @override
+  Future<CompleteProfileResult> completeProfile({
+    required String profileCompletionToken,
+    required String username,
+    required String displayName,
+    String? bio,
+    String? avatarStorageKey,
+  }) async {
+    if (completeFailure != null) throw completeFailure!;
+    completeToken = profileCompletionToken;
+    completeUsername = username;
+    completeAvatar = avatarStorageKey;
+    return const CompleteProfileResult(
+      userId: 'user',
+      username: 'user_name',
+      displayName: 'Name',
+      status: 'ACTIVE',
+      nextStep: 'LOGIN',
+    );
   }
 }
 

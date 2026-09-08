@@ -6,6 +6,7 @@ import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/reset_password_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
+import '../features/auth/presentation/auth_flow_coordinator.dart';
 
 /// Data required to render the verification screen from a real auth flow.
 ///
@@ -36,7 +37,10 @@ abstract final class AppRoutes {
   static const String forgotPassword = '/forgot-password';
   static const String resetPassword = '/reset-password';
 
-  static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+  static Route<dynamic>? onGenerateRoute(
+    RouteSettings settings, {
+    AuthFlowCoordinator? coordinator,
+  }) {
     switch (settings.name) {
       case welcome:
         return MaterialPageRoute<void>(
@@ -53,6 +57,10 @@ abstract final class AppRoutes {
       case register:
         return MaterialPageRoute<void>(
           builder: (context) => RegisterScreen(
+            onSubmit: coordinator == null
+                ? null
+                : (email, password) =>
+                      coordinator.register(context, email, password),
             onLoginPressed: () {
               Navigator.of(context).pushNamed(login);
             },
@@ -93,6 +101,19 @@ abstract final class AppRoutes {
         );
       case verifyEmail:
         final arguments = settings.arguments;
+        if (arguments is VerifyEmailFlowArgs) {
+          return MaterialPageRoute<void>(
+            builder: (context) => VerifyEmailScreen(
+              email: arguments.email,
+              initialCooldownSeconds: 0,
+              onBack: () => Navigator.of(context).maybePop(),
+              onChangeEmail: () => Navigator.of(context).maybePop(),
+              onVerify: arguments.onVerify,
+              onResend: arguments.onResend,
+            ),
+            settings: settings,
+          );
+        }
         if (arguments is! VerifyEmailRouteArgs ||
             arguments.email.isEmpty ||
             arguments.initialCooldownSeconds < 0) {

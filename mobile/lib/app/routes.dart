@@ -74,6 +74,10 @@ abstract final class AppRoutes {
       case login:
         return MaterialPageRoute<void>(
           builder: (context) => LoginScreen(
+            onLogin: coordinator == null
+                ? null
+                : ({required email, required password}) =>
+                      coordinator.login(context, email, password),
             onCreateAccount: () => Navigator.of(context).pushNamed(register),
             onForgotPassword: () =>
                 Navigator.of(context).pushNamed(forgotPassword),

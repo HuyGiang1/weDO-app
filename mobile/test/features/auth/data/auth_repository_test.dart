@@ -78,6 +78,28 @@ void main() {
     expect(api.logoutToken, isNull);
     expect(holder.currentAccessToken, isNull);
   });
+  test('clearLocalSession clears local credentials without remote logout', () async {
+    store.values[SecureStorageService.accessTokenKey] = 'access';
+    store.values[SecureStorageService.refreshTokenKey] = 'refresh';
+    holder.setAccessToken('access');
+
+    await repo.clearLocalSession();
+
+    expect(store.values, isEmpty);
+    expect(holder.currentAccessToken, isNull);
+    expect(api.logoutToken, isNull);
+  });
+  test('clearLocalSession clears the in-memory bearer when storage clearing fails', () async {
+    store.values[SecureStorageService.accessTokenKey] = 'access';
+    store.values[SecureStorageService.refreshTokenKey] = 'refresh';
+    store.failDeletes = true;
+    holder.setAccessToken('access');
+
+    await expectLater(repo.clearLocalSession(), throwsA(isA<AuthException>()));
+
+    expect(holder.currentAccessToken, isNull);
+    expect(api.logoutToken, isNull);
+  });
 }
 
 class FakeApi extends AuthApi {
@@ -177,9 +199,10 @@ class FakeApi extends AuthApi {
 
 class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
-  bool fail = false;
+  bool fail = false, failDeletes = false;
   @override
   Future<void> delete(String k) async {
+    if (failDeletes) throw StateError('x');
     values.remove(k);
   }
 

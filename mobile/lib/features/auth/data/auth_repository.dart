@@ -114,6 +114,19 @@ class AuthRepository {
 
   Future<CurrentUser> getCurrentUser() => _guard(api.getCurrentUser);
 
+  /// Removes only the locally held authenticated session. This deliberately
+  /// does not revoke remotely or affect onboarding-only credentials.
+  Future<void> clearLocalSession() async {
+    try {
+      await storage.clearSession();
+    } catch (_) {
+      // Do not keep an in-memory bearer token after durable clearing failed.
+      accessTokenHolder.clearAccessToken();
+      throw const AuthException(AuthFailure(AuthFailureType.unexpected));
+    }
+    accessTokenHolder.clearAccessToken();
+  }
+
   Future<LogoutResult> logout() async {
     var remoteRevocationSucceeded = true;
     final refreshToken = await storage.readRefreshToken();
@@ -124,8 +137,7 @@ class AuthRepository {
     } catch (_) {
       remoteRevocationSucceeded = false;
     } finally {
-      await storage.clearSession();
-      accessTokenHolder.clearAccessToken();
+      await clearLocalSession();
     }
     return LogoutResult(remoteRevocationSucceeded);
   }

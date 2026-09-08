@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/auth_failure.dart';
 import '../data/auth_repository.dart';
+import '../data/models/auth_models.dart';
 import 'screens/complete_profile_screen.dart';
 import 'screens/create_username_screen.dart';
 
@@ -14,6 +15,50 @@ class AuthFlowCoordinator {
   bool get hasProfileCompletionToken => _profileCompletionToken != null;
 
   AuthFlowCoordinator(this._repository);
+
+  Future<void> login(
+    BuildContext context,
+    String email,
+    String password,
+  ) async {
+    try {
+      final result = await _repository.login(
+        email: email,
+        password: password,
+        deviceName: null,
+      );
+      if (result is AuthenticatedSession) {
+        _clearOnboardingState();
+        if (context.mounted) _show(context, 'Signed in successfully.');
+        return;
+      }
+      if (result is ProfileCompletionRequired) {
+        // An incomplete-profile result belongs to a new account boundary, so
+        // it must never coexist with a previous account's bearer session.
+        _clearOnboardingState();
+        await _repository.clearLocalSession();
+        _registeredUserId = result.userId;
+        _profileCompletionToken = result.profileCompletionToken;
+        if (context.mounted) {
+          Navigator.of(context).pushNamed(
+            '/create-username',
+            arguments: CreateUsernameFlowArgs(
+              onCheckAvailability: (username) => checkUsername(context, username),
+              onContinue: (username) => selectUsername(context, username),
+            ),
+          );
+        }
+      }
+    } on AuthException catch (error) {
+      if (context.mounted) _show(context, _message(error.failure));
+    }
+  }
+
+  void _clearOnboardingState() {
+    _registeredUserId = null;
+    _profileCompletionToken = null;
+    _selectedUsername = null;
+  }
 
   Future<void> register(
     BuildContext context,
@@ -121,9 +166,7 @@ class AuthFlowCoordinator {
       if (result.nextStep != 'LOGIN') {
         throw StateError('Unexpected complete-profile step');
       }
-      _profileCompletionToken = null;
-      _selectedUsername = null;
-      _registeredUserId = null;
+      _clearOnboardingState();
       if (context.mounted) {
         Navigator.of(context).pushNamed('/login');
       }
@@ -158,6 +201,11 @@ class AuthFlowCoordinator {
       'Maximum verification attempts exceeded.',
     AuthFailureType.resendCooldownActive =>
       'Please wait before requesting another code.',
+    AuthFailureType.invalidCredentials => 'Invalid email or password.',
+    AuthFailureType.emailNotVerified => 'Please verify your email first.',
+    AuthFailureType.accountLocked => 'This account is locked.',
+    AuthFailureType.accountSuspended => 'This account is suspended.',
+    AuthFailureType.accountDeactivated => 'This account is deactivated.',
     AuthFailureType.network => 'Network unavailable. Please try again.',
     AuthFailureType.timeout => 'Request timed out. Please try again.',
     _ => 'Something went wrong. Please try again.',

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/app/app.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
 import 'package:mobile/core/storage/secure_storage_service.dart';
@@ -401,16 +402,320 @@ void main() {
       expect(api.resendUserId, 'user');
     },
   );
+  testWidgets(
+    'LoginScreen forwards canonical credentials once and authenticated login persists only through repository',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      await tester.pumpWidget(WeDoApp(authFlowCoordinator: coordinator));
+      await tester.ensureVisible(find.text('Login'));
+      await tester.tap(find.text('Login'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).at(0), ' A@B.C ');
+      await tester.enterText(find.byType(TextFormField).at(1), ' raw ');
+      final login = find.widgetWithText(ElevatedButton, 'Login');
+      await tester.ensureVisible(login);
+      await tester.tap(login);
+      await tester.pumpAndSettle();
+
+      expect(api.loginCalls, 1);
+      expect(api.loginEmail, 'a@b.c');
+      expect(api.loginPassword, ' raw ');
+      expect(api.loginDeviceName, isNull);
+      expect(store.values[SecureStorageService.accessTokenKey], 'access');
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+      expect(holder.currentAccessToken, 'access');
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(find.text('Signed in successfully.'), findsOneWidget);
+      expect(find.text('Welcome Back'), findsOneWidget);
+      expect(api.currentUserCalls, 0);
+    },
+  );
+  testWidgets(
+    'authenticated login clears stale onboarding state without navigation',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      var routes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (_) {
+            routes++;
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+      await coordinator.register(context, 'a@b.c', 'raw');
+      await coordinator.verify(context, '001234');
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+
+      await coordinator.login(context, 'a@b.c', 'raw');
+      await tester.pump();
+
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(routes, 2);
+      expect(store.values[SecureStorageService.accessTokenKey], 'access');
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+      expect(holder.currentAccessToken, 'access');
+      expect(api.currentUserCalls, 0);
+    },
+  );
+  testWidgets(
+    'incomplete-profile login without a prior session keeps onboarding credentials memory-only',
+    (tester) async {
+      final api = FlowApi()
+        ..loginResult = const ProfileCompletionRequired(
+          userId: 'account-b',
+          status: 'PENDING_PROFILE',
+          profileCompletionToken: 'account-b-profile-token',
+        );
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      Object? routeArguments;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (settings) {
+            routeArguments = settings.arguments;
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+
+      await coordinator.login(context, 'b@b.c', 'raw');
+      await tester.pump();
+
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+      expect(routeArguments, isA<CreateUsernameFlowArgs>());
+    },
+  );
+  testWidgets(
+    'incomplete-profile login clears an old local session before memory-only onboarding',
+    (tester) async {
+      final api = FlowApi()
+        ..loginResult = const ProfileCompletionRequired(
+          userId: 'account-b',
+          status: 'PENDING_PROFILE',
+          profileCompletionToken: 'account-b-profile-token',
+        );
+      final store = Memory()
+        ..values[SecureStorageService.accessTokenKey] = 'account-a-access'
+        ..values[SecureStorageService.refreshTokenKey] = 'account-a-refresh';
+      final holder = AccessTokenHolder()..setAccessToken('account-a-access');
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      Object? routeArguments;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == '/create-username') {
+              routeArguments = settings.arguments;
+            }
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+
+      await coordinator.login(context, 'b@b.c', 'raw');
+      await tester.pump();
+
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      expect(api.logoutCalls, 0);
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+      expect(routeArguments, isA<CreateUsernameFlowArgs>());
+    },
+  );
+  testWidgets(
+    'incomplete-profile login does not establish onboarding when local clearing fails',
+    (tester) async {
+      final api = FlowApi()
+        ..loginResult = const ProfileCompletionRequired(
+          userId: 'account-b',
+          status: 'PENDING_PROFILE',
+          profileCompletionToken: 'account-b-profile-token',
+        );
+      final store = Memory()
+        ..values[SecureStorageService.accessTokenKey] = 'account-a-access'
+        ..values[SecureStorageService.refreshTokenKey] = 'account-a-refresh'
+        ..failDeletes = true;
+      final holder = AccessTokenHolder()..setAccessToken('account-a-access');
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      late BuildContext context;
+      var createUsernameRoutes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == '/create-username') createUsernameRoutes++;
+            return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+          },
+        ),
+      );
+
+      await coordinator.login(context, 'b@b.c', 'raw');
+      await tester.pump();
+
+      expect(createUsernameRoutes, 0);
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(holder.currentAccessToken, isNull);
+      expect(
+        store.values[SecureStorageService.accessTokenKey],
+        'account-a-access',
+      );
+      expect(find.byType(SnackBar), findsOneWidget);
+    },
+  );
+  for (final loginFailure in <String, ApiException>{
+    'AUTH_INVALID_CREDENTIALS': const ApiException(
+      code: 'AUTH_INVALID_CREDENTIALS',
+    ),
+    'EMAIL_NOT_VERIFIED': const ApiException(code: 'EMAIL_NOT_VERIFIED'),
+    'ACCOUNT_LOCKED': const ApiException(code: 'ACCOUNT_LOCKED'),
+    'ACCOUNT_SUSPENDED': const ApiException(code: 'ACCOUNT_SUSPENDED'),
+    'ACCOUNT_DEACTIVATED': const ApiException(code: 'ACCOUNT_DEACTIVATED'),
+    'network': const ApiException(
+      transportFailure: ApiTransportFailure.network,
+    ),
+    'timeout': const ApiException(
+      transportFailure: ApiTransportFailure.timeout,
+    ),
+    'unexpected': const ApiException(),
+  }.entries) {
+    testWidgets(
+      'login ${loginFailure.key} preserves an existing session and does not navigate',
+      (tester) async {
+        final api = FlowApi()..loginFailure = loginFailure.value;
+        final store = Memory()
+          ..values[SecureStorageService.accessTokenKey] = 'account-a-access'
+          ..values[SecureStorageService.refreshTokenKey] = 'account-a-refresh';
+        final holder = AccessTokenHolder()..setAccessToken('account-a-access');
+        final coordinator = AuthFlowCoordinator(
+          AuthRepository(
+            api: api,
+            storage: SecureStorageService(store: store),
+            accessTokenHolder: holder,
+          ),
+        );
+        late BuildContext context;
+        var navigationCount = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (c) {
+                  context = c;
+                  return const SizedBox();
+                },
+              ),
+            ),
+            onGenerateRoute: (_) {
+              navigationCount++;
+              return MaterialPageRoute<void>(builder: (_) => const SizedBox());
+            },
+          ),
+        );
+
+        await coordinator.login(context, 'b@b.c', 'raw');
+        await tester.pump();
+
+        expect(
+          store.values[SecureStorageService.accessTokenKey],
+          'account-a-access',
+        );
+        expect(
+          store.values[SecureStorageService.refreshTokenKey],
+          'account-a-refresh',
+        );
+        expect(holder.currentAccessToken, 'account-a-access');
+        expect(coordinator.hasProfileCompletionToken, isFalse);
+        expect(navigationCount, 0);
+        expect(find.byType(SnackBar), findsOneWidget);
+      },
+    );
+  }
 }
 
 class FlowApi extends AuthApi {
   FlowApi() : super(Dio());
   int registerCalls = 0;
-  String? code, resendUserId;
+  int loginCalls = 0, logoutCalls = 0, currentUserCalls = 0;
+  String? code, resendUserId, loginEmail, loginPassword, loginDeviceName;
   bool available = true;
   String? completeToken, completeUsername, completeAvatar;
   ApiException? completeFailure;
   ApiException? failure;
+  ApiException? loginFailure;
+  LoginResult? loginResult;
   @override
   Future<RegisterResult> register({
     required String email,
@@ -474,12 +779,53 @@ class FlowApi extends AuthApi {
       nextStep: 'LOGIN',
     );
   }
+
+  @override
+  Future<LoginResult> login({
+    required String email,
+    required String password,
+    String? deviceName,
+  }) async {
+    loginCalls++;
+    loginEmail = email;
+    loginPassword = password;
+    loginDeviceName = deviceName;
+    if (loginFailure != null) throw loginFailure!;
+    return loginResult ??
+        AuthenticatedSession(
+          userId: 'user',
+          status: 'ACTIVE',
+          accessToken: 'access',
+          refreshToken: 'refresh',
+          tokenType: 'Bearer',
+          accessTokenExpiresAt: DateTime(2026),
+          user: const UserSummary(
+            id: 'user',
+            email: 'a@b.c',
+            username: 'user',
+            displayName: 'User',
+          ),
+        );
+  }
+
+  @override
+  Future<void> logout(String refreshToken) async {
+    logoutCalls++;
+  }
+
+  @override
+  Future<CurrentUser> getCurrentUser() async {
+    currentUserCalls++;
+    throw UnimplementedError();
+  }
 }
 
 class Memory implements SecureKeyValueStore {
   final values = <String, String>{};
+  bool failDeletes = false;
   @override
   Future<void> delete(String k) async {
+    if (failDeletes) throw StateError('x');
     values.remove(k);
   }
 

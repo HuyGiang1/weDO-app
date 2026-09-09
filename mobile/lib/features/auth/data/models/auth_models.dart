@@ -185,6 +185,63 @@ class CurrentUser {
   );
 }
 
+class RefreshTokenResponse {
+  final String accessToken;
+  final String refreshToken;
+  final String tokenType;
+  final DateTime accessTokenExpiresAt;
+  final DateTime refreshTokenExpiresAt;
+
+  const RefreshTokenResponse({
+    required this.accessToken,
+    required this.refreshToken,
+    required this.tokenType,
+    required this.accessTokenExpiresAt,
+    required this.refreshTokenExpiresAt,
+  });
+
+  factory RefreshTokenResponse.fromJson(Map<String, dynamic> j) {
+    try {
+      final rawTokenType = j['tokenType'];
+      if (rawTokenType is! String || rawTokenType != 'Bearer') {
+        throw FormatException('Unsupported or non-string tokenType: $rawTokenType');
+      }
+      final rawAccess = j['accessToken'];
+      if (rawAccess is! String || rawAccess.trim().isEmpty) {
+        throw const FormatException('Missing, non-string, or blank accessToken');
+      }
+      final rawRefresh = j['refreshToken'];
+      if (rawRefresh is! String || rawRefresh.trim().isEmpty) {
+        throw const FormatException('Missing, non-string, or blank refreshToken');
+      }
+      final rawAccessExp = j['accessTokenExpiresAt'];
+      if (rawAccessExp is! String) {
+        throw const FormatException('Missing or non-string accessTokenExpiresAt');
+      }
+      final rawRefreshExp = j['refreshTokenExpiresAt'];
+      if (rawRefreshExp is! String) {
+        throw const FormatException('Missing or non-string refreshTokenExpiresAt');
+      }
+      final accessExp = DateTime.tryParse(rawAccessExp);
+      final refreshExp = DateTime.tryParse(rawRefreshExp);
+      if (accessExp == null || refreshExp == null) {
+        throw const FormatException('Invalid ISO-8601 expiry timestamp');
+      }
+      return RefreshTokenResponse(
+        accessToken: rawAccess,
+        refreshToken: rawRefresh,
+        tokenType: rawTokenType,
+        accessTokenExpiresAt: accessExp,
+        refreshTokenExpiresAt: refreshExp,
+      );
+    } on FormatException {
+      rethrow;
+    } catch (e) {
+      throw FormatException('Malformed refresh token response: $e');
+    }
+  }
+}
+
 String _string(Map<String, dynamic> j, String k) {
   final v = j[k];
   if (v is String && v.isNotEmpty) {

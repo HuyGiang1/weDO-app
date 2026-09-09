@@ -114,6 +114,66 @@ class AuthRepository {
 
   Future<CurrentUser> getCurrentUser() => _guard(api.getCurrentUser);
 
+  /// Rotates the authenticated session using the stored refresh token.
+  ///
+  /// Atomically updates durable storage before updating [AccessTokenHolder].
+  /// If the server rotates but the client cannot safely parse or persist the
+  /// response, the session is treated as unrecoverable and cleared locally.
+  Future<void> refreshSession() async {
+    final refreshToken = await storage.readRefreshToken();
+    if (refreshToken == null || refreshToken.trim().isEmpty) {
+      throw const AuthException(
+        AuthFailure(AuthFailureType.noRefreshableSession),
+      );
+    }
+
+    RefreshTokenResponse response;
+    try {
+      response = await api.refreshToken(refreshToken);
+    } on ApiException catch (e) {
+      throw AuthException(AuthFailure.fromApi(e));
+    } catch (_) {
+      accessTokenHolder.clearAccessToken();
+      await _clearSessionBestEffort();
+      throw const AuthException(
+        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+      );
+    }
+
+    if (response.accessToken.trim().isEmpty ||
+        response.refreshToken.trim().isEmpty ||
+        response.tokenType != 'Bearer') {
+      accessTokenHolder.clearAccessToken();
+      await _clearSessionBestEffort();
+      throw const AuthException(
+        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+      );
+    }
+
+    try {
+      await storage.writeSession(
+        accessToken: response.accessToken,
+        refreshToken: response.refreshToken,
+      );
+    } catch (_) {
+      accessTokenHolder.clearAccessToken();
+      await _clearSessionBestEffort();
+      throw const AuthException(
+        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+      );
+    }
+
+    accessTokenHolder.setAccessToken(response.accessToken);
+  }
+
+  Future<void> _clearSessionBestEffort() async {
+    try {
+      await storage.clearSession();
+    } catch (_) {
+      // Best-effort cleanup
+    }
+  }
+
   /// Removes only the locally held authenticated session. This deliberately
   /// does not revoke remotely or affect onboarding-only credentials.
   Future<void> clearLocalSession() async {

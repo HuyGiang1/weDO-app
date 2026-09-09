@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
+import 'package:mobile/core/network/api_exception.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
 import 'package:mobile/core/storage/secure_storage_service.dart';
 import 'package:mobile/features/auth/data/auth_api.dart';
@@ -100,12 +101,181 @@ void main() {
     expect(holder.currentAccessToken, isNull);
     expect(api.logoutToken, isNull);
   });
+
+  group('AuthRepository.refreshSession', () {
+    test('success path: reads old refresh token, calls API, atomically persists new pair, updates holder', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-old';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
+      holder.setAccessToken('access-old');
+
+      await repo.refreshSession();
+
+      expect(api.refreshTokenArg, 'refresh-old');
+      expect(store.values[SecureStorageService.accessTokenKey], 'new-access');
+      expect(store.values[SecureStorageService.refreshTokenKey], 'new-refresh');
+      expect(holder.currentAccessToken, 'new-access');
+    });
+
+    test('missing or blank refresh token throws noRefreshableSession with zero API calls', () async {
+      // Null token
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.noRefreshableSession,
+          ),
+        ),
+      );
+      expect(api.refreshTokenArg, isNull);
+
+      // Blank token
+      store.values[SecureStorageService.refreshTokenKey] = '   ';
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.noRefreshableSession,
+          ),
+        ),
+      );
+      expect(api.refreshTokenArg, isNull);
+    });
+
+    test('storage write failure after rotation clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-old';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
+      holder.setAccessToken('access-old');
+      store.fail = true;
+
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionUnrecoverable,
+          ),
+        ),
+      );
+
+      // New access token was not applied, RAM cleared, storage evicted
+      expect(holder.currentAccessToken, isNull);
+      expect(store.values, isEmpty);
+    });
+
+    test('malformed success response clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-old';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
+      holder.setAccessToken('access-old');
+      api.malformedRefresh = true;
+
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionUnrecoverable,
+          ),
+        ),
+      );
+
+      expect(holder.currentAccessToken, isNull);
+      expect(store.values, isEmpty);
+    });
+
+    test('wrong JSON type or TypeError during refresh clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-old';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
+      holder.setAccessToken('access-old');
+      api.throwTypeErrorOnRefresh = true;
+
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionUnrecoverable,
+          ),
+        ),
+      );
+
+      expect(holder.currentAccessToken, isNull);
+      expect(store.values, isEmpty);
+    });
+
+    test('remote failure before rotation maps typed failure without clearing local session in this slice', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-old';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
+      holder.setAccessToken('access-old');
+
+      api.failRefreshWith = const ApiException(
+        statusCode: 401,
+        code: 'REFRESH_TOKEN_INVALID',
+      );
+
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshTokenInvalid,
+          ),
+        ),
+      );
+
+      // In M2.15.2, repository does not clear session on remote error prior to M2.15.4
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh-old');
+
+      // Account suspended
+      api.failRefreshWith = const ApiException(
+        statusCode: 403,
+        code: 'ACCOUNT_SUSPENDED',
+      );
+      await expectLater(
+        repo.refreshSession(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.accountSuspended,
+          ),
+        ),
+      );
+    });
+  });
 }
 
 class FakeApi extends AuthApi {
-  FakeApi() : super(Dio());
-  String? email, password, code, username, profileToken, logoutToken;
-  bool incomplete = false, failLogout = false;
+  FakeApi() : super(Dio(), refreshDio: Dio());
+  String? email, password, code, username, profileToken, logoutToken, refreshTokenArg;
+  bool incomplete = false, failLogout = false, malformedRefresh = false, throwTypeErrorOnRefresh = false;
+  ApiException? failRefreshWith;
+
+  @override
+  Future<RefreshTokenResponse> refreshToken(String refreshToken) async {
+    refreshTokenArg = refreshToken;
+    if (failRefreshWith != null) throw failRefreshWith!;
+    if (throwTypeErrorOnRefresh) {
+      throw TypeError();
+    }
+    if (malformedRefresh) {
+      throw const FormatException('malformed response');
+    }
+    return RefreshTokenResponse(
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: DateTime(2026, 6, 1),
+      refreshTokenExpiresAt: DateTime(2026, 6, 8),
+    );
+  }
   @override
   Future<RegisterResult> register({
     required String email,

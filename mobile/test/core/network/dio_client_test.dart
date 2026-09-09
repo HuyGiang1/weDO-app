@@ -86,6 +86,43 @@ void main() {
       expect(adapter.requests, hasLength(1));
       expect(adapter.requests.single.path, '/api/v1/me');
     });
+
+    test('DioClient.raw configures identical options with zero interceptors', () {
+      final rawClient = DioClient.raw(
+        apiConfig: ApiConfig(baseUrl: 'https://api.example.test/'),
+      );
+
+      expect(rawClient.dio.options.baseUrl, 'https://api.example.test');
+      expect(rawClient.dio.options.contentType, Headers.jsonContentType);
+      expect(rawClient.dio.options.connectTimeout, const Duration(seconds: 15));
+      expect(rawClient.dio.options.sendTimeout, const Duration(seconds: 15));
+      expect(rawClient.dio.options.receiveTimeout, const Duration(seconds: 30));
+      expect(rawClient.dio.options.headers['Accept'], 'application/json');
+      expect(rawClient.dio.interceptors.isEmpty, isTrue);
+
+      // Strips AuthInterceptor if passed an existing dio containing one
+      final clientWithAuth = DioClient.raw(
+        apiConfig: ApiConfig(baseUrl: 'https://api.example.test/'),
+        dio: Dio()..interceptors.add(AuthInterceptor(tokenHolder)),
+      );
+      expect(clientWithAuth.dio.interceptors.isEmpty, isTrue);
+
+      // Also strips arbitrary non-auth interceptors
+      final customAdapter = RecordingAdapter();
+      final clientWithArbitrary = DioClient.raw(
+        apiConfig: ApiConfig(baseUrl: 'https://api.example.test/'),
+        dio: Dio()
+          ..httpClientAdapter = customAdapter
+          ..interceptors.addAll([
+            InterceptorsWrapper(
+              onRequest: (options, handler) => handler.next(options),
+            ),
+            LogInterceptor(),
+          ]),
+      );
+      expect(clientWithArbitrary.dio.interceptors.isEmpty, isTrue);
+      expect(identical(clientWithArbitrary.dio.httpClientAdapter, customAdapter), isTrue);
+    });
   });
 }
 

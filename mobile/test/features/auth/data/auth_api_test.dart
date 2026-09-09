@@ -5,15 +5,20 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/network/api_exception.dart';
 import 'package:mobile/features/auth/data/auth_api.dart';
+import 'package:mobile/features/auth/data/auth_failure.dart';
 import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   late RecordingAdapter adapter;
+  late RecordingAdapter refreshAdapter;
   late AuthApi api;
   setUp(() {
     adapter = RecordingAdapter();
+    refreshAdapter = RecordingAdapter();
     api = AuthApi(
       Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter,
+      refreshDio:
+          Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = refreshAdapter,
     );
   });
   test('uses exact public-auth methods, bodies, headers, paths, and parses responses', () async {
@@ -141,6 +146,170 @@ void main() {
       api.register(email: 'x', password: 'p'),
       throwsA(isA<ApiException>()),
     );
+  });
+
+  test('refreshToken uses dedicated refresh transport without auth header and parses response', () async {
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': '  new-access  ',
+      'refreshToken': '  new-refresh  ',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+
+    final result = await api.refreshToken('current-refresh-token');
+
+    expect(result.accessToken, '  new-access  ');
+    expect(result.refreshToken, '  new-refresh  ');
+    expect(result.tokenType, 'Bearer');
+    expect(result.accessTokenExpiresAt, DateTime.parse('2026-06-01T12:00:00Z'));
+    expect(result.refreshTokenExpiresAt, DateTime.parse('2026-06-08T12:00:00Z'));
+
+    // Verify isolated refresh transport was used
+    expect(refreshAdapter.requests.length, 1);
+    final request = refreshAdapter.requests.first;
+    expect(request.path, '/api/v1/auth/refresh');
+    expect(request.method, 'POST');
+    expect(request.data, {'refreshToken': 'current-refresh-token'});
+    expect(request.headers['Authorization'], isNull);
+    expect(request.headers['X-Device-Name'], isNull);
+
+    // Verify primary transport was NOT touched
+    expect(adapter.requests.any((r) => r.path == '/api/v1/auth/refresh'), isFalse);
+  });
+
+  test('refreshToken throws FormatException on malformed success payloads', () async {
+    // Missing token
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Blank token
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': '   ',
+      'refreshToken': 'refresh',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Invalid tokenType
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': 'refresh',
+      'tokenType': 'Basic',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Malformed date
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': 'refresh',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': 'invalid-date',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Wrong type: accessToken: 123
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 123,
+      'refreshToken': 'refresh',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Wrong type: refreshToken: {}
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': <String, dynamic>{},
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Wrong type: tokenType: 123
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': 'refresh',
+      'tokenType': 123,
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Wrong type: accessTokenExpiresAt: 123
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': 'refresh',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': 123,
+      'refreshTokenExpiresAt': '2026-06-08T12:00:00Z',
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+
+    // Wrong type: refreshTokenExpiresAt: []
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'accessToken': 'access',
+      'refreshToken': 'refresh',
+      'tokenType': 'Bearer',
+      'accessTokenExpiresAt': '2026-06-01T12:00:00Z',
+      'refreshTokenExpiresAt': <dynamic>[],
+    };
+    await expectLater(
+      api.refreshToken('token'),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('refreshToken maps REFRESH_TOKEN_INVALID and remote errors', () async {
+    refreshAdapter.status = 401;
+    refreshAdapter.responses['/api/v1/auth/refresh'] = {
+      'code': 'REFRESH_TOKEN_INVALID',
+      'message': 'Invalid refresh token.',
+    };
+    try {
+      await api.refreshToken('token');
+      fail('Expected ApiException');
+    } on ApiException catch (e) {
+      expect(e.statusCode, 401);
+      expect(e.code, 'REFRESH_TOKEN_INVALID');
+      expect(AuthFailure.fromApi(e).type, AuthFailureType.refreshTokenInvalid);
+    }
   });
 }
 

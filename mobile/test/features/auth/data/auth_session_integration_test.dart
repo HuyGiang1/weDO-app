@@ -36,7 +36,7 @@ void main() {
         dio: dio,
       );
 
-      api = AuthApi(dioClient.dio);
+      api = AuthApi(dioClient.dio, refreshDio: Dio());
       repository = AuthRepository(
         api: api,
         storage: storage,

@@ -13,11 +13,13 @@ import 'features/auth/presentation/auth_flow_coordinator.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final apiConfig = ApiConfig();
   final holder = AccessTokenHolder();
   final storage = SecureStorageService();
-  final dio = DioClient(apiConfig: ApiConfig(), accessTokenHolder: holder);
+  final dio = DioClient(apiConfig: apiConfig, accessTokenHolder: holder);
+  final refreshDio = DioClient.raw(apiConfig: apiConfig);
   final repository = AuthRepository(
-    api: AuthApi(dio.dio),
+    api: AuthApi(dio.dio, refreshDio: refreshDio.dio),
     storage: storage,
     accessTokenHolder: holder,
   );

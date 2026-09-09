@@ -242,7 +242,7 @@ void main() {
 }
 
 class RecoveryApi extends AuthApi {
-  RecoveryApi() : super(Dio());
+  RecoveryApi() : super(Dio(), refreshDio: Dio());
 
   int forgotCalls = 0;
   int resetCalls = 0;

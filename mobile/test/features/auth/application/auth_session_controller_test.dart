@@ -358,7 +358,7 @@ class TestApi extends AuthApi {
   LoginResult? loginResult;
   ApiException? throwOnLogin;
 
-  TestApi() : super(Dio());
+  TestApi() : super(Dio(), refreshDio: Dio());
 
   @override
   Future<LoginResult> login({

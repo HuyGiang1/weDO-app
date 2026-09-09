@@ -14,6 +14,9 @@ enum AuthFailureType {
   accountDeactivated,
   profileAlreadyCompleted,
   passwordResetCodeInvalid,
+  refreshTokenInvalid,
+  noRefreshableSession,
+  refreshSessionUnrecoverable,
   network,
   timeout,
   unexpected,
@@ -48,6 +51,7 @@ class AuthFailure {
       'ACCOUNT_DEACTIVATED': AuthFailureType.accountDeactivated,
       'PROFILE_ALREADY_COMPLETED': AuthFailureType.profileAlreadyCompleted,
       'PASSWORD_RESET_CODE_INVALID': AuthFailureType.passwordResetCodeInvalid,
+      'REFRESH_TOKEN_INVALID': AuthFailureType.refreshTokenInvalid,
     };
     final type =
         types[exception.code] ??

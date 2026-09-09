@@ -706,7 +706,7 @@ void main() {
 }
 
 class FlowApi extends AuthApi {
-  FlowApi() : super(Dio());
+  FlowApi() : super(Dio(), refreshDio: Dio());
   int registerCalls = 0;
   int loginCalls = 0, logoutCalls = 0, currentUserCalls = 0;
   String? code, resendUserId, loginEmail, loginPassword, loginDeviceName;

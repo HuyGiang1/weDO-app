@@ -4,8 +4,14 @@ import '../../../core/network/api_exception.dart';
 import 'models/auth_models.dart';
 
 class AuthApi {
-  final Dio _dio;
-  AuthApi(this._dio);
+  final Dio dio;
+  final Dio refreshDio;
+
+  AuthApi(
+    this.dio, {
+    required this.refreshDio,
+  });
+
   Future<T> _call<T>(
     Future<Response<dynamic>> Function() request,
     T Function(Map<String, dynamic>) parse,
@@ -13,8 +19,14 @@ class AuthApi {
     try {
       final response = await request();
       final data = response.data;
-      if (data is! Map) throw FormatException('Expected JSON object');
-      return parse(Map<String, dynamic>.from(data));
+      if (data is! Map) throw const FormatException('Expected JSON object');
+      try {
+        return parse(Map<String, dynamic>.from(data));
+      } on FormatException {
+        rethrow;
+      } catch (e) {
+        throw FormatException('Malformed response payload: $e');
+      }
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }
@@ -32,7 +44,7 @@ class AuthApi {
     required String email,
     required String password,
   }) => _call(
-    () => _dio.post(
+    () => dio.post(
       '/api/v1/auth/register',
       data: {'email': email, 'password': password},
     ),
@@ -42,7 +54,7 @@ class AuthApi {
     required String userId,
     required String code,
   }) => _call(
-    () => _dio.post(
+    () => dio.post(
       '/api/v1/auth/verify-email',
       data: {'userId': userId, 'code': code},
     ),
@@ -50,13 +62,13 @@ class AuthApi {
   );
   Future<ResendVerificationResult> resendVerification(String userId) => _call(
     () =>
-        _dio.post('/api/v1/auth/resend-verification', data: {'userId': userId}),
+        dio.post('/api/v1/auth/resend-verification', data: {'userId': userId}),
     ResendVerificationResult.fromJson,
   );
   Future<UsernameAvailabilityResult> checkUsernameAvailability(
     String username,
   ) => _call(
-    () => _dio.get(
+    () => dio.get(
       '/api/v1/auth/usernames/${Uri.encodeComponent(username)}/availability',
     ),
     UsernameAvailabilityResult.fromJson,
@@ -68,7 +80,7 @@ class AuthApi {
     String? bio,
     String? avatarStorageKey,
   }) => _call(
-    () => _dio.post(
+    () => dio.post(
       '/api/v1/auth/complete-profile',
       data: {
         'profileCompletionToken': profileCompletionToken,
@@ -85,7 +97,7 @@ class AuthApi {
     required String password,
     String? deviceName,
   }) => _call(
-    () => _dio.post(
+    () => dio.post(
       '/api/v1/auth/login',
       data: {'email': email, 'password': password},
       options: Options(
@@ -94,12 +106,19 @@ class AuthApi {
     ),
     LoginResult.fromJson,
   );
+  Future<RefreshTokenResponse> refreshToken(String refreshToken) => _call(
+    () => refreshDio.post(
+      '/api/v1/auth/refresh',
+      data: {'refreshToken': refreshToken},
+    ),
+    RefreshTokenResponse.fromJson,
+  );
   Future<void> logout(String refreshToken) => _empty(
     () =>
-        _dio.post('/api/v1/auth/logout', data: {'refreshToken': refreshToken}),
+        dio.post('/api/v1/auth/logout', data: {'refreshToken': refreshToken}),
   );
   Future<ForgotPasswordResult> forgotPassword(String email) => _call(
-    () => _dio.post('/api/v1/auth/forgot-password', data: {'email': email}),
+    () => dio.post('/api/v1/auth/forgot-password', data: {'email': email}),
     ForgotPasswordResult.fromJson,
   );
   Future<void> resetPassword({
@@ -107,11 +126,11 @@ class AuthApi {
     required String code,
     required String newPassword,
   }) => _empty(
-    () => _dio.post(
+    () => dio.post(
       '/api/v1/auth/reset-password',
       data: {'email': email, 'code': code, 'newPassword': newPassword},
     ),
   );
   Future<CurrentUser> getCurrentUser() =>
-      _call(() => _dio.get('/api/v1/me'), CurrentUser.fromJson);
+      _call(() => dio.get('/api/v1/me'), CurrentUser.fromJson);
 }

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/auth/session_revision.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/api_exception.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
@@ -107,9 +110,15 @@ void main() {
       store.values[SecureStorageService.accessTokenKey] = 'access-old';
       store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
       holder.setAccessToken('access-old');
+      final fromRev = holder.revision;
 
-      await repo.refreshSession();
+      final SessionRevisionTransition transition =
+          await repo.refreshSession(expectedRevision: fromRev);
 
+      expect(transition, isA<SessionRevisionTransition>());
+      expect(transition.fromRevision, fromRev);
+      expect(transition.toRevision, holder.revision);
+      expect(transition.toRevision, greaterThan(fromRev));
       expect(api.refreshTokenArg, 'refresh-old');
       expect(store.values[SecureStorageService.accessTokenKey], 'new-access');
       expect(store.values[SecureStorageService.refreshTokenKey], 'new-refresh');
@@ -119,7 +128,7 @@ void main() {
     test('missing or blank refresh token throws noRefreshableSession with zero API calls', () async {
       // Null token
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -133,7 +142,7 @@ void main() {
       // Blank token
       store.values[SecureStorageService.refreshTokenKey] = '   ';
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -152,7 +161,7 @@ void main() {
       store.fail = true;
 
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -174,7 +183,7 @@ void main() {
       api.malformedRefresh = true;
 
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -195,7 +204,7 @@ void main() {
       api.throwTypeErrorOnRefresh = true;
 
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -220,7 +229,7 @@ void main() {
       );
 
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -239,7 +248,7 @@ void main() {
         code: 'ACCOUNT_SUSPENDED',
       );
       await expectLater(
-        repo.refreshSession(),
+        repo.refreshSession(expectedRevision: holder.revision),
         throwsA(
           isA<AuthException>().having(
             (e) => e.failure.type,
@@ -249,6 +258,242 @@ void main() {
         ),
       );
     });
+
+    // Requirement 24: Consistent Refresh Snapshot
+    test('consistent refresh snapshot: superseded before API call if session revision changed', () async {
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+
+      // Account B login occurs, mutating holder to rev 11 and store with B's refresh token
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-B';
+      holder.setAccessToken('access-B');
+      expect(holder.revision, 11);
+
+      // Call refreshSession with expectedRevision: 10
+      await expectLater(
+        repo.refreshSession(expectedRevision: 10),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionSuperseded,
+          ),
+        ),
+      );
+
+      // B refresh token is NEVER sent to /auth/refresh
+      expect(api.refreshTokenArg, isNull);
+      // B holder and storage remain untouched
+      expect(holder.currentAccessToken, 'access-B');
+      expect(holder.revision, 11);
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh-B');
+    });
+
+    // Requirement 29: Refresh vs Logout
+    test('refresh vs logout: rotated response is discarded and no resurrection if logout occurs during network call', () async {
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+
+      final networkCompleter = Completer<RefreshTokenResponse>();
+      api.refreshCompleter = networkCompleter;
+
+      final refreshFuture = repo.refreshSession(expectedRevision: 10);
+      await pumpEventQueue();
+      expect(api.refreshTokenArg, 'refresh-A');
+
+      // Logout occurs while network call is in flight
+      await repo.clearLocalSession();
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      final logoutRev = holder.revision;
+
+      // Refresh completes after logout
+      networkCompleter.complete(
+        RefreshTokenResponse(
+          accessToken: 'resurrect-access',
+          refreshToken: 'resurrect-refresh',
+          tokenType: 'Bearer',
+          accessTokenExpiresAt: DateTime(2026),
+          refreshTokenExpiresAt: DateTime(2026),
+        ),
+      );
+
+      await expectLater(
+        refreshFuture,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionSuperseded,
+          ),
+        ),
+      );
+
+      // Storage and holder remain empty; no resurrection
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+      expect(holder.revision, logoutRev);
+    });
+
+    // Requirement 30: Refresh vs Login
+    test('refresh vs login: old Account A refresh response discarded and Account B untouched', () async {
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+
+      final networkCompleter = Completer<RefreshTokenResponse>();
+      api.refreshCompleter = networkCompleter;
+
+      final refreshFuture = repo.refreshSession(expectedRevision: 10);
+      await pumpEventQueue();
+      expect(api.refreshTokenArg, 'refresh-A');
+
+      // Account B logs in while network is pending
+      await repo.login(email: 'user-b@example.com', password: 'password-b');
+      expect(holder.currentAccessToken, 'access');
+      expect(store.values[SecureStorageService.accessTokenKey], 'access');
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+      final revB = holder.revision;
+
+      // Refresh A completes
+      networkCompleter.complete(
+        RefreshTokenResponse(
+          accessToken: 'new-access-A',
+          refreshToken: 'new-refresh-A',
+          tokenType: 'Bearer',
+          accessTokenExpiresAt: DateTime(2026),
+          refreshTokenExpiresAt: DateTime(2026),
+        ),
+      );
+
+      await expectLater(
+        refreshFuture,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionSuperseded,
+          ),
+        ),
+      );
+
+      // Account B storage and holder remain untouched
+      expect(holder.currentAccessToken, 'access');
+      expect(holder.revision, revB);
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+    });
+
+    // Requirement 30 (continued): Malformed HTTP-200 old-session response
+    test('refresh vs login: malformed HTTP-200 old-session response must NOT clear Account B', () async {
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+
+      final networkCompleter = Completer<RefreshTokenResponse>();
+      api.refreshCompleter = networkCompleter;
+
+      final refreshFuture = repo.refreshSession(expectedRevision: 10);
+      await pumpEventQueue();
+      expect(api.refreshTokenArg, 'refresh-A');
+
+      // Account B logs in while network is pending
+      await repo.login(email: 'user-b@example.com', password: 'password-b');
+      expect(holder.currentAccessToken, 'access');
+      final revB = holder.revision;
+
+      // Refresh A returns malformed HTTP-200 (FormatException / parsing error)
+      networkCompleter.completeError(const FormatException('malformed json'));
+
+      await expectLater(
+        refreshFuture,
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'type',
+            AuthFailureType.refreshSessionSuperseded,
+          ),
+        ),
+      );
+
+      // Account B must NOT be cleared!
+      expect(holder.currentAccessToken, 'access');
+      expect(holder.revision, revB);
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+    });
+
+    // Requirement 31: Mutation serialization
+    test('credential mutation FIFO: local credential mutations cannot interleave', () async {
+      final writeCompleter = Completer<void>();
+      store.writePause = writeCompleter;
+
+      // 1. Dispatch a login mutation that pauses during store.write
+      final loginFuture = repo.login(email: 'a@b.com', password: 'pwd');
+      await pumpEventQueue();
+
+      // 2. Dispatch clearLocalSession while login is paused inside mutation queue
+      var clearFinished = false;
+      final clearFuture = repo.clearLocalSession().then((_) => clearFinished = true);
+      await pumpEventQueue();
+
+      // Clear has NOT finished because queue is held by login
+      expect(clearFinished, isFalse);
+
+      // 3. Unpause write
+      writeCompleter.complete();
+      await loginFuture;
+
+      // Now clear finishes sequentially
+      await clearFuture;
+      expect(clearFinished, isTrue);
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+    });
+
+    // Requirement 32: Logout reentrancy
+    test('logout reentrancy: completes normally without nested queue deadlock', () async {
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-token';
+      holder.setAccessToken('access-token');
+
+      final result = await repo.logout();
+      expect(result.remoteRevocationSucceeded, isTrue);
+      expect(store.values, isEmpty);
+      expect(holder.currentAccessToken, isNull);
+    });
+
+    test('mutation queue recovery: queue is not permanently poisoned by a failed mutation', () async {
+      // Mutation A: login where storage write throws
+      store.fail = true;
+      await expectLater(
+        repo.login(email: 'fail@example.com', password: 'password'),
+        throwsA(isA<AuthException>()),
+      );
+
+      // Assert queue released and subsequent mutations execute normally
+      store.fail = false;
+
+      // Mutation B: clearLocalSession enters queue and completes normally
+      holder.setAccessToken('valid-token');
+      await repo.clearLocalSession();
+
+      expect(holder.currentAccessToken, isNull);
+      expect(store.values, isEmpty);
+
+      // Mutation C: successful login enters queue and completes normally
+      final result = await repo.login(email: 'success@example.com', password: 'password');
+      expect(result, isA<AuthenticatedSession>());
+      expect(holder.currentAccessToken, 'access');
+      expect(store.values[SecureStorageService.accessTokenKey], 'access');
+    });
   });
 }
 
@@ -257,10 +502,14 @@ class FakeApi extends AuthApi {
   String? email, password, code, username, profileToken, logoutToken, refreshTokenArg;
   bool incomplete = false, failLogout = false, malformedRefresh = false, throwTypeErrorOnRefresh = false;
   ApiException? failRefreshWith;
+  Completer<RefreshTokenResponse>? refreshCompleter;
 
   @override
   Future<RefreshTokenResponse> refreshToken(String refreshToken) async {
     refreshTokenArg = refreshToken;
+    if (refreshCompleter != null) {
+      return await refreshCompleter!.future;
+    }
     if (failRefreshWith != null) throw failRefreshWith!;
     if (throwTypeErrorOnRefresh) {
       throw TypeError();
@@ -370,6 +619,8 @@ class FakeApi extends AuthApi {
 class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
   bool fail = false, failDeletes = false;
+  Completer<void>? writePause;
+
   @override
   Future<void> delete(String k) async {
     if (failDeletes) throw StateError('x');
@@ -378,8 +629,12 @@ class MemoryStore implements SecureKeyValueStore {
 
   @override
   Future<String?> read(String k) async => values[k];
+
   @override
   Future<void> write({required String key, required String value}) async {
+    if (writePause != null) {
+      await writePause!.future;
+    }
     if (fail) throw StateError('x');
     values[key] = value;
   }

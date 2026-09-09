@@ -1,24 +1,27 @@
 import 'package:dio/dio.dart';
 
-import 'access_token_holder.dart';
 import 'api_config.dart';
 import 'auth_interceptor.dart';
 
-/// Reusable HTTP client foundation. Endpoint methods belong to AuthApi later.
+/// Reusable HTTP client foundation.
 class DioClient {
   final Dio dio;
 
   DioClient({
     required ApiConfig apiConfig,
-    required AccessTokenHolder accessTokenHolder,
     Dio? dio,
   }) : dio = dio ?? Dio() {
     _configureOptions(this.dio, apiConfig);
-    if (!this.dio.interceptors.any(
-      (interceptor) => interceptor is AuthInterceptor,
-    )) {
-      this.dio.interceptors.add(AuthInterceptor(accessTokenHolder));
-    }
+  }
+
+  factory DioClient.withAuthInterceptor({
+    required ApiConfig apiConfig,
+    required AuthInterceptor interceptor,
+    Dio? dio,
+  }) {
+    final client = DioClient(apiConfig: apiConfig, dio: dio);
+    client.attachAuthInterceptor(interceptor);
+    return client;
   }
 
   /// Creates an interceptor-free client sharing the same baseUrl, timeout,
@@ -36,6 +39,12 @@ class DioClient {
   }
 
   DioClient._(this.dio);
+
+  void attachAuthInterceptor(AuthInterceptor interceptor) {
+    if (!dio.interceptors.contains(interceptor)) {
+      dio.interceptors.add(interceptor);
+    }
+  }
 
   static void _configureOptions(Dio dio, ApiConfig apiConfig) {
     dio.options

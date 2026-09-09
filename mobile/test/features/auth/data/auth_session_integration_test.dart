@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/api_config.dart';
+import 'package:mobile/core/network/auth_interceptor.dart';
 import 'package:mobile/core/network/dio_client.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
 import 'package:mobile/core/storage/secure_storage_service.dart';
@@ -32,7 +33,6 @@ void main() {
       final dio = Dio()..httpClientAdapter = adapter;
       dioClient = DioClient(
         apiConfig: ApiConfig(baseUrl: 'https://api.wedo.test'),
-        accessTokenHolder: tokenHolder,
         dio: dio,
       );
 
@@ -41,6 +41,13 @@ void main() {
         api: api,
         storage: storage,
         accessTokenHolder: tokenHolder,
+      );
+      dioClient.attachAuthInterceptor(
+        AuthInterceptor(
+          accessTokenHolder: tokenHolder,
+          refreshSession: repository.refreshSession,
+          dio: dioClient.dio,
+        ),
       );
     });
 

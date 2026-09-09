@@ -17,6 +17,7 @@ enum AuthFailureType {
   refreshTokenInvalid,
   noRefreshableSession,
   refreshSessionUnrecoverable,
+  refreshSessionSuperseded,
   network,
   timeout,
   unexpected,

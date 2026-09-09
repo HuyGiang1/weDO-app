@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app/app.dart';
 import 'core/network/access_token_holder.dart';
 import 'core/network/api_config.dart';
+import 'core/network/auth_interceptor.dart';
 import 'core/network/dio_client.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'features/auth/application/auth_session_controller.dart';
@@ -16,12 +17,19 @@ void main() async {
   final apiConfig = ApiConfig();
   final holder = AccessTokenHolder();
   final storage = SecureStorageService();
-  final dio = DioClient(apiConfig: apiConfig, accessTokenHolder: holder);
+  final dio = DioClient(apiConfig: apiConfig);
   final refreshDio = DioClient.raw(apiConfig: apiConfig);
   final repository = AuthRepository(
     api: AuthApi(dio.dio, refreshDio: refreshDio.dio),
     storage: storage,
     accessTokenHolder: holder,
+  );
+  dio.attachAuthInterceptor(
+    AuthInterceptor(
+      accessTokenHolder: holder,
+      refreshSession: repository.refreshSession,
+      dio: dio.dio,
+    ),
   );
   final sessionController = AuthSessionController(
     storage: storage,

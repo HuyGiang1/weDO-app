@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import '../../../core/auth/session_revision.dart';
 import '../../../core/network/access_token_holder.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/storage/secure_storage_service.dart';
@@ -15,11 +18,42 @@ class AuthRepository {
   final SecureStorageService storage;
   final AccessTokenHolder accessTokenHolder;
 
+  final List<Future<void> Function()> _mutationQueue = [];
+  bool _isProcessingMutationQueue = false;
+
   AuthRepository({
     required this.api,
     required this.storage,
     required this.accessTokenHolder,
   });
+
+  Future<T> _runExclusiveSessionMutation<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _mutationQueue.add(() async {
+      try {
+        final result = await action();
+        completer.complete(result);
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    _processMutationQueue();
+    return completer.future;
+  }
+
+  Future<void> _processMutationQueue() async {
+    if (_isProcessingMutationQueue) return;
+    _isProcessingMutationQueue = true;
+    while (_mutationQueue.isNotEmpty) {
+      final task = _mutationQueue.removeAt(0);
+      try {
+        await task();
+      } catch (_) {
+        // Handled via task completer
+      }
+    }
+    _isProcessingMutationQueue = false;
+  }
 
   Future<T> _guard<T>(Future<T> Function() work) async {
     try {
@@ -83,16 +117,18 @@ class AuthRepository {
           result.refreshToken.trim().isEmpty) {
         throw const AuthException(AuthFailure(AuthFailureType.unexpected));
       }
-      try {
-        await storage.writeSession(
-          accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
-        );
-        accessTokenHolder.setAccessToken(result.accessToken);
-      } catch (_) {
-        accessTokenHolder.clearAccessToken();
-        throw const AuthException(AuthFailure(AuthFailureType.unexpected));
-      }
+      await _runExclusiveSessionMutation(() async {
+        try {
+          await storage.writeSession(
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+          );
+          accessTokenHolder.setAccessToken(result.accessToken);
+        } catch (_) {
+          accessTokenHolder.clearAccessToken();
+          throw const AuthException(AuthFailure(AuthFailureType.unexpected));
+        }
+      });
     }
     return result;
   });
@@ -117,53 +153,90 @@ class AuthRepository {
   /// Rotates the authenticated session using the stored refresh token.
   ///
   /// Atomically updates durable storage before updating [AccessTokenHolder].
-  /// If the server rotates but the client cannot safely parse or persist the
-  /// response, the session is treated as unrecoverable and cleared locally.
-  Future<void> refreshSession() async {
-    final refreshToken = await storage.readRefreshToken();
-    if (refreshToken == null || refreshToken.trim().isEmpty) {
-      throw const AuthException(
-        AuthFailure(AuthFailureType.noRefreshableSession),
-      );
-    }
+  /// Serialized through [_credentialMutationQueue] and generation-consistent
+  /// with [expectedRevision].
+  Future<SessionRevisionTransition> refreshSession({
+    required int expectedRevision,
+  }) async {
+    // 1. Generation-consistent snapshot inside mutation queue
+    final String refreshTokenToUse =
+        await _runExclusiveSessionMutation(() async {
+      if (accessTokenHolder.revision != expectedRevision) {
+        throw const AuthException(
+          AuthFailure(AuthFailureType.refreshSessionSuperseded),
+        );
+      }
+      final token = await storage.readRefreshToken();
+      if (token == null || token.trim().isEmpty) {
+        throw const AuthException(
+          AuthFailure(AuthFailureType.noRefreshableSession),
+        );
+      }
+      return token;
+    });
 
+    // 2. Network call OUTSIDE mutation queue
     RefreshTokenResponse response;
     try {
-      response = await api.refreshToken(refreshToken);
+      response = await api.refreshToken(refreshTokenToUse);
     } on ApiException catch (e) {
       throw AuthException(AuthFailure.fromApi(e));
     } catch (_) {
-      accessTokenHolder.clearAccessToken();
-      await _clearSessionBestEffort();
-      throw const AuthException(
-        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
-      );
+      // Malformed HTTP-200 success response or decode failure.
+      // Must be generation-aware before destructive cleanup:
+      await _runExclusiveSessionMutation(() async {
+        if (accessTokenHolder.revision != expectedRevision) {
+          throw const AuthException(
+            AuthFailure(AuthFailureType.refreshSessionSuperseded),
+          );
+        }
+        accessTokenHolder.clearAccessToken();
+        await _clearSessionBestEffort();
+        throw const AuthException(
+          AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+        );
+      });
     }
 
-    if (response.accessToken.trim().isEmpty ||
-        response.refreshToken.trim().isEmpty ||
-        response.tokenType != 'Bearer') {
-      accessTokenHolder.clearAccessToken();
-      await _clearSessionBestEffort();
-      throw const AuthException(
-        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
-      );
-    }
+    // 3. Compare and Adopt inside mutation queue
+    return await _runExclusiveSessionMutation(() async {
+      if (accessTokenHolder.revision != expectedRevision) {
+        throw const AuthException(
+          AuthFailure(AuthFailureType.refreshSessionSuperseded),
+        );
+      }
 
-    try {
-      await storage.writeSession(
-        accessToken: response.accessToken,
-        refreshToken: response.refreshToken,
-      );
-    } catch (_) {
-      accessTokenHolder.clearAccessToken();
-      await _clearSessionBestEffort();
-      throw const AuthException(
-        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
-      );
-    }
+      if (response.accessToken.trim().isEmpty ||
+          response.refreshToken.trim().isEmpty ||
+          response.tokenType != 'Bearer') {
+        accessTokenHolder.clearAccessToken();
+        await _clearSessionBestEffort();
+        throw const AuthException(
+          AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+        );
+      }
 
-    accessTokenHolder.setAccessToken(response.accessToken);
+      try {
+        await storage.writeSession(
+          accessToken: response.accessToken,
+          refreshToken: response.refreshToken,
+        );
+      } catch (_) {
+        accessTokenHolder.clearAccessToken();
+        await _clearSessionBestEffort();
+        throw const AuthException(
+          AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+        );
+      }
+
+      accessTokenHolder.setAccessToken(response.accessToken);
+      final toRevision = accessTokenHolder.revision;
+
+      return SessionRevisionTransition(
+        fromRevision: expectedRevision,
+        toRevision: toRevision,
+      );
+    });
   }
 
   Future<void> _clearSessionBestEffort() async {
@@ -176,7 +249,7 @@ class AuthRepository {
 
   /// Removes only the locally held authenticated session. This deliberately
   /// does not revoke remotely or affect onboarding-only credentials.
-  Future<void> clearLocalSession() async {
+  Future<void> clearLocalSession() => _runExclusiveSessionMutation(() async {
     try {
       await storage.clearSession();
     } catch (_) {
@@ -185,7 +258,7 @@ class AuthRepository {
       throw const AuthException(AuthFailure(AuthFailureType.unexpected));
     }
     accessTokenHolder.clearAccessToken();
-  }
+  });
 
   Future<LogoutResult> logout() async {
     var remoteRevocationSucceeded = true;

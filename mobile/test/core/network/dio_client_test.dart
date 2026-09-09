@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/auth/session_revision.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/api_config.dart';
 import 'package:mobile/core/network/auth_interceptor.dart';
@@ -12,6 +13,7 @@ void main() {
     late AccessTokenHolder tokenHolder;
     late RecordingAdapter adapter;
     late DioClient client;
+    late AuthInterceptor interceptor;
 
     setUp(() {
       tokenHolder = AccessTokenHolder();
@@ -19,9 +21,18 @@ void main() {
       final dio = Dio()..httpClientAdapter = adapter;
       client = DioClient(
         apiConfig: ApiConfig(baseUrl: 'https://api.example.test/'),
-        accessTokenHolder: tokenHolder,
         dio: dio,
       );
+      interceptor = AuthInterceptor(
+        accessTokenHolder: tokenHolder,
+        refreshSession: ({required int expectedRevision}) async =>
+            SessionRevisionTransition(
+          fromRevision: expectedRevision,
+          toRevision: expectedRevision + 1,
+        ),
+        dio: dio,
+      );
+      client.attachAuthInterceptor(interceptor);
     });
 
     test(
@@ -34,11 +45,7 @@ void main() {
           hasLength(1),
         );
 
-        DioClient(
-          apiConfig: ApiConfig(baseUrl: 'https://api.example.test'),
-          accessTokenHolder: tokenHolder,
-          dio: client.dio,
-        );
+        client.attachAuthInterceptor(interceptor);
 
         expect(
           client.dio.interceptors.whereType<AuthInterceptor>(),
@@ -101,9 +108,21 @@ void main() {
       expect(rawClient.dio.interceptors.isEmpty, isTrue);
 
       // Strips AuthInterceptor if passed an existing dio containing one
+      final existingDio = Dio();
       final clientWithAuth = DioClient.raw(
         apiConfig: ApiConfig(baseUrl: 'https://api.example.test/'),
-        dio: Dio()..interceptors.add(AuthInterceptor(tokenHolder)),
+        dio: existingDio
+          ..interceptors.add(
+            AuthInterceptor(
+              accessTokenHolder: tokenHolder,
+              refreshSession: ({required int expectedRevision}) async =>
+                  SessionRevisionTransition(
+                fromRevision: expectedRevision,
+                toRevision: expectedRevision + 1,
+              ),
+              dio: existingDio,
+            ),
+          ),
       );
       expect(clientWithAuth.dio.interceptors.isEmpty, isTrue);
 

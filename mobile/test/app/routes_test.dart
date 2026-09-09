@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app/routes.dart';
+import 'package:mobile/features/auth/presentation/screens/reset_password_screen.dart';
 import 'package:mobile/features/auth/presentation/screens/verify_email_screen.dart';
 
 void main() {
@@ -26,7 +27,9 @@ void main() {
       },
     );
 
-    test('builds ResetPassword route only with supplied email arguments', () {
+    testWidgets('builds ResetPassword route from its email-only arguments', (
+      tester,
+    ) async {
       final route = AppRoutes.onGenerateRoute(
         const RouteSettings(
           name: AppRoutes.resetPassword,
@@ -35,6 +38,15 @@ void main() {
       );
       expect(route, isNotNull);
       expect(route!.settings.arguments, isA<ResetPasswordRouteArgs>());
+      final materialRoute = route as MaterialPageRoute<void>;
+      await tester.pumpWidget(
+        MaterialApp(home: Builder(builder: materialRoute.builder)),
+      );
+      final screen = tester.widget<ResetPasswordScreen>(
+        find.byType(ResetPasswordScreen),
+      );
+      expect(screen.email, 'reset@wedo.social');
+      expect(screen.onSubmit, isNull);
     });
   });
   group('AppRoutes VerifyEmail route', () {

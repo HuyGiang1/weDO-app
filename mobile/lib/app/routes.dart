@@ -107,8 +107,16 @@ abstract final class AppRoutes {
       case forgotPassword:
         return MaterialPageRoute<void>(
           builder: (context) => ForgotPasswordScreen(
+            onSubmit: coordinator == null
+                ? null
+                : ({required email}) =>
+                      coordinator.forgotPassword(context, email),
             onBack: () => Navigator.of(context).maybePop(),
             onReturnToLogin: () => Navigator.of(context).maybePop(),
+            onRequestSuccess: (email) => Navigator.of(context).pushNamed(
+              resetPassword,
+              arguments: ResetPasswordRouteArgs(email: email),
+            ),
           ),
           settings: settings,
         );
@@ -121,9 +129,29 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           builder: (context) => ResetPasswordScreen(
             email: arguments.email,
+            onSubmit: coordinator == null
+                ? null
+                : ({required email, required code, required newPassword}) =>
+                      coordinator.resetPassword(
+                        context,
+                        email: email,
+                        code: code,
+                        newPassword: newPassword,
+                      ),
             onBackToLogin: () => Navigator.of(context).popUntil(
               (route) => route.settings.name == login || route.isFirst,
             ),
+            onResetSuccess: () {
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.of(context).popUntil(
+                (route) => route.settings.name == login || route.isFirst,
+              );
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Password updated. You can now log in.'),
+                ),
+              );
+            },
           ),
           settings: settings,
         );

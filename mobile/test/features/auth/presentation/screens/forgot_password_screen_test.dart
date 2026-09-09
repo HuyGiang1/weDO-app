@@ -6,10 +6,10 @@ import 'package:mobile/features/auth/presentation/screens/forgot_password_screen
 
 void main() {
   Widget buildSubject({
-    Future<void> Function({required String email})? onSubmit,
+    Future<bool> Function({required String email})? onSubmit,
     VoidCallback? onBack,
     VoidCallback? onReturnToLogin,
-    VoidCallback? onRequestSuccess,
+    ValueChanged<String>? onRequestSuccess,
   }) => MaterialApp(
     home: ForgotPasswordScreen(
       onSubmit: onSubmit,
@@ -59,7 +59,12 @@ void main() {
     ) async {
       var calls = 0;
       await tester.pumpWidget(
-        buildSubject(onSubmit: ({required email}) async => calls++),
+        buildSubject(
+          onSubmit: ({required email}) async {
+            calls++;
+            return true;
+          },
+        ),
       );
 
       await tester.ensureVisible(submitButton());
@@ -81,7 +86,10 @@ void main() {
       String? capturedEmail;
       await tester.pumpWidget(
         buildSubject(
-          onSubmit: ({required String email}) async => capturedEmail = email,
+          onSubmit: ({required String email}) async {
+            capturedEmail = email;
+            return true;
+          },
         ),
       );
 
@@ -114,8 +122,8 @@ void main() {
       var successCalls = 0;
       await tester.pumpWidget(
         buildSubject(
-          onSubmit: ({required email}) async {},
-          onRequestSuccess: () => successCalls++,
+          onSubmit: ({required email}) async => true,
+          onRequestSuccess: (_) => successCalls++,
         ),
       );
       await tester.enterText(emailField(), 'user@wedo.social');
@@ -134,14 +142,44 @@ void main() {
       expect(find.textContaining('does not exist'), findsNothing);
     });
 
+    testWidgets(
+      'does not show success or navigate when callback returns false',
+      (tester) async {
+        var successCalls = 0;
+        await tester.pumpWidget(
+          buildSubject(
+            onSubmit: ({required email}) async => false,
+            onRequestSuccess: (_) => successCalls++,
+          ),
+        );
+        await tester.enterText(emailField(), 'user@wedo.social');
+        await tester.ensureVisible(submitButton());
+        await tester.tap(submitButton());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'If an account with this email exists, a 6-digit reset code will be sent.',
+          ),
+          findsNothing,
+        );
+        expect(successCalls, 0);
+        expect(
+          tester.widget<ElevatedButton>(submitButton()).onPressed,
+          isNotNull,
+        );
+      },
+    );
+
     testWidgets('prevents double submit while loading', (tester) async {
       final completer = Completer<void>();
       var calls = 0;
       await tester.pumpWidget(
         buildSubject(
-          onSubmit: ({required email}) {
+          onSubmit: ({required email}) async {
             calls++;
-            return completer.future;
+            await completer.future;
+            return true;
           },
         ),
       );

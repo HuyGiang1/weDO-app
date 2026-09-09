@@ -8,7 +8,7 @@ void main() {
   const suppliedEmail = 'Reset.Owner@WeDo.Social ';
 
   Widget buildSubject({
-    Future<void> Function({
+    Future<bool> Function({
       required String email,
       required String code,
       required String newPassword,
@@ -77,11 +77,11 @@ void main() {
       var calls = 0;
       await tester.pumpWidget(
         buildSubject(
-          onSubmit: ({
-            required email,
-            required code,
-            required newPassword,
-          }) async => calls++,
+          onSubmit:
+              ({required email, required code, required newPassword}) async {
+                calls++;
+                return true;
+              },
         ),
       );
       await tester.enterText(newPasswordField(), 'abcdefgh');
@@ -180,6 +180,7 @@ void main() {
                   capturedEmail = email;
                   capturedCode = code;
                   capturedPassword = newPassword;
+                  return true;
                 },
           ),
         );
@@ -235,10 +236,12 @@ void main() {
       var successCalls = 0;
       await tester.pumpWidget(
         buildSubject(
-          onSubmit: ({required email, required code, required newPassword}) {
-            calls++;
-            return completer.future;
-          },
+          onSubmit:
+              ({required email, required code, required newPassword}) async {
+                calls++;
+                await completer.future;
+                return true;
+              },
           onResetSuccess: () => successCalls++,
         ),
       );
@@ -260,6 +263,37 @@ void main() {
       expect(successCalls, equals(1));
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
+
+    testWidgets(
+      'does not show success or navigate when callback returns false',
+      (tester) async {
+        var successCalls = 0;
+        await tester.pumpWidget(
+          buildSubject(
+            onSubmit: ({
+              required email,
+              required code,
+              required newPassword,
+            }) async => false,
+            onResetSuccess: () => successCalls++,
+          ),
+        );
+        await enterValidForm(tester);
+        await tester.ensureVisible(updateButton());
+        await tester.tap(updateButton());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Password updated. You can now log in.'),
+          findsNothing,
+        );
+        expect(successCalls, 0);
+        expect(
+          tester.widget<ElevatedButton>(updateButton()).onPressed,
+          isNotNull,
+        );
+      },
+    );
 
     testWidgets('fires Back to Login callback', (tester) async {
       var returned = false;

@@ -9,7 +9,7 @@ import '../../../../app/theme/app_text_styles.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
-  final Future<void> Function({
+  final Future<bool> Function({
     required String email,
     required String code,
     required String newPassword,
@@ -107,12 +107,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _isSubmitting = true);
     try {
-      await widget.onSubmit!(
+      final succeeded = await widget.onSubmit!(
         email: widget.email,
         code: _codeController.text,
         newPassword: _newPasswordController.text,
       );
-      if (!mounted) return;
+      if (!succeeded || !mounted) return;
       setState(() => _resetSucceeded = true);
       widget.onResetSuccess?.call();
     } finally {

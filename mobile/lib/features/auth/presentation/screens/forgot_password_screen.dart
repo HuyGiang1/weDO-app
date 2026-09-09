@@ -5,10 +5,10 @@ import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
-  final Future<void> Function({required String email})? onSubmit;
+  final Future<bool> Function({required String email})? onSubmit;
   final VoidCallback onBack;
   final VoidCallback onReturnToLogin;
-  final VoidCallback? onRequestSuccess;
+  final ValueChanged<String>? onRequestSuccess;
 
   const ForgotPasswordScreen({
     super.key,
@@ -57,10 +57,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _isSubmitting = true);
     try {
-      await widget.onSubmit!(email: _emailController.text.trim().toLowerCase());
-      if (!mounted) return;
+      final succeeded = await widget.onSubmit!(
+        email: _emailController.text.trim().toLowerCase(),
+      );
+      if (!succeeded || !mounted) return;
       setState(() => _requestSucceeded = true);
-      widget.onRequestSuccess?.call();
+      widget.onRequestSuccess?.call(_emailController.text.trim().toLowerCase());
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

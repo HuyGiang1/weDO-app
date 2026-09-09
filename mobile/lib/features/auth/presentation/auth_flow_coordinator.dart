@@ -43,7 +43,8 @@ class AuthFlowCoordinator {
           Navigator.of(context).pushNamed(
             '/create-username',
             arguments: CreateUsernameFlowArgs(
-              onCheckAvailability: (username) => checkUsername(context, username),
+              onCheckAvailability: (username) =>
+                  checkUsername(context, username),
               onContinue: (username) => selectUsername(context, username),
             ),
           );
@@ -58,6 +59,35 @@ class AuthFlowCoordinator {
     _registeredUserId = null;
     _profileCompletionToken = null;
     _selectedUsername = null;
+  }
+
+  Future<bool> forgotPassword(BuildContext context, String email) async {
+    try {
+      await _repository.forgotPassword(email);
+      return true;
+    } on AuthException catch (error) {
+      if (context.mounted) _show(context, _message(error.failure));
+      return false;
+    }
+  }
+
+  Future<bool> resetPassword(
+    BuildContext context, {
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    try {
+      await _repository.resetPassword(
+        email: email,
+        code: code,
+        newPassword: newPassword,
+      );
+      return true;
+    } on AuthException catch (error) {
+      if (context.mounted) _show(context, _message(error.failure));
+      return false;
+    }
   }
 
   Future<void> register(
@@ -206,6 +236,8 @@ class AuthFlowCoordinator {
     AuthFailureType.accountLocked => 'This account is locked.',
     AuthFailureType.accountSuspended => 'This account is suspended.',
     AuthFailureType.accountDeactivated => 'This account is deactivated.',
+    AuthFailureType.passwordResetCodeInvalid =>
+      'The reset code is invalid or no longer valid.',
     AuthFailureType.network => 'Network unavailable. Please try again.',
     AuthFailureType.timeout => 'Request timed out. Please try again.',
     _ => 'Something went wrong. Please try again.',

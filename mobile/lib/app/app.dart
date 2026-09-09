@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 
 import 'routes.dart';
 import 'theme/app_colors.dart';
+import '../features/auth/application/auth_session_controller.dart';
 import '../features/auth/presentation/auth_flow_coordinator.dart';
 
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
   final AuthFlowCoordinator? authFlowCoordinator;
-  const WeDoApp({super.key, this.authFlowCoordinator});
+  final AuthSessionController? authSessionController;
+  const WeDoApp({
+    super.key,
+    this.authFlowCoordinator,
+    this.authSessionController,
+  });
 
   @override
   Widget build(BuildContext context) {

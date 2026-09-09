@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../application/auth_session_controller.dart';
 import '../data/auth_failure.dart';
 import '../data/auth_repository.dart';
 import '../data/models/auth_models.dart';
@@ -9,12 +10,16 @@ import 'screens/create_username_screen.dart';
 /// Owns only the transient Register -> Verify Email onboarding seam.
 class AuthFlowCoordinator {
   final AuthRepository _repository;
+  final AuthSessionController? sessionController;
   String? _registeredUserId;
   String? _profileCompletionToken;
   String? _selectedUsername;
   bool get hasProfileCompletionToken => _profileCompletionToken != null;
 
-  AuthFlowCoordinator(this._repository);
+  AuthFlowCoordinator(
+    this._repository, {
+    this.sessionController,
+  });
 
   Future<void> login(
     BuildContext context,
@@ -29,6 +34,7 @@ class AuthFlowCoordinator {
       );
       if (result is AuthenticatedSession) {
         _clearOnboardingState();
+        sessionController?.markAuthenticated();
         if (context.mounted) _show(context, 'Signed in successfully.');
         return;
       }
@@ -36,7 +42,11 @@ class AuthFlowCoordinator {
         // An incomplete-profile result belongs to a new account boundary, so
         // it must never coexist with a previous account's bearer session.
         _clearOnboardingState();
-        await _repository.clearLocalSession();
+        try {
+          await _repository.clearLocalSession();
+        } finally {
+          sessionController?.markUnauthenticated();
+        }
         _registeredUserId = result.userId;
         _profileCompletionToken = result.profileCompletionToken;
         if (context.mounted) {

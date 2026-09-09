@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/auth/session_invalidation_outcome.dart';
 import '../../../core/auth/session_revision.dart';
 import '../../../core/network/access_token_holder.dart';
 import '../../../core/network/api_exception.dart';
@@ -183,19 +184,15 @@ class AuthRepository {
       throw AuthException(AuthFailure.fromApi(e));
     } catch (_) {
       // Malformed HTTP-200 success response or decode failure.
-      // Must be generation-aware before destructive cleanup:
-      await _runExclusiveSessionMutation(() async {
-        if (accessTokenHolder.revision != expectedRevision) {
-          throw const AuthException(
-            AuthFailure(AuthFailureType.refreshSessionSuperseded),
-          );
-        }
-        accessTokenHolder.clearAccessToken();
-        await _clearSessionBestEffort();
+      // Generation supersession check remains mandatory before throwing.
+      if (accessTokenHolder.revision != expectedRevision) {
         throw const AuthException(
-          AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+          AuthFailure(AuthFailureType.refreshSessionSuperseded),
         );
-      });
+      }
+      throw const AuthException(
+        AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
+      );
     }
 
     // 3. Compare and Adopt inside mutation queue
@@ -209,8 +206,6 @@ class AuthRepository {
       if (response.accessToken.trim().isEmpty ||
           response.refreshToken.trim().isEmpty ||
           response.tokenType != 'Bearer') {
-        accessTokenHolder.clearAccessToken();
-        await _clearSessionBestEffort();
         throw const AuthException(
           AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
         );
@@ -222,8 +217,6 @@ class AuthRepository {
           refreshToken: response.refreshToken,
         );
       } catch (_) {
-        accessTokenHolder.clearAccessToken();
-        await _clearSessionBestEffort();
         throw const AuthException(
           AuthFailure(AuthFailureType.refreshSessionUnrecoverable),
         );
@@ -239,13 +232,39 @@ class AuthRepository {
     });
   }
 
-  Future<void> _clearSessionBestEffort() async {
-    try {
-      await storage.clearSession();
-    } catch (_) {
-      // Best-effort cleanup
-    }
-  }
+  /// Performs generation-aware invalidation of the local authenticated session.
+  ///
+  /// Serialized through [_credentialMutationQueue]. If the session generation
+  /// changed before acquisition, returns [SessionInvalidationSuperseded].
+  /// Otherwise clears [AccessTokenHolder], captures the transition, and attempts
+  /// durable storage deletion. If durable clearing fails, [SessionInvalidationApplied]
+  /// reports `durableCredentialsCleared = false` while maintaining RAM invalidation.
+  Future<SessionInvalidationOutcome> invalidateLocalSession({
+    required int expectedRevision,
+  }) =>
+      _runExclusiveSessionMutation(() async {
+        if (accessTokenHolder.revision != expectedRevision) {
+          return const SessionInvalidationSuperseded();
+        }
+
+        accessTokenHolder.clearAccessToken();
+        final transition = SessionRevisionTransition(
+          fromRevision: expectedRevision,
+          toRevision: accessTokenHolder.revision,
+        );
+
+        var durableCleared = true;
+        try {
+          await storage.clearSession();
+        } catch (_) {
+          durableCleared = false;
+        }
+
+        return SessionInvalidationApplied(
+          transition: transition,
+          durableCredentialsCleared: durableCleared,
+        );
+      });
 
   /// Removes only the locally held authenticated session. This deliberately
   /// does not revoke remotely or affect onboarding-only credentials.

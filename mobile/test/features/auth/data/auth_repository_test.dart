@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/auth/session_invalidation_outcome.dart';
 import 'package:mobile/core/auth/session_revision.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/api_exception.dart';
@@ -154,7 +155,7 @@ void main() {
       expect(api.refreshTokenArg, isNull);
     });
 
-    test('storage write failure after rotation clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+    test('storage write failure after rotation detects and throws refreshSessionUnrecoverable without ad-hoc clearing', () async {
       store.values[SecureStorageService.accessTokenKey] = 'access-old';
       store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
       holder.setAccessToken('access-old');
@@ -171,12 +172,14 @@ void main() {
         ),
       );
 
-      // New access token was not applied, RAM cleared, storage evicted
-      expect(holder.currentAccessToken, isNull);
+      // In M2.15.4, refreshSession does not perform ad-hoc clearing;
+      // holder was not updated to new token and was not cleared by refreshSession.
+      expect(holder.currentAccessToken, 'access-old');
+      // Storage keys were cleared by SecureStorageService.writeSession to avoid partial session
       expect(store.values, isEmpty);
     });
 
-    test('malformed success response clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+    test('malformed success response detects and throws refreshSessionUnrecoverable without ad-hoc clearing', () async {
       store.values[SecureStorageService.accessTokenKey] = 'access-old';
       store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
       holder.setAccessToken('access-old');
@@ -193,11 +196,12 @@ void main() {
         ),
       );
 
-      expect(holder.currentAccessToken, isNull);
-      expect(store.values, isEmpty);
+      // In M2.15.4, refreshSession does not perform ad-hoc clearing
+      expect(holder.currentAccessToken, 'access-old');
+      expect(store.values[SecureStorageService.accessTokenKey], 'access-old');
     });
 
-    test('wrong JSON type or TypeError during refresh clears holder, evicts session, throws refreshSessionUnrecoverable', () async {
+    test('wrong JSON type or TypeError during refresh throws refreshSessionUnrecoverable without ad-hoc clearing', () async {
       store.values[SecureStorageService.accessTokenKey] = 'access-old';
       store.values[SecureStorageService.refreshTokenKey] = 'refresh-old';
       holder.setAccessToken('access-old');
@@ -214,8 +218,9 @@ void main() {
         ),
       );
 
-      expect(holder.currentAccessToken, isNull);
-      expect(store.values, isEmpty);
+      // In M2.15.4, refreshSession does not perform ad-hoc clearing
+      expect(holder.currentAccessToken, 'access-old');
+      expect(store.values[SecureStorageService.accessTokenKey], 'access-old');
     });
 
     test('remote failure before rotation maps typed failure without clearing local session in this slice', () async {
@@ -493,6 +498,123 @@ void main() {
       expect(result, isA<AuthenticatedSession>());
       expect(holder.currentAccessToken, 'access');
       expect(store.values[SecureStorageService.accessTokenKey], 'access');
+    });
+
+    group('invalidateLocalSession', () {
+      test('applied on matching revision: clears RAM, captures transition, clears durable storage', () async {
+        store.values[SecureStorageService.accessTokenKey] = 'access-10';
+        store.values[SecureStorageService.refreshTokenKey] = 'refresh-10';
+        for (var i = 0; i < 10; i++) {
+          holder.setAccessToken('tok-$i');
+        }
+        expect(holder.revision, 10);
+
+        final outcome = await repo.invalidateLocalSession(expectedRevision: 10);
+
+        expect(outcome, isA<SessionInvalidationApplied>());
+        final applied = outcome as SessionInvalidationApplied;
+        expect(applied.transition.fromRevision, 10);
+        expect(applied.transition.toRevision, 11);
+        expect(applied.durableCredentialsCleared, isTrue);
+
+        expect(holder.currentAccessToken, isNull);
+        expect(holder.revision, 11);
+        expect(store.values, isEmpty);
+      });
+
+      test('superseded on revision mismatch: returns SessionInvalidationSuperseded, touches nothing', () async {
+        store.values[SecureStorageService.accessTokenKey] = 'access-B';
+        store.values[SecureStorageService.refreshTokenKey] = 'refresh-B';
+        for (var i = 0; i < 11; i++) {
+          holder.setAccessToken('tok-B-$i');
+        }
+        expect(holder.revision, 11);
+
+        final outcome = await repo.invalidateLocalSession(expectedRevision: 10);
+
+        expect(outcome, isA<SessionInvalidationSuperseded>());
+        // Memory and durable storage completely untouched
+        expect(holder.currentAccessToken, 'tok-B-10');
+        expect(holder.revision, 11);
+        expect(store.values[SecureStorageService.accessTokenKey], 'access-B');
+        expect(store.values[SecureStorageService.refreshTokenKey], 'refresh-B');
+      });
+
+      test('durable-clear failure: clears RAM, captures transition, reports durableCredentialsCleared: false, queue remains usable', () async {
+        store.values[SecureStorageService.accessTokenKey] = 'access-10';
+        store.values[SecureStorageService.refreshTokenKey] = 'refresh-10';
+        for (var i = 0; i < 10; i++) {
+          holder.setAccessToken('tok-$i');
+        }
+        expect(holder.revision, 10);
+
+        // Make delete throw
+        store.failDeletes = true;
+
+        final outcome = await repo.invalidateLocalSession(expectedRevision: 10);
+
+        expect(outcome, isA<SessionInvalidationApplied>());
+        final applied = outcome as SessionInvalidationApplied;
+        expect(applied.transition.fromRevision, 10);
+        expect(applied.transition.toRevision, 11);
+        expect(applied.durableCredentialsCleared, isFalse);
+
+        // RAM MUST be cleared even when durable deletion throws
+        expect(holder.currentAccessToken, isNull);
+        expect(holder.revision, 11);
+
+        // Mutation queue must NOT be poisoned: subsequent login succeeds
+        store.failDeletes = false;
+        final loginResult = await repo.login(email: 'new@example.com', password: 'pwd');
+        expect(loginResult, isA<AuthenticatedSession>());
+        expect(holder.currentAccessToken, 'access');
+        expect(holder.revision, 12);
+        expect(store.values[SecureStorageService.accessTokenKey], 'access');
+      });
+
+      test('invalidation vs logout: logout changes revision, old invalidation is superseded', () async {
+        store.values[SecureStorageService.accessTokenKey] = 'access-10';
+        store.values[SecureStorageService.refreshTokenKey] = 'refresh-10';
+        for (var i = 0; i < 10; i++) {
+          holder.setAccessToken('tok-$i');
+        }
+        expect(holder.revision, 10);
+
+        // User logs out first (10 -> 11)
+        await repo.clearLocalSession();
+        expect(holder.revision, 11);
+        expect(holder.currentAccessToken, isNull);
+
+        // Stale invalidation targeting rev 10
+        final outcome = await repo.invalidateLocalSession(expectedRevision: 10);
+        expect(outcome, isA<SessionInvalidationSuperseded>());
+        expect(holder.revision, 11);
+      });
+
+      test('invalidation vs new login: Account B login completes first, stale invalidation for Account A is superseded', () async {
+        store.values[SecureStorageService.accessTokenKey] = 'access-A';
+        store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+        for (var i = 0; i < 10; i++) {
+          holder.setAccessToken('tok-$i');
+        }
+        expect(holder.revision, 10);
+
+        // Account B logs in (10 -> 11)
+        await repo.login(email: 'user-b@example.com', password: 'pwd');
+        expect(holder.revision, 11);
+        expect(holder.currentAccessToken, 'access');
+        expect(store.values[SecureStorageService.accessTokenKey], 'access');
+
+        // Stale invalidation for Account A (target 10)
+        final outcome = await repo.invalidateLocalSession(expectedRevision: 10);
+        expect(outcome, isA<SessionInvalidationSuperseded>());
+
+        // Account B session remains intact
+        expect(holder.revision, 11);
+        expect(holder.currentAccessToken, 'access');
+        expect(store.values[SecureStorageService.accessTokenKey], 'access');
+        expect(store.values[SecureStorageService.refreshTokenKey], 'refresh');
+      });
     });
   });
 }

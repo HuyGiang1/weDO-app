@@ -9,6 +9,10 @@ typedef RefreshSessionCallback = Future<SessionRevisionTransition> Function({
   required int expectedRevision,
 });
 
+typedef AccessTokenInvalidCallback = Future<void> Function({
+  required int expectedRevision,
+});
+
 /// Internal marker exception when a retry is aborted before dispatch because
 /// the session generation changed.
 class RetryAbortedException implements Exception {
@@ -29,6 +33,7 @@ class AuthInterceptor extends Interceptor {
 
   final AccessTokenHolder accessTokenHolder;
   final RefreshSessionCallback refreshSession;
+  final AccessTokenInvalidCallback? onAccessTokenInvalid;
   final Dio dio;
 
   SessionRevisionTransition? _lastSuccessfulRefreshTransition;
@@ -38,6 +43,7 @@ class AuthInterceptor extends Interceptor {
   AuthInterceptor({
     required this.accessTokenHolder,
     required this.refreshSession,
+    this.onAccessTokenInvalid,
     required this.dio,
   });
 
@@ -87,8 +93,24 @@ class AuthInterceptor extends Interceptor {
   ) async {
     final response = err.response;
     if (response?.statusCode != 401 ||
-        _isPublicPath(err.requestOptions.uri.path) ||
-        !_isTokenExpired(err)) {
+        _isPublicPath(err.requestOptions.uri.path)) {
+      return handler.next(err);
+    }
+
+    if (_isTokenInvalid(err)) {
+      final requestRev =
+          err.requestOptions.extra[_requestRevisionKey] as int?;
+      if (requestRev != null) {
+        try {
+          await onAccessTokenInvalid?.call(expectedRevision: requestRev);
+        } catch (_) {
+          // Invalidation failures must not prevent propagating the original 401
+        }
+      }
+      return handler.next(err);
+    }
+
+    if (!_isTokenExpired(err)) {
       return handler.next(err);
     }
 
@@ -184,6 +206,21 @@ class AuthInterceptor extends Interceptor {
     } catch (e) {
       handler.next(originalErr.copyWith(error: e));
     }
+  }
+
+  static bool _isTokenInvalid(DioException err) {
+    var data = err.response?.data;
+    if (data is String) {
+      try {
+        data = jsonDecode(data);
+      } catch (_) {
+        return false;
+      }
+    }
+    if (data is Map) {
+      return data['code'] == 'AUTH_TOKEN_INVALID';
+    }
+    return false;
   }
 
   static bool _isTokenExpired(DioException err) {

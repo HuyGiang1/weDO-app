@@ -323,6 +323,30 @@ void main() {
       expect(coordinator.hasProfileCompletionToken, isFalse);
       expect(navigated, isFalse);
     });
+
+    group('markUnauthenticatedIfRevision', () {
+      test('matching revision updates status to unauthenticated and returns true', () {
+        controller.markAuthenticated();
+        holder.setAccessToken('token');
+        final currentRev = holder.revision;
+
+        final didUpdate = controller.markUnauthenticatedIfRevision(currentRev);
+
+        expect(didUpdate, isTrue);
+        expect(controller.status, AuthSessionStatus.unauthenticated);
+      });
+
+      test('mismatched revision preserves status and returns false', () {
+        controller.markAuthenticated();
+        holder.setAccessToken('token');
+        final currentRev = holder.revision;
+
+        final didUpdate = controller.markUnauthenticatedIfRevision(currentRev - 1);
+
+        expect(didUpdate, isFalse);
+        expect(controller.status, AuthSessionStatus.authenticated);
+      });
+    });
   });
 }
 

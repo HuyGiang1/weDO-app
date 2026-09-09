@@ -7,7 +7,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/auth/session_revision.dart';
 import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/auth_interceptor.dart';
+import 'package:mobile/core/storage/secure_key_value_store.dart';
+import 'package:mobile/core/storage/secure_storage_service.dart';
+import 'package:mobile/features/auth/application/auth_session_controller.dart';
+import 'package:mobile/features/auth/application/auth_session_invalidator.dart';
+import 'package:mobile/features/auth/data/auth_api.dart';
 import 'package:mobile/features/auth/data/auth_failure.dart';
+import 'package:mobile/features/auth/data/auth_repository.dart';
 
 void main() {
   group('AuthInterceptor', () {
@@ -575,7 +581,348 @@ void main() {
       expect(refreshCallCount, 0);
       expect(adapter.requests, hasLength(2));
     });
+
+    // Requirement 11 & 18: AUTH_TOKEN_INVALID handling
+    test('AUTH_TOKEN_INVALID on protected request calls onAccessTokenInvalid and never refreshes', () async {
+      int? invalidRevisionPassed;
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCount = 0;
+
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCount++;
+            return SessionRevisionTransition(
+              fromRevision: expectedRevision,
+              toRevision: expectedRevision + 1,
+            );
+          },
+          onAccessTokenInvalid: ({required int expectedRevision}) async {
+            invalidRevisionPassed = expectedRevision;
+          },
+          dio: customDio,
+        ),
+      );
+
+      customAdapter.handler = (options) async => MockHttpClientAdapter.json(
+        {'code': 'AUTH_TOKEN_INVALID', 'message': 'Token invalid'},
+        401,
+      );
+
+      await expectLater(
+        customDio.get<void>('/api/v1/protected'),
+        throwsA(
+          isA<DioException>().having(
+            (e) => (e.response?.data as Map)['code'],
+            'code',
+            'AUTH_TOKEN_INVALID',
+          ),
+        ),
+      );
+
+      expect(customRefreshCount, 0);
+      expect(invalidRevisionPassed, 10);
+    });
+
+    // Requirement 12: Generic 401 UNAUTHORIZED
+    test('generic 401 UNAUTHORIZED does not refresh, does not invalidate, propagates error', () async {
+      int? invalidRevisionPassed;
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCount = 0;
+
+      holder.setAccessToken('tok-1');
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCount++;
+            return SessionRevisionTransition(
+              fromRevision: expectedRevision,
+              toRevision: expectedRevision + 1,
+            );
+          },
+          onAccessTokenInvalid: ({required int expectedRevision}) async {
+            invalidRevisionPassed = expectedRevision;
+          },
+          dio: customDio,
+        ),
+      );
+
+      customAdapter.handler = (options) async => MockHttpClientAdapter.json(
+        {'code': 'UNAUTHORIZED', 'message': 'Unauthorized'},
+        401,
+      );
+
+      await expectLater(
+        customDio.get<void>('/api/v1/protected'),
+        throwsA(
+          isA<DioException>().having(
+            (e) => (e.response?.data as Map)['code'],
+            'code',
+            'UNAUTHORIZED',
+          ),
+        ),
+      );
+
+      expect(customRefreshCount, 0);
+      expect(invalidRevisionPassed, isNull);
+    });
+
+    // Requirement 13: 401 AUTH_INVALID_CREDENTIALS on auth endpoint
+    test('401 AUTH_INVALID_CREDENTIALS on auth endpoint does not refresh or invalidate', () async {
+      int? invalidRevisionPassed;
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCount = 0;
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCount++;
+            return SessionRevisionTransition(
+              fromRevision: expectedRevision,
+              toRevision: expectedRevision + 1,
+            );
+          },
+          onAccessTokenInvalid: ({required int expectedRevision}) async {
+            invalidRevisionPassed = expectedRevision;
+          },
+          dio: customDio,
+        ),
+      );
+
+      customAdapter.handler = (options) async => MockHttpClientAdapter.json(
+        {'code': 'AUTH_INVALID_CREDENTIALS', 'message': 'Invalid credentials'},
+        401,
+      );
+
+      await expectLater(
+        customDio.post<void>('/api/v1/auth/login'),
+        throwsA(isA<DioException>()),
+      );
+
+      expect(customRefreshCount, 0);
+      expect(invalidRevisionPassed, isNull);
+    });
+
+    // Requirement 14: Retried AUTH_TOKEN_EXPIRED does not trigger second refresh or invalidation
+    test('retried AUTH_TOKEN_EXPIRED does not refresh again or invalidate', () async {
+      int? invalidRevisionPassed;
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCount = 0;
+
+      holder.setAccessToken('tok-1');
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCount++;
+            final toRev = expectedRevision + 1;
+            holder.setAccessToken('tok-$toRev');
+            return SessionRevisionTransition(
+              fromRevision: expectedRevision,
+              toRevision: toRev,
+            );
+          },
+          onAccessTokenInvalid: ({required int expectedRevision}) async {
+            invalidRevisionPassed = expectedRevision;
+          },
+          dio: customDio,
+        ),
+      );
+
+      // Return 401 AUTH_TOKEN_EXPIRED on original AND retry
+      customAdapter.handler = (options) async => MockHttpClientAdapter.json(
+        {'code': 'AUTH_TOKEN_EXPIRED', 'message': 'Expired'},
+        401,
+      );
+
+      await expectLater(
+        customDio.get<void>('/api/v1/protected'),
+        throwsA(isA<DioException>()),
+      );
+
+      // Exactly 1 refresh on first 401; second 401 does NOT refresh again or invalidate
+      expect(customRefreshCount, 1);
+      expect(invalidRevisionPassed, isNull);
+    });
+
+    // Requirement 18 & 19: Full End-to-End integration of AuthInterceptor with AuthSessionInvalidator
+    test('end-to-end AUTH_TOKEN_INVALID: matching generation rev10 invalidates session, controller becomes unauthenticated, no navigation', () async {
+      final store = TestMemoryStore();
+      final storage = SecureStorageService(store: store);
+      final repo = AuthRepository(
+        api: TestAuthApi(),
+        storage: storage,
+        accessTokenHolder: holder,
+      );
+      final controller = AuthSessionController(
+        storage: storage,
+        accessTokenHolder: holder,
+        repository: repo,
+        initialStatus: AuthSessionStatus.authenticated,
+      );
+      final invalidator = AuthSessionInvalidator(
+        repository: repo,
+        sessionController: controller,
+      );
+
+      store.values[SecureStorageService.accessTokenKey] = 'access-10';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-10';
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+      expect(controller.isAuthenticated, isTrue);
+
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCalls = 0;
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCalls++;
+            return repo.refreshSession(expectedRevision: expectedRevision);
+          },
+          onAccessTokenInvalid: invalidator.handleAccessTokenInvalid,
+          dio: customDio,
+        ),
+      );
+
+      customAdapter.handler = (options) async => MockHttpClientAdapter.json(
+        {'code': 'AUTH_TOKEN_INVALID', 'message': 'Token invalid'},
+        401,
+      );
+
+      await expectLater(
+        customDio.get<void>('/api/v1/protected'),
+        throwsA(isA<DioException>()),
+      );
+
+      expect(customRefreshCalls, 0);
+      expect(holder.currentAccessToken, isNull);
+      expect(holder.revision, 11);
+      expect(store.values, isEmpty);
+      expect(controller.status, AuthSessionStatus.unauthenticated);
+    });
+
+    // Requirement 19: Late AUTH_TOKEN_INVALID cross-account
+    test('late AUTH_TOKEN_INVALID cross-account: Request A under rev10 returns 401 after Account B login (rev11) preserves B session', () async {
+      final store = TestMemoryStore();
+      final storage = SecureStorageService(store: store);
+      final repo = AuthRepository(
+        api: TestAuthApi(),
+        storage: storage,
+        accessTokenHolder: holder,
+      );
+      final controller = AuthSessionController(
+        storage: storage,
+        accessTokenHolder: holder,
+        repository: repo,
+        initialStatus: AuthSessionStatus.authenticated,
+      );
+      final invalidator = AuthSessionInvalidator(
+        repository: repo,
+        sessionController: controller,
+      );
+
+      store.values[SecureStorageService.accessTokenKey] = 'access-A';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-A';
+      for (var i = 0; i < 10; i++) {
+        holder.setAccessToken('tok-$i');
+      }
+      expect(holder.revision, 10);
+
+      final customDio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+      final customAdapter = MockHttpClientAdapter();
+      customDio.httpClientAdapter = customAdapter;
+      var customRefreshCalls = 0;
+
+      customDio.interceptors.add(
+        AuthInterceptor(
+          accessTokenHolder: holder,
+          refreshSession: ({required int expectedRevision}) async {
+            customRefreshCalls++;
+            return repo.refreshSession(expectedRevision: expectedRevision);
+          },
+          onAccessTokenInvalid: invalidator.handleAccessTokenInvalid,
+          dio: customDio,
+        ),
+      );
+
+      final requestCompleter = Completer<ResponseBody>();
+      customAdapter.handler = (options) => requestCompleter.future;
+
+      // 1. Dispatch Request A under rev 10
+      final requestAFuture = customDio.get<void>('/api/v1/resource-A');
+      await pumpEventQueue();
+
+      // 2. Account B login completes: holder becomes rev 11, storage updated, controller authenticated
+      store.values[SecureStorageService.accessTokenKey] = 'access-B';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-B';
+      holder.setAccessToken('access-B');
+      expect(holder.revision, 11);
+      controller.markAuthenticated();
+
+      // 3. Afterward, Request A returns 401 AUTH_TOKEN_INVALID
+      requestCompleter.complete(
+        MockHttpClientAdapter.json(
+          {'code': 'AUTH_TOKEN_INVALID', 'message': 'Token invalid'},
+          401,
+        ),
+      );
+
+      await expectLater(requestAFuture, throwsA(isA<DioException>()));
+
+      // 4. Assert: Zero refresh, B storage untouched, B holder untouched, controller authenticated
+      expect(customRefreshCalls, 0);
+      expect(holder.currentAccessToken, 'access-B');
+      expect(holder.revision, 11);
+      expect(store.values[SecureStorageService.accessTokenKey], 'access-B');
+      expect(store.values[SecureStorageService.refreshTokenKey], 'refresh-B');
+      expect(controller.status, AuthSessionStatus.authenticated);
+    });
   });
+}
+
+class TestMemoryStore implements SecureKeyValueStore {
+  final Map<String, String> values = {};
+
+  @override
+  Future<void> delete(String key) async {
+    values.remove(key);
+  }
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write({required String key, required String value}) async {
+    values[key] = value;
+  }
+}
+
+class TestAuthApi extends AuthApi {
+  TestAuthApi() : super(Dio(), refreshDio: Dio());
 }
 
 class RecordedRequest {

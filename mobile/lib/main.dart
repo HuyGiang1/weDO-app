@@ -7,7 +7,9 @@ import 'core/network/auth_interceptor.dart';
 import 'core/network/dio_client.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'features/auth/application/auth_session_controller.dart';
+import 'features/auth/application/auth_session_invalidator.dart';
 import 'features/auth/data/auth_api.dart';
+import 'features/auth/data/auth_failure.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/presentation/auth_flow_coordinator.dart';
 
@@ -24,17 +26,35 @@ void main() async {
     storage: storage,
     accessTokenHolder: holder,
   );
-  dio.attachAuthInterceptor(
-    AuthInterceptor(
-      accessTokenHolder: holder,
-      refreshSession: repository.refreshSession,
-      dio: dio.dio,
-    ),
-  );
   final sessionController = AuthSessionController(
     storage: storage,
     accessTokenHolder: holder,
     repository: repository,
+  );
+  final invalidator = AuthSessionInvalidator(
+    repository: repository,
+    sessionController: sessionController,
+  );
+
+  dio.attachAuthInterceptor(
+    AuthInterceptor(
+      accessTokenHolder: holder,
+      refreshSession: ({required int expectedRevision}) async {
+        try {
+          return await repository.refreshSession(
+            expectedRevision: expectedRevision,
+          );
+        } on AuthException catch (error) {
+          await invalidator.handleRefreshFailure(
+            failure: error.failure,
+            expectedRevision: expectedRevision,
+          );
+          rethrow;
+        }
+      },
+      onAccessTokenInvalid: invalidator.handleAccessTokenInvalid,
+      dio: dio.dio,
+    ),
   );
 
   await sessionController.restoreSession();

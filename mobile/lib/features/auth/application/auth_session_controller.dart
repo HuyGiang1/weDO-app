@@ -84,4 +84,17 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
   void markUnauthenticated() {
     value = AuthSessionStatus.unauthenticated;
   }
+
+  /// Sets session status to [AuthSessionStatus.unauthenticated] if and only if
+  /// [accessTokenHolder.revision] matches [expectedRevision].
+  ///
+  /// Synchronous guard against TOCTOU race where a newer login or session change
+  /// occurred between invalidation and status update.
+  bool markUnauthenticatedIfRevision(int expectedRevision) {
+    if (accessTokenHolder.revision != expectedRevision) {
+      return false;
+    }
+    value = AuthSessionStatus.unauthenticated;
+    return true;
+  }
 }

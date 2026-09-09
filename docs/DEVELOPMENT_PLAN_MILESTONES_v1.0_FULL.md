@@ -117,8 +117,8 @@ Sub-milestones:
 - [x] M2.10 Forgot / Reset Password
 - [x] M2.11 Current User + Protected Endpoint
 - [x] M2.12 Device / Session Security Hardening
-- [ ] M2.13 Flutter Auth Screens
-- [ ] M2.14 Secure Storage + Dio Auth Interceptor
+- [x] M2.13 Flutter Auth Screens
+- [x] M2.14 Secure Storage + Dio Auth Interceptor
 - [ ] M2.15 Refresh Interceptor + Route Guard
 - [ ] M2.16 Auth E2E / DoD
 
@@ -148,6 +148,34 @@ Flutter:
 - route guard
 
 DoD: register → verify → login → refresh → logout E2E.
+
+### M2.14 Implementation Status & Boundaries
+- Flutter auth screens are wired to real repository/API flows.
+- Dio is the auth HTTP client.
+- Secure storage persists only:
+  - `auth.access_token`
+  - `auth.refresh_token`
+- AccessTokenHolder holds the active access token in memory.
+- profileCompletionToken remains coordinator-memory-only.
+- AuthInterceptor currently performs Bearer attachment only.
+- `/api/v1/auth/*` and `/api/v1/health` remain public interceptor exclusions.
+- `/api/v1/me` receives Bearer through AuthInterceptor.
+- Login authenticated branch persists session credentials.
+- Logout attempts remote refresh-session revocation and always clears local credentials.
+- Forgot/reset password do not auto-login or directly mutate local session.
+- M2.14 verification passed with flutter analyze and the full offline test suite.
+
+### Deferred to M2.15 (Refresh Interceptor + Route Guard)
+The following are intentionally deferred to M2.15:
+- refresh-on-401
+- automatic request retry
+- concurrent refresh single-flight/queue
+- refresh-token rotation handling in interceptor
+- refresh failure session handling
+- startup auth/session restoration
+- route guard
+- automatic authenticated redirect
+- authenticated app shell
 
 ## 6. M3 — User Profile + Privacy
 

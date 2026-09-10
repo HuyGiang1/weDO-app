@@ -120,7 +120,7 @@ Sub-milestones:
 - [x] M2.13 Flutter Auth Screens
 - [x] M2.14 Secure Storage + Dio Auth Interceptor
 - [x] M2.15 Refresh Interceptor + Route Guard
-- [ ] M2.16 Auth E2E / DoD
+- [x] M2.16 Auth E2E / DoD
 
 Features:
 - register
@@ -213,14 +213,42 @@ DoD: register → verify → login → refresh → logout E2E.
 - There is currently no production logout UI or coordinator caller in the application.
 - When a real logout UI or application flow is introduced in later milestones, application-layer orchestration must ensure `AuthSessionController` transitions to unauthenticated even when durable local deletion reports failure.
 
-### Explicit Intentional Deferrals
-The following remain intentionally deferred and are NOT part of M2.15:
-- Authenticated Home / Dashboard / app shell
+### M2.16 Implementation Status & Live Verification Evidence (Milestone 2 Complete)
+- **Live Client-Backend Integration E2E Passed**:
+  - Live execution command: `flutter test test_e2e/live_auth_e2e_test.dart --dart-define=WEDO_API_BASE_URL=http://127.0.0.1:8080`.
+  - Executed against real local Spring Boot 4.1.1 (profile `local`, port 8080) and real PostgreSQL 17.11 (`wedo-postgres` on port 5432).
+  - Executed in ~19 seconds (`00:19 +1: All tests passed!`, Exit code 0).
+- **Canonical Flow Verified**:
+  `register` → `resolve verification OTP` → `verify email` → `complete profile` → `login` → `initial protected /me` → `real access expiry wait` → `transparent AuthInterceptor refresh` → `retried /me succeeds` → `logout` → `server-side revocation proof (REFRESH_TOKEN_INVALID)`.
+- **Key Evidence Captured (Non-Secret)**:
+  - Register: `POST /api/v1/auth/register` returned `201 Created` with valid user UUID.
+  - OTP Resolver: `OtpResolverTest` executed via Maven Surefire against live PostgreSQL `auth_tokens`, resolved candidate in finite 6-digit space using `AuthTokenHasher`, wrote to temporary IPC file, and deleted the file immediately upon reading. Zero secrets printed.
+  - Verify Email: `POST /api/v1/auth/verify-email` returned `200 OK`, user transitioned to `ACTIVE`, and issued `profileCompletionToken`.
+  - Complete Profile: `POST /api/v1/auth/complete-profile` returned `200 OK`, reserved username, `status: ACTIVE`, `nextStep: LOGIN`.
+  - Login: `POST /api/v1/auth/login` returned `200 OK` `AuthenticatedSession`, persisted R1, populated `AccessTokenHolder` (A1, `revision: 1`).
+  - Initial Protected `/me`: `GET /api/v1/me` via `AuthInterceptor` returned `200 OK` with user profile. Revision remained 1.
+  - Real Expiry & Auto-Refresh: Waited until server-issued `accessTokenExpiresAt` (5s short TTL) + 800ms safety margin; called standard `repository.getCurrentUser()`; first request received `401 AUTH_TOKEN_EXPIRED`; `AuthInterceptor` triggered rotation; backend rotated S1 -> S2 (A2, R2); client adopted new credentials; `revision` incremented `1 -> 2`; transparent retry succeeded with `200 OK` (A2 != A1, R2 != R1).
+  - Logout: `AuthRepository.logout()` sent `POST /api/v1/auth/logout` with R2 returning `204 No Content`; backend marked S2 revoked; cleared `AccessTokenHolder` (null) and local storage (null).
+  - Server Revocation Proof: Direct isolated raw call `api.refreshToken(capturedR2)` returned HTTP 401 with code `REFRESH_TOKEN_INVALID`.
+- **Regression Suites Verified**:
+  - Backend: `.\mvnw.cmd test` → `Tests run: 263, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`.
+  - Flutter analyze: `flutter analyze` → `No issues found!`.
+  - Flutter unit/widget tests: `flutter test -r expanded` → `262/262 passed`.
+  - Zero production code changes and zero dependency changes across `mobile/lib/**` and `backend/src/main/**`.
+- **Manual Mobile UI Smoke Boundary**:
+  - Manual mobile UI smoke: **NOT EXECUTED** during automated agent verification (headless agent environment without an active physical screen or mobile touch driver).
+  - The comprehensive manual runbook in `docs/M2_16_AUTH_E2E_VERIFICATION_RUNBOOK.md` remains available for interactive simulator/device verification: Welcome → Register → Verify → Create Username → Complete Profile → Login.
+  - Expected login UI behavior today: SnackBar displays `'Signed in successfully.'` and app remains on `LoginScreen` (expected: authenticated Home/app shell belongs to later milestones).
+
+### Milestone 2 Completion & Retained Architectural Boundaries
+Milestone 2 (Auth + Security) is **COMPLETE**.
+The following remain intentionally deferred to subsequent milestones:
+- Authenticated Home / Dashboard / app shell (deferred to later milestone)
 - Protected production screens
-- User Profile / Settings
-- Logout UI / user-facing logout triggers
+- User Profile / Settings (Milestone 3)
+- User-facing Logout UI (deferred to future application shell milestone)
 - Reactive eviction / observer-based redirects of an already-visible protected screen
-- M2.16 Auth E2E / Definition of Done verification
+- Access-token blacklist / revocation cache (stateless JWT logout residual-window limitation remains documented)
 
 ## 6. M3 — User Profile + Privacy
 

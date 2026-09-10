@@ -8,11 +8,12 @@ import '../features/auth/presentation/auth_flow_coordinator.dart';
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
   final AuthFlowCoordinator? authFlowCoordinator;
-  final AuthSessionController? authSessionController;
+  final AuthSessionController authSessionController;
+
   const WeDoApp({
     super.key,
     this.authFlowCoordinator,
-    this.authSessionController,
+    required this.authSessionController,
   });
 
   @override
@@ -29,8 +30,11 @@ class WeDoApp extends StatelessWidget {
         ),
       ),
       initialRoute: AppRoutes.welcome,
-      onGenerateRoute: (settings) =>
-          AppRoutes.onGenerateRoute(settings, coordinator: authFlowCoordinator),
+      onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
+        settings,
+        authStatus: authSessionController.status,
+        coordinator: authFlowCoordinator,
+      ),
     );
   }
 }

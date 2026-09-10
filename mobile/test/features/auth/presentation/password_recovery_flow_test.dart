@@ -6,6 +6,7 @@ import 'package:mobile/core/network/access_token_holder.dart';
 import 'package:mobile/core/network/api_exception.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
 import 'package:mobile/core/storage/secure_storage_service.dart';
+import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/auth/data/auth_api.dart';
 import 'package:mobile/features/auth/data/auth_repository.dart';
 import 'package:mobile/features/auth/data/models/auth_models.dart';
@@ -20,15 +21,29 @@ void main() {
         ..values[SecureStorageService.accessTokenKey] = 'access-a'
         ..values[SecureStorageService.refreshTokenKey] = 'refresh-a';
       final holder = AccessTokenHolder()..setAccessToken('access-a');
+      final storage = SecureStorageService(store: store);
+      final repository = AuthRepository(
+        api: api,
+        storage: storage,
+        accessTokenHolder: holder,
+      );
+      final sessionController = AuthSessionController(
+        storage: storage,
+        accessTokenHolder: holder,
+        repository: repository,
+        initialStatus: AuthSessionStatus.authenticated,
+      );
       final coordinator = AuthFlowCoordinator(
-        AuthRepository(
-          api: api,
-          storage: SecureStorageService(store: store),
-          accessTokenHolder: holder,
-        ),
+        repository,
+        sessionController: sessionController,
       );
 
-      await tester.pumpWidget(WeDoApp(authFlowCoordinator: coordinator));
+      await tester.pumpWidget(
+        WeDoApp(
+          authFlowCoordinator: coordinator,
+          authSessionController: sessionController,
+        ),
+      );
       await tester.ensureVisible(find.text('Login'));
       await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();

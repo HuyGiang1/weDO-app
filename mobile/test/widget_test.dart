@@ -1,11 +1,51 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app/app.dart';
+import 'package:mobile/core/network/access_token_holder.dart';
+import 'package:mobile/core/storage/secure_key_value_store.dart';
+import 'package:mobile/core/storage/secure_storage_service.dart';
+import 'package:mobile/features/auth/application/auth_session_controller.dart';
+import 'package:mobile/features/auth/data/auth_api.dart';
+import 'package:mobile/features/auth/data/auth_repository.dart';
+
+class _TestSecureStore implements SecureKeyValueStore {
+  @override
+  Future<void> delete(String key) async {}
+
+  @override
+  Future<String?> read(String key) async => null;
+
+  @override
+  Future<void> write({required String key, required String value}) async {}
+}
+
+class _TestAuthApi extends Fake implements AuthApi {}
+
+AuthSessionController _createTestSessionController({
+  AuthSessionStatus status = AuthSessionStatus.unauthenticated,
+}) {
+  final store = _TestSecureStore();
+  final storage = SecureStorageService(store: store);
+  final holder = AccessTokenHolder();
+  final repo = AuthRepository(
+    api: _TestAuthApi(),
+    storage: storage,
+    accessTokenHolder: holder,
+  );
+  return AuthSessionController(
+    storage: storage,
+    accessTokenHolder: holder,
+    repository: repo,
+    initialStatus: status,
+  );
+}
 
 void main() {
   testWidgets('WeDoApp mounts and displays initial WelcomeScreen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     expect(find.text('WeDo'), findsOneWidget);
     expect(find.text('Squad up.'), findsOneWidget);
@@ -14,7 +54,9 @@ void main() {
   });
 
   testWidgets('Welcome Login reaches LoginScreen', (WidgetTester tester) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     final loginButton = find.text('Login');
     await tester.ensureVisible(loginButton);
@@ -28,7 +70,9 @@ void main() {
   testWidgets('Welcome Create Account reaches RegisterScreen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     final createAccountButton = find.text('Create Account');
     await tester.ensureVisible(createAccountButton);
@@ -42,7 +86,9 @@ void main() {
   testWidgets('Register Login reaches LoginScreen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     final createAccountButton = find.text('Create Account');
     await tester.ensureVisible(createAccountButton);
@@ -62,7 +108,9 @@ void main() {
   testWidgets('Login Forgot Password reaches ForgotPasswordScreen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     final loginButton = find.text('Login');
     await tester.ensureVisible(loginButton);
@@ -81,7 +129,9 @@ void main() {
   testWidgets('Login Create Account reaches RegisterScreen', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const WeDoApp());
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
     final loginButton = find.text('Login');
     await tester.ensureVisible(loginButton);

@@ -47,6 +47,48 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.status()).body(response);
     }
 
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleHandlerMethodValidationException(
+            org.springframework.web.method.annotation.HandlerMethodValidationException exception,
+            HttpServletRequest request
+    ) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (org.springframework.validation.method.ParameterValidationResult result : exception.getParameterValidationResults()) {
+            String paramName = result.getMethodParameter().getParameterName();
+            if (paramName == null || paramName.isBlank()) {
+                paramName = "parameter";
+            }
+            for (org.springframework.context.MessageSourceResolvable resolvable : result.getResolvableErrors()) {
+                String message = resolvable.getDefaultMessage();
+                errors.putIfAbsent(paramName, message != null ? message : "Invalid value");
+            }
+        }
+
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        String requestId = MDC.get(REQUEST_ID_KEY);
+        ApiErrorResponse response = ApiErrorResponse.validation(errorCode, request.getRequestURI(), errors, requestId);
+
+        return ResponseEntity.status(errorCode.status()).body(response);
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolationException(
+            jakarta.validation.ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        exception.getConstraintViolations().forEach(violation -> {
+            String path = violation.getPropertyPath() != null ? violation.getPropertyPath().toString() : "parameter";
+            errors.putIfAbsent(path, violation.getMessage());
+        });
+
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        String requestId = MDC.get(REQUEST_ID_KEY);
+        ApiErrorResponse response = ApiErrorResponse.validation(errorCode, request.getRequestURI(), errors, requestId);
+
+        return ResponseEntity.status(errorCode.status()).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
             Exception exception,

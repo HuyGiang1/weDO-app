@@ -26,3 +26,18 @@ management:
   endpoint:
     health:
       show-details: always
+
+security:
+  jwt:
+    secret-base64: ${WEDO_JWT_SECRET_BASE64:1WZTYD0Q6/LbmgH08YrpYg+Xwsn19ZXp2M3WObbPl/4=}
+    access-token-ttl: 15m
+  auth-token:
+    pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64:k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3hT6rY9uI2oP5aD8=}
+  profile-completion-token:
+    secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64:s4A8wY0D2eE6vK1L5oP9tQ3rF7mN8xZ2cT4vB6nI8uM=}
+    ttl: 15m
+  refresh-token:
+    ttl: 14d
+  login:
+    max-failed-attempts: 5
+    lock-duration: 15m

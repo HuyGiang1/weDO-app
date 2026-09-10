@@ -1,30 +1,149 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/app/app.dart';
+import 'package:mobile/core/network/access_token_holder.dart';
+import 'package:mobile/core/storage/secure_key_value_store.dart';
+import 'package:mobile/core/storage/secure_storage_service.dart';
+import 'package:mobile/features/auth/application/auth_session_controller.dart';
+import 'package:mobile/features/auth/data/auth_api.dart';
+import 'package:mobile/features/auth/data/auth_repository.dart';
 
-import 'package:mobile/main.dart';
+class _TestSecureStore implements SecureKeyValueStore {
+  @override
+  Future<void> delete(String key) async {}
+
+  @override
+  Future<String?> read(String key) async => null;
+
+  @override
+  Future<void> write({required String key, required String value}) async {}
+}
+
+class _TestAuthApi extends Fake implements AuthApi {}
+
+AuthSessionController _createTestSessionController({
+  AuthSessionStatus status = AuthSessionStatus.unauthenticated,
+}) {
+  final store = _TestSecureStore();
+  final storage = SecureStorageService(store: store);
+  final holder = AccessTokenHolder();
+  final repo = AuthRepository(
+    api: _TestAuthApi(),
+    storage: storage,
+    accessTokenHolder: holder,
+  );
+  return AuthSessionController(
+    storage: storage,
+    accessTokenHolder: holder,
+    repository: repo,
+    initialStatus: status,
+  );
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('WeDoApp mounts and displays initial WelcomeScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('WeDo'), findsOneWidget);
+    expect(find.text('Squad up.'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
+    expect(find.text('Login'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  testWidgets('Welcome Login reaches LoginScreen', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Welcome Create Account reaches RegisterScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
+
+    final createAccountButton = find.text('Create Account');
+    await tester.ensureVisible(createAccountButton);
+    await tester.tap(createAccountButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Join WeDo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Register Login reaches LoginScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
+
+    final createAccountButton = find.text('Create Account');
+    await tester.ensureVisible(createAccountButton);
+    await tester.tap(createAccountButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Join WeDo'), findsOneWidget);
+
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Login Forgot Password reaches ForgotPasswordScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
+
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    final forgotPassword = find.text('Forgot Password?');
+    await tester.ensureVisible(forgotPassword);
+    await tester.tap(forgotPassword);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Forgot Password?'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Login Create Account reaches RegisterScreen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      WeDoApp(authSessionController: _createTestSessionController()),
+    );
+
+    final loginButton = find.text('Login');
+    await tester.ensureVisible(loginButton);
+    await tester.tap(loginButton);
+    await tester.pumpAndSettle();
+
+    final createAccountButton = find.text('Create Account');
+    await tester.ensureVisible(createAccountButton);
+    await tester.tap(createAccountButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Join WeDo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

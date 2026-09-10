@@ -104,6 +104,24 @@ Tests:
 
 ## 5. M2 — Auth + Security
 
+Sub-milestones:
+- [x] M2.1  Auth JPA Mapping Foundation
+- [x] M2.2  Security Foundation + BCrypt
+- [x] M2.3  JWT Foundation
+- [x] M2.4  Register
+- [x] M2.5  Verify Email + Resend
+- [x] M2.6  Username Availability + Complete Profile
+- [x] M2.7  Login
+- [x] M2.8  Refresh Token Rotation
+- [x] M2.9  Logout
+- [x] M2.10 Forgot / Reset Password
+- [x] M2.11 Current User + Protected Endpoint
+- [x] M2.12 Device / Session Security Hardening
+- [x] M2.13 Flutter Auth Screens
+- [x] M2.14 Secure Storage + Dio Auth Interceptor
+- [x] M2.15 Refresh Interceptor + Route Guard
+- [x] M2.16 Auth E2E / DoD
+
 Features:
 - register
 - verify email
@@ -130,6 +148,107 @@ Flutter:
 - route guard
 
 DoD: register → verify → login → refresh → logout E2E.
+
+### M2.14 Implementation Status & Boundaries
+- Flutter auth screens are wired to real repository/API flows.
+- Dio is the auth HTTP client.
+- Secure storage persists only:
+  - `auth.access_token`
+  - `auth.refresh_token`
+- AccessTokenHolder holds the active access token in memory.
+- profileCompletionToken remains coordinator-memory-only.
+- AuthInterceptor currently performs Bearer attachment only.
+- `/api/v1/auth/*` and `/api/v1/health` remain public interceptor exclusions.
+- `/api/v1/me` receives Bearer through AuthInterceptor.
+- Login authenticated branch persists session credentials.
+- Logout attempts remote refresh-session revocation and always clears local credentials.
+- Forgot/reset password do not auto-login or directly mutate local session.
+- M2.14 verification passed with flutter analyze and the full offline test suite.
+
+### M2.15 Implementation Status & Boundaries
+- M2.15.1 Startup Session Restoration:
+  - Bootstrap restoration runs before `runApp` without startup `/me` or refresh calls.
+  - Non-blank persisted token pair restores authenticated state; missing tokens mark unauthenticated; partial pairs evict local session.
+  - Storage read failure clears in-memory holder only, without destroying durable storage.
+- M2.15.2 Isolated Refresh Transport & Repository Operation:
+  - Dedicated `DioClient.raw` instance with physically zero interceptors for `POST /api/v1/auth/refresh`.
+  - Serialized through FIFO credential mutation queue: generation-consistent snapshotting against `expectedRevision` before the network call, and atomic compare-and-adopt after successful response.
+  - Strict HTTP 200 payload validation (`accessToken`, `refreshToken`, `tokenType: Bearer`, expiry fields).
+- M2.15.3 Generation-Aware Automatic Refresh Interceptor:
+  - Automatic refresh triggers strictly on `401 Unauthorized` with body `code == 'AUTH_TOKEN_EXPIRED'`.
+  - Generation-scoped single-flight refresh ensures concurrent expired requests for the same generation share one refresh operation, while different-generation requests fail closed.
+  - Stale 401 retry authorized strictly by exact atomic transition proof (`requestRevision == transition.fromRevision && currentRevision == transition.toRevision`).
+  - Retry-dispatch TOCTOU guard asserts generation identity and non-blank access token immediately before network transmission, aborting if the session changed.
+  - Enforces a strict one-retry-per-request ceiling; preserves request properties without duplicate headers.
+- M2.15.4 Generation-Aware Session Invalidation:
+  - Unified invalidation pipeline for definitive refresh failures and protected `401 AUTH_TOKEN_INVALID`.
+  - Explicit allow-list for definitive failures (`refreshTokenInvalid`, `noRefreshableSession`, `refreshSessionUnrecoverable`, `accountSuspended`, `accountDeactivated`, `emailNotVerified`); transient failures (timeouts, 5xx) never log out the user.
+  - Generation-bounded: invalidation against older generations yields `SessionInvalidationSuperseded` and touches nothing.
+  - `AuthSessionInvalidator` transitions `AuthSessionController` to unauthenticated only if target generation is still current.
+- M2.15.5 Route Guard & Single Registry Infrastructure:
+  - Single route registry `Map<String, AppRouteDefinition>` where `access: AppRouteAccess` is strictly required (non-nullable, no default fallback).
+  - All 8 current production routes are explicitly classified as `AppRouteAccess.public`.
+  - Strict evaluation order: Route Lookup → `AuthRouteGuard.evaluate(access, authStatus)` → Route Builder. Denied routes fail closed (`return null`) without executing the target screen builder.
+  - Pure `AuthRouteGuard` evaluator with zero dependencies on widgets, navigation, tokens, or network.
+  - Non-nullable `required AuthSessionStatus authStatus` supplied dynamically at navigation time by `WeDoApp`.
+
+### Durability Boundaries & Failure Analysis
+
+#### Case A — Refresh-Driven Definitive Invalidation
+- When definitive invalidation occurs (e.g. `refreshTokenInvalid`, `AUTH_TOKEN_INVALID`), `AccessTokenHolder` is wiped in RAM, the revision advances, and `AuthSessionController` becomes unauthenticated.
+- If OS secure-storage deletion fails (`SessionInvalidationApplied.durableCredentialsCleared == false`), credentials may physically remain in durable storage.
+- Because the access token involved in refresh-driven invalidation is already expired or invalid, any resurrection upon hard restart fails closed: the very first network request triggers `AUTH_TOKEN_EXPIRED` (leading to refresh rejection with `REFRESH_TOKEN_INVALID`) or `AUTH_TOKEN_INVALID`, re-entering the unified invalidation pipeline immediately.
+
+#### Case B — Explicit Logout Residual Window
+- `POST /api/v1/auth/logout` revokes the matching refresh-session database record.
+- Under the current stateless access-JWT design, the backend does not blacklist already-issued access JWTs or query the refresh-session table on every protected request.
+- Therefore, a double-fault edge case exists:
+  - Remote logout succeeds + local `SecureStorage.clearSession()` fails + app hard-restarts before access JWT expiry.
+  - Stored access JWT may be restored on launch and remain usable on protected endpoints until its natural expiration timestamp (`exp`).
+  - Documented residual access-token validity window under the current stateless access-JWT design.
+  - Once the access token naturally expires, any subsequent refresh attempt using the revoked refresh token receives `401 REFRESH_TOKEN_INVALID` and triggers local invalidation.
+
+#### Future Logout Orchestration Boundary
+- `AuthRepository.logout()` performs remote revocation, always attempts local clear, clears the in-memory `AccessTokenHolder` even when durable deletion fails, may throw `AuthException` if local durable deletion fails, and does NOT own `AuthSessionController`.
+- There is currently no production logout UI or coordinator caller in the application.
+- When a real logout UI or application flow is introduced in later milestones, application-layer orchestration must ensure `AuthSessionController` transitions to unauthenticated even when durable local deletion reports failure.
+
+### M2.16 Implementation Status & Live Verification Evidence (Milestone 2 Complete)
+- **Live Client-Backend Integration E2E Passed**:
+  - Live execution command: `flutter test test_e2e/live_auth_e2e_test.dart --dart-define=WEDO_API_BASE_URL=http://127.0.0.1:8080`.
+  - Executed against real local Spring Boot 4.1.1 (profile `local`, port 8080) and real PostgreSQL 17.11 (`wedo-postgres` on port 5432).
+  - Executed in ~19 seconds (`00:19 +1: All tests passed!`, Exit code 0).
+- **Canonical Flow Verified**:
+  `register` → `resolve verification OTP` → `verify email` → `complete profile` → `login` → `initial protected /me` → `real access expiry wait` → `transparent AuthInterceptor refresh` → `retried /me succeeds` → `logout` → `server-side revocation proof (REFRESH_TOKEN_INVALID)`.
+- **Key Evidence Captured (Non-Secret)**:
+  - Register: `POST /api/v1/auth/register` returned `201 Created` with valid user UUID.
+  - OTP Resolver: `OtpResolverTest` executed via Maven Surefire against live PostgreSQL `auth_tokens`, resolved candidate in finite 6-digit space using `AuthTokenHasher`, wrote to temporary IPC file, and deleted the file immediately upon reading. Zero secrets printed.
+  - Verify Email: `POST /api/v1/auth/verify-email` returned `200 OK`, user transitioned to `ACTIVE`, and issued `profileCompletionToken`.
+  - Complete Profile: `POST /api/v1/auth/complete-profile` returned `200 OK`, reserved username, `status: ACTIVE`, `nextStep: LOGIN`.
+  - Login: `POST /api/v1/auth/login` returned `200 OK` `AuthenticatedSession`, persisted R1, populated `AccessTokenHolder` (A1, `revision: 1`).
+  - Initial Protected `/me`: `GET /api/v1/me` via `AuthInterceptor` returned `200 OK` with user profile. Revision remained 1.
+  - Real Expiry & Auto-Refresh: Waited until server-issued `accessTokenExpiresAt` (5s short TTL) + 800ms safety margin; called standard `repository.getCurrentUser()`; first request received `401 AUTH_TOKEN_EXPIRED`; `AuthInterceptor` triggered rotation; backend rotated S1 -> S2 (A2, R2); client adopted new credentials; `revision` incremented `1 -> 2`; transparent retry succeeded with `200 OK` (A2 != A1, R2 != R1).
+  - Logout: `AuthRepository.logout()` sent `POST /api/v1/auth/logout` with R2 returning `204 No Content`; backend marked S2 revoked; cleared `AccessTokenHolder` (null) and local storage (null).
+  - Server Revocation Proof: Direct isolated raw call `api.refreshToken(capturedR2)` returned HTTP 401 with code `REFRESH_TOKEN_INVALID`.
+- **Regression Suites Verified**:
+  - Backend: `.\mvnw.cmd test` → `Tests run: 263, Failures: 0, Errors: 0, Skipped: 1, BUILD SUCCESS`.
+  - Flutter analyze: `flutter analyze` → `No issues found!`.
+  - Flutter unit/widget tests: `flutter test -r expanded` → `262/262 passed`.
+  - Zero production code changes and zero dependency changes across `mobile/lib/**` and `backend/src/main/**`.
+- **Manual Mobile UI Smoke Boundary**:
+  - Manual mobile UI smoke: **NOT EXECUTED** during automated agent verification (headless agent environment without an active physical screen or mobile touch driver).
+  - The comprehensive manual runbook in `docs/M2_16_AUTH_E2E_VERIFICATION_RUNBOOK.md` remains available for interactive simulator/device verification: Welcome → Register → Verify → Create Username → Complete Profile → Login.
+  - Expected login UI behavior today: SnackBar displays `'Signed in successfully.'` and app remains on `LoginScreen` (expected: authenticated Home/app shell belongs to later milestones).
+
+### Milestone 2 Completion & Retained Architectural Boundaries
+Milestone 2 (Auth + Security) is **COMPLETE**.
+The following remain intentionally deferred to subsequent milestones:
+- Authenticated Home / Dashboard / app shell (deferred to later milestone)
+- Protected production screens
+- User Profile / Settings (Milestone 3)
+- User-facing Logout UI (deferred to future application shell milestone)
+- Reactive eviction / observer-based redirects of an already-visible protected screen
+- Access-token blacklist / revocation cache (stateless JWT logout residual-window limitation remains documented)
 
 ## 6. M3 — User Profile + Privacy
 

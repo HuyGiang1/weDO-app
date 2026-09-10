@@ -7,3 +7,19 @@ spring:
 
 server:
   port: 8080
+
+security:
+  jwt:
+    secret-base64: ${WEDO_JWT_SECRET_BASE64}
+    access-token-ttl: ${WEDO_JWT_ACCESS_TOKEN_TTL:15m}
+  auth-token:
+    pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64}
+  profile-completion-token:
+    secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64}
+    ttl: ${WEDO_PROFILE_COMPLETION_TOKEN_TTL:15m}
+  refresh-token:
+    ttl: ${WEDO_REFRESH_TOKEN_TTL:14d}
+    max-family-lifetime: ${WEDO_REFRESH_TOKEN_MAX_FAMILY_LIFETIME:30d}
+  login:
+    max-failed-attempts: ${WEDO_LOGIN_MAX_FAILED_ATTEMPTS:5}
+    lock-duration: ${WEDO_LOGIN_LOCK_DURATION:15m}

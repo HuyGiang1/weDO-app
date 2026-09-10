@@ -234,25 +234,109 @@ Do not casually hard-delete membership, message, activity, expense, settlement o
 
 ## 4. Authentication & Security Model
 
-### 4.1 Authentication
+### 4.1 Authentication & Stateless SecurityContext
 
-MVP uses Email + Password with Spring Security, JWT access tokens, server-revocable refresh tokens and `PasswordEncoder`.
+The backend uses Email + Password authentication with Spring Security, JWT access tokens, server-revocable refresh tokens, and `PasswordEncoder`.
 
-The current user identity is always derived from authentication context; the client must never be trusted to submit `currentUserId` for authorization.
+- **Stateless Session Policy:** `SessionCreationPolicy.STATELESS`. The `SecurityContext` exists in memory per request only. There is no `HttpSession` persistence across requests. Every protected request must supply credentials via `Authorization: Bearer <access-token>`.
+- **Principal Integrity:** The current user identity is always derived from the authenticated `SecurityContext`; clients are never trusted to supply `currentUserId` for authorization.
+- **Authenticated Principal Contract:** `AuthenticatedUserPrincipal` contains strictly the authenticated `userId: UUID`. The `SecurityContext` does NOT hold `UserEntity`, passwords, emails, usernames, account status, or raw JWT strings. Authentication is populated as `UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList())` with null credentials and an empty authorities list (no synthetic roles or permissions).
 
-### 4.2 Access token
+### 4.2 Access JWT Architecture & Claim Contract
 
-Short-lived, recommended 15-60 minutes. Contains only stable/minimal identity claims such as user ID and expiration. Do not encode volatile group roles into JWT.
+- **Lifespan:** Short-lived 15 minutes (`security.jwt.access-token-ttl: 15m`).
+- **Cryptographic Claim Contract:**
+  - `sub`: User ID formatted as a standard UUID string.
+  - `iat`: Issued-at epoch seconds.
+  - `exp`: Expiration epoch seconds.
+  - No `username`, `email`, `status`, `roles`, `permissions`, or `jti` are included in the access JWT claims.
+- **Token Purpose Separation:** Access JWTs and profile-completion tokens are signed using distinct configuration keys (`security.jwt.secret-base64` vs. `security.profile-completion.secret-base64`). Under current cryptographic configuration, a profile-completion token cannot pass access-JWT verification.
 
-### 4.3 Refresh token
+### 4.3 Bearer Authentication Flow & Filter Responsibilities
 
-Recommended 7-30 days with refresh-token rotation. Using refresh token A invalidates A and produces new access + refresh credentials.
+**Request Pipeline Flow:**
+```text
+HTTP Request
+  → RequestIdFilter
+  → JwtAuthenticationFilter
+  → SecurityContextHolder
+  → AuthorizationFilter
+  → Resource Controller
+```
 
-### 4.4 Authentication vs authorization
+- **JwtAuthenticationFilter Implementation:**
+  - Extends `OncePerRequestFilter`.
+  - Defined as a plain class (not a Spring `@Component`), instantiated directly inside `SecurityConfig` and attached via `http.addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)`. This avoids accidental duplicate Servlet container filter registration.
+- **Filter Responsibility & Zero-DB-Hit Access Layer:**
+  - `JwtAuthenticationFilter` strictly answers: *"Is this Bearer access JWT cryptographically valid, and which userId does it represent?"*
+  - It does NOT query `users`, `user_credentials`, `refresh_sessions`, or `auth_tokens`.
+  - It does NOT check current account status, refresh tokens, revoke sessions, or load JPA entities.
+  - Fresh database state and account status enforcement are intentionally deferred to resource services (such as `UserService` for `GET /api/v1/me`) that actually require entity data.
+
+### 4.4 Authorization Header Policy & Public Endpoint Semantics
+
+- **Authorization Header Evaluation:**
+  - Absent or blank header: Filter is a no-op and delegates to the filter chain.
+  - Non-Bearer header (e.g., `Basic ...`, `Digest ...`, `Custom ...`): Filter ignores the header and delegates to the filter chain.
+  - Scheme matching: Case-insensitive comparison (`Bearer`, `bearer`, `BEARER`).
+  - Blank/missing token with Bearer scheme: Emits HTTP 401 `AUTH_TOKEN_INVALID`.
+- **Public Endpoint + Bearer Credential Semantics:**
+  - `JwtAuthenticationFilter` executes for all incoming requests (including public endpoints).
+  - Public endpoint + no `Authorization` header → normal public execution.
+  - Public endpoint + non-Bearer `Authorization` → filter ignores it, normal public execution.
+  - Public endpoint + invalid/malformed Bearer credential → HTTP 401 `AUTH_TOKEN_INVALID`.
+  - Public endpoint + expired Bearer credential → HTTP 401 `AUTH_TOKEN_EXPIRED`.
+  - *Rationale:* When a client explicitly supplies Bearer credentials, the backend validates them rather than silently ignoring invalid credentials.
+
+### 4.5 Refresh Token & Absolute Family Lifetime
+
+High-entropy opaque random session credential (not a JWT; 256-bit secure random, Base64 URL-safe without padding, 43 characters). Raw token is returned only to client in response body; SHA-256 lowercase hex digest is persisted in the database (`refresh_sessions.token_hash`).
+
+- **Sliding Session Lifetime:** Configured with a 14-day sliding TTL (`security.refresh-token.ttl: 14d`, environment override `WEDO_REFRESH_TOKEN_TTL`).
+- **Absolute Family Lifetime:** Configured with a 30-day maximum lifetime cap for an entire login session family (`security.refresh-token.max-family-lifetime: 30d`, environment override `WEDO_REFRESH_TOKEN_MAX_FAMILY_LIFETIME`).
+- **Sliding vs. Absolute Lifetime Distinction:**
+  - *Sliding TTL:* Applies per refresh-session node ($T_{\text{now}} + 14d$).
+  - *Absolute Family Lifetime:* Fixed maximum deadline for an entire login family established at login ($T_{\text{login}} + 30d$). Repeated refresh operations extend the sliding session node but cannot slide past the fixed family deadline. When the family deadline is reached, the refresh session becomes permanently invalid, requiring re-authentication.
+- **Access JWT Decoupling & Status-Blindness:**
+  - Refresh family hardening does NOT alter access JWT claims (`sub`, `iat`, `exp`, 15 minutes TTL).
+  - No `sid`, `familyId`, `absoluteExp`, or `deviceId` claims are embedded in the access JWT.
+  - Already-issued access JWTs remain cryptographically usable until their expiration (`exp`), even after refresh credentials or families become invalid or revoked (no distributed access-token blacklist).
+- **Session Metadata vs. Cryptographic Device-Binding Limitation:**
+  - Refresh sessions capture optional client device display metadata (`deviceName`) and server-observed remote IP address (`ipAddress`) for auditing and session display.
+  - This metadata does NOT provide cryptographic device binding, hardware keystore proofs, device certificates, DPoP, mTLS, or client device fingerprinting.
+
+### 4.6 Security Error Handling & Error Envelope Consolidation
+
+Security errors are rendered consistently via `SecurityErrorResponseWriter`, shared by:
+- `RestAuthenticationEntryPoint`: Invoked when an unauthenticated request attempts to access a protected resource. Emits HTTP 401 `UNAUTHORIZED` (`"Authentication is required."`).
+- `RestAccessDeniedHandler`: Invoked when an authenticated request lacks required authorization. Emits HTTP 403 `ACCESS_DENIED` (`"Access is denied."`).
+- `JwtAuthenticationFilter`: Invoked when Bearer credentials fail validation. Emits HTTP 401 `AUTH_TOKEN_EXPIRED` (`"Authentication token has expired."`) or HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`).
+
+**Canonical Error Envelope:**
+All security filters and entry points output the standard application error envelope:
+```json
+{
+  "timestamp": "2026-09-07T03:15:30.123Z",
+  "status": 401,
+  "code": "AUTH_TOKEN_INVALID",
+  "message": "Invalid authentication token.",
+  "path": "/api/v1/me",
+  "requestId": "4fa85f64-5717-4562-b3fc-2c963f66afa6"
+}
+```
+The `requestId` is resolved from `RequestIdFilter` via MDC (or header fallback) and synchronized to the `X-Request-ID` response header. Internal JWT parser exceptions are never exposed to clients.
+
+### 4.7 Status-Blind Access JWT Limitation & Password Reset Interaction
+
+- **Status-Blind Limitation:** Because `JwtAuthenticationFilter` performs no per-request user database queries, a cryptographically valid access JWT belonging to an account whose status changes (e.g., suspended or deactivated) after token issuance may establish authentication until the token expires (up to 15 minutes). Protected endpoints that query database user state (such as `GET /api/v1/me`) enforce current database status.
+- **Password Reset Interaction:** Password reset revokes all active refresh sessions in the database, but already-issued access JWTs remain cryptographically valid until expiration. There is no distributed access-token blacklist in the current architecture.
+
+### 4.8 Authentication vs Authorization
 
 Authentication answers **who the user is**. Authorization answers **whether that authenticated user may perform an action** based on current membership, role, ownership, privacy, block and domain state.
 
 ---
+
 
 ## 5. Authentication API
 
@@ -279,16 +363,38 @@ Authentication answers **who the user is**. Authorization answers **whether that
 
 ### AUTH-02 Verify Email
 
-**Endpoint:** `POST /api/v1/auth/verify-email`
+- **Endpoint:** `POST /api/v1/auth/verify-email`
+- **Authentication:** Public
+- **Request DTO:** `VerifyEmailRequest`
 
 ```json
 {
-  "userId": "...",
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
   "code": "123456"
 }
 ```
 
-Validate active token, expiration and attempts; compare hashed code; consume token; set `email_verified_at`. Errors: `VERIFICATION_CODE_INVALID`, `VERIFICATION_CODE_EXPIRED`, `VERIFICATION_ATTEMPTS_EXCEEDED`, `EMAIL_ALREADY_VERIFIED`.
+**Response DTO:** `VerifyEmailResponse` (HTTP 200 OK)
+
+```json
+{
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
+  "status": "ACTIVE",
+  "emailVerifiedAt": "2026-09-05T10:15:30Z",
+  "nextStep": "COMPLETE_PROFILE",
+  "profileCompletionToken": "eyJhbGciOiJIUzI1NiJ9..."
+}
+```
+
+**Business flow:** Validate active token, expiration and attempts; compare hashed code; consume token; update user status to `ACTIVE`; record `email_verified_at`; issue short-lived `profileCompletionToken`.
+
+**Credential semantics:**
+- `profileCompletionToken` is a short-lived **onboarding credential** (TTL: 15 minutes).
+- Purpose is strictly restricted to `COMPLETE_PROFILE`.
+- It is **not** an application access token and **not** a refresh token.
+- It must **not** be used for authenticated/protected application APIs.
+
+**Errors:** `400 VALIDATION_FAILED`, `400 VERIFICATION_CODE_INVALID`, `400 VERIFICATION_CODE_EXPIRED`, `400 VERIFICATION_ATTEMPTS_EXCEEDED`, `404 RESOURCE_NOT_FOUND`, `409 EMAIL_ALREADY_VERIFIED`.
 
 ### AUTH-03 Resend Verification
 
@@ -297,10 +403,13 @@ Uses Redis rate limiting to prevent abuse.
 
 ### AUTH-04 Complete Initial Profile
 
-**Endpoint:** `POST /api/v1/auth/complete-profile`
+- **Endpoint:** `POST /api/v1/auth/complete-profile`
+- **Authentication:** Public at Spring Security level (no `Authorization: Bearer` access token required). Authorization is performed using the `profileCompletionToken` onboarding credential. This is onboarding-only behavior.
+- **Request DTO:** `CompleteProfileRequest`
 
 ```json
 {
+  "profileCompletionToken": "eyJhbGciOiJIUzI1NiJ9...",
   "username": "huygiang",
   "displayName": "Huy Giang",
   "bio": null,
@@ -308,15 +417,130 @@ Uses Redis rate limiting to prevent abuse.
 }
 ```
 
-Username must be unique. Display name is required. Avatar and bio are optional.
+> **CRITICAL SECURITY REQUIREMENT:**
+> The client does **not** submit and is never trusted to supply `userId`. Backend derives `userId` exclusively from the cryptographically validated `profileCompletionToken`. No `SecurityContext` authentication is established.
+
+**Validation & Normalization Rules:**
+- `profileCompletionToken`:
+  - Required, non-blank.
+- `username`:
+  - Required.
+  - 3..30 characters.
+  - Allowed characters: letters A-Z / a-z, digits 0-9, underscore `_` (`^[a-zA-Z0-9_]{3,30}$`).
+  - No whitespace allowed.
+  - Canonical storage in lowercase (`trim().toLowerCase(Locale.ROOT)`).
+  - Uniqueness enforced case-insensitively via DB unique index.
+- `displayName`:
+  - Required.
+  - Max 100 characters (`@Size(min = 1, max = 100)`).
+  - Unicode allowed.
+  - Trimmed before persistence (`trim()`).
+  - Non-unique.
+- `bio`:
+  - Optional.
+  - Max 500 characters (`@Size(max = 500)`).
+  - Trimmed before persistence; blank after trim becomes `null`.
+- `avatarStorageKey`:
+  - Optional.
+  - Max 255 characters (`@Size(max = 255)`).
+  - Preserved exactly as supplied (no normalization in M2.6).
+
+**Business Flow:**
+1. Validate incoming request fields via declarative Bean Validation.
+2. Verify and parse `profileCompletionToken` (purpose = `COMPLETE_PROFILE`, unexpired, valid signature).
+3. Extract `userId` from token subject; retrieve user entity from DB.
+4. Verify user status is `ACTIVE` (return 403 `ACCESS_DENIED` if not).
+5. Verify user has not already completed profile (`username == null`; return 409 `PROFILE_ALREADY_COMPLETED` if already populated).
+6. Check case-insensitive username availability; return 409 `USERNAME_ALREADY_EXISTS` if taken.
+7. Persist canonical profile fields (`username`, `displayName`, `bio`, `avatarStorageKey`) and handle potential concurrent unique constraint violation gracefully.
+8. Return completed profile response.
+
+**Response DTO:** `CompleteProfileResponse` (HTTP 200 OK)
+
+```json
+{
+  "userId": "c0a80123-4567-89ab-cdef-0123456789ab",
+  "username": "huygiang",
+  "displayName": "Huy Giang",
+  "status": "ACTIVE",
+  "nextStep": "LOGIN"
+}
+```
+
+*Note: Returns HTTP 200 OK with `nextStep=LOGIN`. No access token and no refresh token are issued.*
+
+**Error Behavior:**
+- `400 VALIDATION_FAILED`:
+  - Missing/blank token.
+  - Invalid username format (length not 3..30, invalid characters, whitespace).
+  - Invalid DTO fields (`displayName` missing/blank or >100, `bio` >500, `avatarStorageKey` >255).
+- `401 UNAUTHORIZED`:
+  - Malformed profile completion token.
+  - Invalid signature.
+  - Expired token.
+  - Wrong token purpose (not `COMPLETE_PROFILE`).
+  - Invalid token subject (not a valid UUID).
+- `403 ACCESS_DENIED`:
+  - User status is not `ACTIVE`.
+- `404 RESOURCE_NOT_FOUND`:
+  - Verified token subject does not map to any existing user.
+- `409 PROFILE_ALREADY_COMPLETED`:
+  - Username already populated on the user entity.
+- `409 USERNAME_ALREADY_EXISTS`:
+  - Username already taken or DB uniqueness race on insert/update.
+
+**Deferred Onboarding Recovery Requirement for Login:**
+> ProfileCompletionToken TTL: 15 minutes.
+>
+> If it expires before profile completion, the account remains: `status = ACTIVE`, `username == null`.
+>
+> Recovery is implemented in M2.7 Login (AUTH-06):
+> Login detects `ACTIVE + username == null` and issues a fresh `ProfileCompletionToken` with `nextStep = COMPLETE_PROFILE` without issuing application access or refresh tokens.
 
 ### AUTH-05 Username Availability
 
-**Endpoint:** `GET /api/v1/auth/usernames/{username}/availability`
+- **Endpoint:** `GET /api/v1/auth/usernames/{username}/availability`
+- **Authentication:** Public
+- **Response DTO:** `UsernameAvailabilityResponse` (HTTP 200 OK)
+
+**Validation Rules:**
+- Path variable `{username}` follows the same MVP validation rules as profile completion: 3..30 characters, `^[a-zA-Z0-9_]{3,30}$`.
+- Invalid path username returns `400 VALIDATION_FAILED`.
+- Taken username still returns `200 OK` with `available: false` (do **not** return 409).
+
+**Case-Insensitivity & Canonical Handling:**
+- Username comparison is strictly case-insensitive.
+- Example: If username `huygiang` exists in the database, availability queries for `HuyGiang`, `HUYGIANG`, and `huygiang` all refer to the same logical username and return `available: false`.
+- Response always returns the canonical lowercase username.
+
+**Response Examples (HTTP 200 OK):**
+
+Available username:
+```json
+{
+  "username": "huygiang",
+  "available": true
+}
+```
+
+Taken username:
+```json
+{
+  "username": "huygiang",
+  "available": false
+}
+```
 
 ### AUTH-06 Login
 
-**Endpoint:** `POST /api/v1/auth/login`
+- **Endpoint:** `POST /api/v1/auth/login`
+- **Authentication:** Public endpoint at Spring Security level. (Note: `GET /api/v1/auth/login` remains protected/unauthorized. No `Authorization: Bearer` access token required for login.)
+- **Request Headers:**
+  - `X-Device-Name` (optional string): Client display/device identifier (max 100 characters).
+- **Request DTO:** `LoginRequest`
+- **Response DTO:** `LoginResponse` (HTTP 200 OK)
+
+**Request Schema:**
 
 ```json
 {
@@ -325,27 +549,721 @@ Username must be unique. Display name is required. Avatar and bio are optional.
 }
 ```
 
-Validate credentials/account status/email verification, then return access token, refresh token, expiration and basic user information. Errors: `AUTH_INVALID_CREDENTIALS`, `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_DEACTIVATED`.
+*(Request body remains strictly `email` and `password`. Optional client display metadata is accepted via the `X-Device-Name` HTTP header. Existing clients omitting the header remain fully compatible. No `deviceId`, `pushToken`, `rememberMe`, or client-supplied IP addresses are accepted in the request body.)*
+
+**Request Validation & Metadata Normalization Rules:**
+- `email`:
+  - Required (`@NotBlank`).
+  - Valid email syntax (`@Email`).
+  - Normalized internally by trimming leading/trailing whitespace and converting to lowercase.
+- `password`:
+  - Required (`@NotBlank`).
+  - Max 72 UTF-8 bytes: technical safety constraint for BCrypt hashing (not a password-strength rule).
+  - Note: No minimum length (e.g. min 8), uppercase/lowercase, or special-character requirements are enforced at login.
+- `X-Device-Name` (HTTP header):
+  - Optional header.
+  - `null` or blank (whitespace-only) → normalized internally to `null`.
+  - Trimmed.
+  - Length $\le 100$ characters → accepted and stored.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Request validation failed."`). No silent truncation.
+  - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
+- IP Address (Server-Observed Metadata):
+  - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
+  - Null or blank → `null`.
+  - Length $\le 45$ characters (accommodates IPv4 and IPv6 string forms) → stored.
+  - Length $> 45$ characters → fail-safe normalized to `null` to avoid database `VARCHAR(45)` column overflow.
+  - Current backend does NOT trust forwarded headers (`X-Forwarded-For`) without verified reverse-proxy termination. IP address is display/audit metadata only; no authentication, authorization, or account locking decisions are based on IP.
+
+**Authentication & Anti-Enumeration Semantics:**
+- Unknown email or incorrect password:
+  - Returns `401 AUTH_INVALID_CREDENTIALS` with default message `"Invalid email or password."`.
+  - Specific internal reasons (`EMAIL_NOT_FOUND`, `USER_NOT_FOUND`, `CREDENTIAL_NOT_FOUND`) are never exposed to callers.
+  - The implementation performs a dummy password verification for unknown accounts to reduce timing differences between unknown-email and wrong-password paths.
+
+**Account Status Disclosure Order:**
+- Account status checks are only evaluated **after** password verification succeeds:
+  - If password is correct and status is `PENDING_VERIFICATION` → `403 EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - If password is correct and status is `SUSPENDED` → `403 ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - If password is correct and status is `DEACTIVATED` → `403 ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+  - If password is wrong for an account in any of these states → returns `401 AUTH_INVALID_CREDENTIALS` (`"Invalid email or password."`).
+- This strict sequence prevents leaking account existence or status to callers who do not know the password.
+
+**Account Lockout Policy:**
+- Default configuration (configurable via environment/application properties):
+  - Max failed attempts: `5` (`security.login.max-failed-attempts`)
+  - Lock duration: `15 minutes` (`security.login.lock-duration`)
+- Semantics:
+  - 1st through 4th consecutive wrong password:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` counter increments by 1.
+  - 5th consecutive wrong password:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` reaches 5; `locked_until` is set to `now + 15 minutes`.
+  - Wrong password submitted while account is actively locked:
+    - Returns `401 AUTH_INVALID_CREDENTIALS`.
+    - `failed_attempts` counter does not increment further; lock duration is not extended.
+  - Correct password submitted while account is actively locked:
+    - Returns `423 ACCOUNT_LOCKED` with message `"Account is temporarily locked."`.
+  - Lock expiration: At exact `now == locked_until`, the lock is expired. On the next successful login, `failed_attempts` and `locked_until` are reset.
+  - `ACCOUNT_LOCKED` is never exposed on a wrong-password request.
+
+**Response Branches (One Stable DTO Shape):**
+
+`LoginResponse` provides a single, stable JSON schema across all login branches. Fields not applicable to a specific branch are returned as `null`.
+
+1. **Profile-Incomplete Recovery Branch (`ACTIVE` status, `username == null`):**
+   - Occurs when credentials are valid, email is verified (`ACTIVE`), but the user has not completed initial profile setup (fulfills the deferred M2.6 recovery requirement).
+   - Issues a fresh short-lived `profileCompletionToken` (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes).
+   - No application access token is issued; no refresh token is issued; zero `refresh_sessions` rows are created.
+   - HTTP 200 OK:
+     ```json
+     {
+       "userId": "11111111-1111-1111-1111-111111111111",
+       "status": "ACTIVE",
+       "nextStep": "COMPLETE_PROFILE",
+       "profileCompletionToken": "eyJhbGciOi...",
+       "accessToken": null,
+       "refreshToken": null,
+       "tokenType": null,
+       "accessTokenExpiresAt": null,
+       "user": null
+     }
+     ```
+
+2. **Fully-Onboarded Normal Branch (`ACTIVE` status, `username != null`):**
+   - Occurs when credentials are valid, email is verified (`ACTIVE`), and profile is complete.
+   - Issues an application access token, an initial refresh token, and creates a persistent refresh session.
+   - HTTP 200 OK:
+     ```json
+     {
+       "userId": "11111111-1111-1111-1111-111111111111",
+       "status": "ACTIVE",
+       "nextStep": "AUTHENTICATED",
+       "profileCompletionToken": null,
+       "accessToken": "eyJhbGciOi...",
+       "refreshToken": "7k8y...",
+       "tokenType": "Bearer",
+       "accessTokenExpiresAt": "2026-09-05T10:15:00Z",
+       "user": {
+         "id": "11111111-1111-1111-1111-111111111111",
+         "email": "user@example.com",
+         "username": "huygiang",
+         "displayName": "Huy Giang",
+         "avatarStorageKey": null
+       }
+     }
+     ```
+
+**User Summary Structure (`UserSummaryDto`):**
+```json
+{
+  "id": "UUID",
+  "email": "string",
+  "username": "string",
+  "displayName": "string",
+  "avatarStorageKey": "string|null"
+}
+```
+*(Sensitive or internal fields such as `passwordHash`, `failedAttempts`, `lockedUntil`, privacy settings, or internal refresh session identifiers are strictly excluded.)*
+
+**Token Architecture & Terminology:**
+- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes) used strictly for `POST /api/v1/auth/complete-profile`. Not an application session.
+- `accessToken`: Application authentication JWT (`tokenType: "Bearer"`, TTL: 15 minutes). Minimal claims: `sub` (user UUID), `iat`, `exp`. No custom claims (roles, email, username) inside the JWT. Response expiration field: `accessTokenExpiresAt`.
+- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters). **Not a JWT**.
+  - Client transmission: Raw token returned only to client in response body.
+  - Server persistence: Raw token is **never stored**. Its SHA-256 lowercase hex digest is stored in `refresh_sessions.token_hash`.
+  - Default sliding TTL: 14 days (`security.refresh-token.ttl`).
+  - Default absolute family lifetime: 30 days (`security.refresh-token.max-family-lifetime`).
+
+**Refresh Session State (M2.12):**
+- On fully onboarded login at timestamp $T_0$, a single record is inserted into `refresh_sessions`:
+  - `user_id`: Authenticated user ID.
+  - `token_hash`: SHA-256 hash of the issued refresh token.
+  - `created_at`: $T_0$.
+  - `expires_at`: $\min(T_0 + 14d, T_0 + 30d) = T_0 + 14d$.
+  - `absolute_expires_at`: $T_0 + 30d$ (fixed 30-day family deadline derived from `security.refresh-token.max-family-lifetime`).
+  - `revoked_at`: `null`.
+  - `replaced_by_session_id`: `null`.
+  - `device_name`: Normalized `X-Device-Name` (or `null`).
+  - `ip_address`: Normalized remote IP from `HttpServletRequest.getRemoteAddr()` (or `null`).
+
+**Milestone Boundary: M2.7 vs. M2.8 vs. M2.9 vs. M2.10 vs. M2.11 vs. M2.12:**
+- **M2.7 (Implemented in commit `e74f08e`):**
+  - Initial login credential verification with timing-mitigated anti-enumeration.
+  - Status disclosure ordering and account lockout semantics.
+  - Profile-incomplete recovery branch issuing fresh `profileCompletionToken`.
+  - Fully-onboarded branch issuing application `accessToken` + initial opaque `refreshToken`.
+  - Initial `refresh_sessions` row persistence.
+- **M2.8 (Implemented in commit `480b6e2`):**
+  - Public endpoint `POST /api/v1/auth/refresh` at Spring Security level.
+  - Refresh token rotation (issuing new access token and new opaque refresh token S2).
+  - Atomically revoking previous session S1 (`revokedAt = now`) and linking `replacedBySessionId = S2.id`.
+  - Concurrency-safe same-token handling via row-level `PESSIMISTIC_WRITE` lock.
+  - Reuse of previously rotated token is rejected with `401 REFRESH_TOKEN_INVALID` without broad session revocation.
+  - Enforcing account status control point (revoking current session on non-ACTIVE status).
+- **M2.9 (Implemented in commit `7eaadeb`):**
+  - Public endpoint `POST /api/v1/auth/logout` at Spring Security level.
+  - Narrow matched-session revocation (`revokedAt = now`, `replacedBySessionId = null`).
+  - Idempotent handling of existing non-rotated revoked sessions (returns HTTP 204 without mutating `revokedAt`).
+  - Refresh/logout concurrency safety via row-level lock serialization (`findByTokenHashWithLock`).
+- **M2.10 (Implemented in commit `6fe6194`):**
+  - Public endpoint `POST /api/v1/auth/forgot-password` at Spring Security level with neutral HTTP 200 response.
+  - Public endpoint `POST /api/v1/auth/reset-password` at Spring Security level with HTTP 204 success and unified `PASSWORD_RESET_CODE_INVALID` HTTP 400 error.
+  - One-time 6-digit `PASSWORD_RESET` OTP lifecycle with HMAC-SHA256 hash storage, 15m TTL, max 5 attempts with attempt persistence, and authoritative newest token selection.
+  - Successful password mutation clearing prior temporary login lockout (`failedAttempts = 0`, `lockedUntil = null`).
+  - Mandatory revocation of all active refresh sessions for the user (`revokedAt = now WHERE revokedAt IS NULL`).
+  - Per-user security barrier (`UserCredential` -> `RefreshSession`) serializing credential-mutating flows and hardening refresh lock ordering.
+- **M2.11 (Implemented in commit `c6655b9`):**
+  - Access JWT consumption and Bearer authentication filter (`JwtAuthenticationFilter`).
+  - Stateless `SecurityContext` population with immutable `AuthenticatedUserPrincipal(userId)`.
+  - Protected endpoint `GET /api/v1/me` via `UserController` (`@AuthenticationPrincipal AuthenticatedUserPrincipal`).
+  - Current-user database lookup in `UserService` (`userRepository.findById(userId)`).
+  - Current account-status enforcement at `/me` (`ACTIVE` → 200, `SUSPENDED` → 403 `ACCOUNT_SUSPENDED`, `DEACTIVATED` → 403 `ACCOUNT_DEACTIVATED`, `PENDING_VERIFICATION` → 403 `EMAIL_NOT_VERIFIED`).
+  - Missing DB user on valid cryptographic token translates to HTTP 401 `AUTH_TOKEN_INVALID` (not 404).
+  - Security error writer consolidation (`SecurityErrorResponseWriter`) across entry point, access denied handler, and JWT filter.
+  - Dedicated access-token error codes: `AUTH_TOKEN_INVALID` and `AUTH_TOKEN_EXPIRED`.
+- **M2.12 (Implemented in commit `859f361`):**
+  - Enforcing fixed 30-day absolute refresh-family lifetime (`security.refresh-token.max-family-lifetime: 30d`, environment override `WEDO_REFRESH_TOKEN_MAX_FAMILY_LIFETIME`).
+  - Login establishes `absoluteExpiresAt = now + 30d` and derives `expiresAt = min(now + 14d, absoluteExpiresAt)` from a single business clock instant.
+  - Non-legacy refresh rotation inherits the existing family deadline; repeated refreshes cannot slide the absolute deadline.
+  - Child refresh expiry is clamped to the absolute family deadline (`min(now + 14d, familyDeadline)`).
+  - Legacy pre-V11 session migration transition policy: sessions with `null` absolute expiry receive fixed `now + 30d` family deadline on first post-V11 refresh, inherited across subsequent rotations.
+  - Unified refresh error contract: `now >= expiresAt` and `now >= absoluteExpiresAt` reject with HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - Optional `X-Device-Name` request header capture and normalization ($\le 100$ characters valid, $> 100$ rejected with HTTP 400 `VALIDATION_FAILED`).
+  - Server-observed remote IP capture via `HttpServletRequest.getRemoteAddr()` ($\le 45$ characters stored, $> 45$ fail-safe to `null`).
+  - Session metadata propagation: refresh inherits previous device name if header is omitted/blank, and updates remote IP.
+  - Flyway migration `V11__session_family_hardening.sql`: adds nullable `absolute_expires_at TIMESTAMPTZ` without table rewrite or historical backfill.
+  - Preserving per-user lock serialization barrier (`UserCredential` → `RefreshSession`) and same-token race safety.
+- **Still NOT implemented after M2.12:**
+  - Real email delivery provider / JavaMailSender / SendGrid / SES.
+  - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
+  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`, USER-06).
+  - Session-management REST APIs (list active sessions, revoke session by ID, revoke other sessions, logout-all endpoint).
+  - Current-session identification (`sid` JWT claim or refresh response session ID).
+  - Cryptographic device binding (DPoP, mTLS, device public keys, hardware keystore proofs).
+  - Client device fingerprinting or FCM `user_devices` push token integration.
+  - Roles / permissions / RBAC (`PermissionService`).
+  - Flutter mobile authentication UI and screens (M2.13+).
+  - Media / avatar CDN URL resolution.
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/login` is public in Spring Security, meaning no pre-existing Bearer token is needed. Public route does not mean unauthenticated success; authentication occurs inside Login business logic through email/password credential verification.
+- `JwtAuthenticationFilter` is introduced in M2.11 as a zero-DB-hit filter executing before `UsernamePasswordAuthenticationFilter`.
+- Default configuration settings:
+  - `security.jwt.access-token-ttl: 15m`
+  - `security.profile-completion-token.ttl: 15m`
+  - `security.refresh-token.ttl: 14d`
+  - `security.refresh-token.max-family-lifetime: 30d`
+  - `security.login.max-failed-attempts: 5`
+  - `security.login.lock-duration: 15m`
 
 ### AUTH-07 Refresh Token
 
-**Endpoint:** `POST /api/v1/auth/refresh`  
-Uses refresh-token rotation.
+- **Endpoint:** `POST /api/v1/auth/refresh`
+- **Authentication:** Public endpoint at Spring Security level. Credential authentication is performed using `refreshToken` in request body. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/refresh` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request Headers:**
+  - `X-Device-Name` (optional string): Client display/device identifier (max 100 characters).
+- **Request DTO:** `RefreshTokenRequest`
+- **Response DTO:** `RefreshTokenResponse` (HTTP 200 OK)
+
+**Request Schema:**
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+*(Request body remains strictly `refreshToken`. Optional client display metadata is accepted via the `X-Device-Name` HTTP header. Existing clients omitting the header remain fully compatible. No `sessionId` or `deviceId` fields are added to the request body or access JWT.)*
+
+**Request Validation & Metadata Normalization Rules:**
+- `refreshToken`:
+  - Required (`@NotBlank(message = "Refresh token must not be blank")`).
+  - Opaque random credential.
+  - Note: No strict 43-character regex validation is applied (avoids freezing token representation; invalid tokens naturally fail lookup).
+  - No JWT parsing.
+- `X-Device-Name` (HTTP header):
+  - Optional header.
+  - `null` or blank (whitespace-only) → normalized internally to `null`.
+  - Trimmed.
+  - Length $\le 100$ characters → accepted and stored.
+  - Length $> 100$ characters → rejected with HTTP 400 `VALIDATION_FAILED` (`"Request validation failed."`). No silent truncation.
+  - Semantics: Display and audit metadata only. It is NOT a cryptographic device key, authorization input, authentication factor, or proof of device binding.
+- IP Address (Server-Observed Metadata):
+  - Captured server-side from `HttpServletRequest.getRemoteAddr()`.
+  - Null or blank → `null`.
+  - Length $\le 45$ characters (accommodates IPv4 and IPv6 string forms) → stored.
+  - Length $> 45$ characters → fail-safe normalized to `null` to avoid database `VARCHAR(45)` column overflow.
+  - Current backend does NOT trust forwarded headers (`X-Forwarded-For`) without verified reverse-proxy termination. IP address is display/audit metadata only; no authentication, authorization, or account locking decisions are based on IP.
+
+**Success Response Schema (HTTP 200 OK):**
+
+```json
+{
+  "accessToken": "eyJhbGciOi...",
+  "refreshToken": "9m2x...",
+  "tokenType": "Bearer",
+  "accessTokenExpiresAt": "2026-09-05T10:30:00Z",
+  "refreshTokenExpiresAt": "2026-09-19T10:15:00Z"
+}
+```
+
+*(Response contains only token credentials and timestamps. No `UserSummaryDto` and no device/session metadata are included.)*
+
+**Happy-Path Rotation & Family Hardening Semantics (M2.12):**
+- Incoming raw refresh token is hashed using SHA-256 (`RefreshTokenService.hashToken`).
+- Under the per-user barrier (`UserCredential` $\rightarrow$ `RefreshSession`), matched `refresh_sessions` row $S_1$ is locked exclusively using `PESSIMISTIC_WRITE` (`findByTokenHashWithLock`).
+- Verifies locked session validity:
+  1. Record exists in `refresh_sessions`.
+  2. `revokedAt == null` (unrevoked).
+  3. `now < expiresAt` (sliding expiration boundary).
+  4. `absoluteExpiresAt == null || now < absoluteExpiresAt` (absolute family deadline boundary).
+  5. Associated user exists and status is `ACTIVE`.
+- Evaluates Family Deadline:
+  - *Non-legacy session (`S1.absoluteExpiresAt != null`):* `familyDeadline = S1.absoluteExpiresAt`. The deadline is strictly fixed from the original login family and is **never recalculated** from current timestamp $T_1$.
+  - *Legacy pre-V11 session (`S1.absoluteExpiresAt == null`):* Applies migration transition policy, establishing `familyDeadline = now + 30d`.
+- Calculates Child Expiration & Clamping:
+  - Sliding deadline: `slidingDeadline = now + 14d`.
+  - Effective child expiry: `S2.expiresAt = min(slidingDeadline, familyDeadline)`.
+  - Child family deadline: `S2.absoluteExpiresAt = familyDeadline`.
+- Propagates Metadata:
+  - Device name: If a valid non-blank `X-Device-Name` is supplied in the refresh request, $S_2.\text{deviceName}$ takes the new normalized value. Otherwise, $S_2$ inherits $S_1.\text{deviceName}$.
+  - IP address: $S_2.\text{ipAddress}$ captures the current normalized request remote address (`request.getRemoteAddr()`).
+  - Historical integrity: $S_1$'s stored `device_name` and `ip_address` are strictly preserved in the database for audit history.
+- Executes atomic state transition:
+  - Issues new application access token (JWT 15m) via `JwtService`.
+  - Issues replacement refresh session $S_2$ via `RefreshTokenService.issue`.
+  - Rotates parent session: `S1.revokedAt = now`, `S1.replacedBySessionId = S2.id`.
+  - Atomically commits transaction (`@Transactional`).
+- The previous refresh token becomes invalid immediately upon successful rotation.
+
+**Session Validity & Expiration Rules:**
+- A refresh session is usable only when:
+  1. The session record exists in `refresh_sessions`.
+  2. `revokedAt == null` (unrevoked).
+  3. `now < expiresAt` (strictly before sliding expiry; exact `now == expiresAt` is expired/invalid).
+  4. `absoluteExpiresAt == null || now < absoluteExpiresAt` (strictly before absolute family deadline; exact `now == absoluteExpiresAt` or `now > absoluteExpiresAt` is expired/invalid).
+  5. The associated user exists and is valid for refresh.
+- Expired session (sliding expiry reached OR absolute family deadline reached/exceeded):
+  - Returns HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - No replacement session is created.
+  - The expired row's `revokedAt` is not mutated merely because of expiry (historical state preserved).
+
+**Unified Credential Error Contract:**
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`):
+  - Single, unified external error code for all refresh credential failures: unknown/random token, expired sliding session (`now >= expiresAt`), absolute family deadline reached/exceeded (`absoluteExpiresAt != null && now >= absoluteExpiresAt`), revoked token, and previously rotated token.
+  - No separate external error codes (such as `REFRESH_TOKEN_EXPIRED`, `REFRESH_FAMILY_EXPIRED`, `REFRESH_TOKEN_REUSED`, or `REFRESH_SESSION_REVOKED`) are exposed.
+  - Outward behavior is unified: client discards the invalid refresh token and redirects the user to login. Internal expiration reasons, timestamps, or family identities are never leaked.
+
+**Family Lifetime & Deadline Clamping Model (M2.12):**
+- Refresh sliding TTL: 14 days (`security.refresh-token.ttl: 14d`).
+- Refresh absolute family lifetime: 30 days (`security.refresh-token.max-family-lifetime: 30d`).
+- **Example Timeline:**
+  - *Login at Day 0 ($T_0$):* Family deadline is established as Day 30 ($T_0 + 30d$). $S_1$ sliding expiry is Day 14 ($T_0 + 14d$).
+  - *Refresh at Day 10 ($T_{10}$):* Sliding deadline would be Day 24 ($T_{10} + 14d$). Since $\text{Day 24} < \text{Day 30}$, $S_2.\text{expiresAt} = \text{Day 24}$, and $S_2.\text{absoluteExpiresAt} = \text{Day 30}$.
+  - *Refresh at Day 20 ($T_{20}$):* Normal sliding deadline would be Day 34 ($T_{20} + 14d$). Because Day 34 exceeds the family deadline (Day 30), child expiration is clamped: $S_3.\text{expiresAt} = \min(\text{Day 34}, \text{Day 30}) = \text{Day 30}$, with $S_3.\text{absoluteExpiresAt} = \text{Day 30}$.
+  - *Attempted Refresh at Day 30 ($T_{30}$):* At exact boundary $T \ge \text{Day 30}$, `now >= absoluteExpiresAt` fails validation → returns HTTP 401 `REFRESH_TOKEN_INVALID`. The family cannot slide further, requiring a fresh login.
+
+**Legacy Pre-V11 Migration Transition Policy:**
+- In database migration V11, column `absolute_expires_at TIMESTAMPTZ` is added (implicitly nullable as no NOT NULL constraint is declared) because existing legacy session rows cannot reconstruct the original family-login timestamp without historical audit logs.
+- Legacy rows have `absolute_expires_at IS NULL`.
+- On the first successful post-V11 refresh of an active legacy session at $T_1$:
+  - Transition family deadline is established as `familyDeadline = T1 + 30d`.
+  - Replacement session $S_2$ receives that fixed deadline (`S2.absoluteExpiresAt = familyDeadline`) and effective expiry `S2.expiresAt = min(T1 + 14d, familyDeadline)`.
+  - Historical parent row $S_1$ remains with `absoluteExpiresAt == null` and `revokedAt = T1` (historical state unchanged).
+  - All subsequent rotations ($S_2 \rightarrow S_3$) strictly inherit `familyDeadline`.
+  - This is documented as a *migration transition policy*, not a retroactive historical backfill.
+
+**Database Migration V11 & Schema Notes:**
+- Migration file: `backend/src/main/resources/db/migration/V11__session_family_hardening.sql`.
+- SQL definition:
+  ```sql
+  ALTER TABLE refresh_sessions
+      ADD COLUMN absolute_expires_at TIMESTAMPTZ;
+  ```
+- *Migration Performance & Concurrency:* Adding a nullable column without a DEFAULT in PostgreSQL avoids rewriting table data and avoids taking prolonged exclusive table locks.
+- *Schema Minimality:* No default value, no retroactive backfill, no `family_id` or `root_session_id` column, no new index, and no separate family table.
+- *Purpose:* Persist the fixed family deadline per refresh-session node.
+
+**RefreshSessionEntity & Internal Issue Invariant:**
+- `RefreshSessionEntity` includes:
+  - `absoluteExpiresAt: Instant` (nullable).
+  - `null` is permitted for legacy pre-V11 rows; new post-V11 issued sessions always receive a non-null family deadline.
+- Internal issuance invariant via `RefreshTokenService.issue(userId, createdAt, expiresAt, absoluteExpiresAt, metadata)`:
+  - Enforces non-null `userId`, `createdAt`, `expiresAt`, `absoluteExpiresAt`.
+  - Guarantees invariant: `expiresAt <= absoluteExpiresAt` (checked via `IllegalArgumentException("expiresAt must not be after absoluteExpiresAt")`).
+  - This is an internal architectural lifecycle invariant, not a client request validation rule.
+
+**Account Status Control Point:**
+- Refresh serves as an authoritative control point for account state.
+- If the refresh session itself is structurally valid and unexpired, but the user account status is non-ACTIVE:
+  - `PENDING_VERIFICATION` → `403 EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - `SUSPENDED` → `403 ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - `DEACTIVATED` → `403 ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+- In all non-ACTIVE cases:
+  - The current session is immediately revoked: `session.setRevokedAt(now)`.
+  - `replacedBySessionId` remains `null` (no replacement session created).
+  - This revocation **persists in DB** despite the HTTP 403 business error response (managed via `noRollbackFor = RefreshSessionStatusException.class`).
+  - Only `ACTIVE` users may proceed to rotation.
+
+**Reuse & Compromise Semantics:**
+- If an already-rotated token (`revokedAt != null` and `replacedBySessionId != null`) is submitted:
+  - Returns `401 REFRESH_TOKEN_INVALID`.
+  - The replacement session remains active.
+  - The architecture intentionally does not perform broad compromise revocation (such as revoking descendant chains or all user sessions), because legitimate duplicate/concurrent retries cannot be distinguished reliably from malicious reuse with the current schema.
+
+**Concurrent Same-Token Handling:**
+- Two concurrent refresh requests using the exact same refresh token (e.g., client race condition or network retry):
+  - The first request acquires `PESSIMISTIC_WRITE` lock on the old session, rotates S1 to S2, and succeeds (HTTP 200).
+  - The second request waits for lock release, then observes S1 as already revoked, and fails with `401 REFRESH_TOKEN_INVALID`.
+  - Exactly one replacement session S2 is created and remains active.
+  - Enforced by row-level locking without user-wide revocation. M2.12 family checks do not weaken this concurrency invariant.
+
+**Raw Token Storage Limitation:**
+- The server stores only the SHA-256 hash of refresh tokens (`refresh_sessions.token_hash`), never raw tokens.
+- After S1 rotates to S2, the server cannot reconstruct raw S2 for a duplicate S1 request.
+- True idempotent replay of refresh requests is not supported with this security model; raw refresh tokens are never persisted to solve retry behavior.
+
+**Hardened Lock Ordering & Concurrency (M2.10 & M2.12 Update):**
+- In M2.10, `refreshToken` was hardened to participate in the global per-user security barrier (`UserCredential` $\rightarrow$ `RefreshSession`).
+- **Lock Ordering Algorithm:**
+  1. Hash raw incoming refresh token.
+  2. Preliminary non-authoritative lookup via scalar projection (`findUserIdByTokenHash(tokenHash)`) to resolve `userId` without caching a stale `RefreshSessionEntity` in Hibernate L1 cache.
+  3. Acquire exclusive lock on `UserCredential` (`userCredentialRepository.findByUserIdWithLock(userId)`).
+  4. Authoritative re-read and lock on `RefreshSession` (`refreshSessionRepository.findByTokenHashWithLock(tokenHash)`).
+  5. Verify session `userId` matches locked credential `userId`.
+  6. Revalidate locked session state (`revokedAt == null`, `now < expiresAt`, `absoluteExpiresAt == null || now < absoluteExpiresAt`, user account status). M2.12 family checks execute strictly after the authoritative session row is locked under this barrier.
+  7. Perform rotation $S_1 \rightarrow S_2$.
+- **Same-User Concurrency Semantics:**
+  - Multiple concurrent refresh requests belonging to the **same user** are serialized through the `UserCredential` row lock.
+  - Two different valid refresh sessions for the same user serialize, but both succeed sequentially if otherwise valid.
+  - Refresh operations for different users do not contend on the same per-user `UserCredential` lock and may proceed independently, subject to normal database/runtime resource contention.
+  - Under currently audited lock paths, no lock-order cycle has been identified.
+
+**Token Architecture & Terminology:**
+- `accessToken`: Application JWT authentication credential (`tokenType: "Bearer"`, TTL: 15 minutes, minimal claims: `sub`, `iat`, `exp`). No `sid`, `familyId`, or `deviceId` claims.
+- `refreshToken`: High-entropy opaque session credential (256-bit secure random, Base64 URL-safe without padding, 43 characters, sliding 14 days, capped by 30-day absolute family lifetime). **Not a JWT**. Raw token returned only to client; SHA-256 stored server-side.
+- `profileCompletionToken`: Short-lived onboarding JWT (purpose: `COMPLETE_PROFILE`, TTL: 15 minutes).
+
+**Refresh Session State (M2.12):**
+- On successful rotation:
+  - Previous session S1: `revoked_at = now`, `replaced_by_session_id = S2.id`. Historical `device_name`, `ip_address`, and `absolute_expires_at` are preserved.
+  - New session S2: `revoked_at = null`, `replaced_by_session_id = null`, `created_at = now`, `expires_at = min(now + 14d, familyDeadline)`, `absolute_expires_at = familyDeadline`, `device_name = propagated_device_name`, `ip_address = request_remote_ip`.
+- Session rows are permanently preserved for audit and reuse detection (no hard delete).
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/refresh` is public only at the filter-chain level; the refresh token in the body serves as the authentication credential.
+- No `JwtAuthenticationFilter` is required for the refresh endpoint.
+- Relevant configuration settings:
+  - `security.jwt.access-token-ttl: 15m`
+  - `security.refresh-token.ttl: 14d`
+  - `security.refresh-token.max-family-lifetime: 30d`
 
 ### AUTH-08 Logout
 
-**Endpoint:** `POST /api/v1/auth/logout`  
-Revokes refresh session/token.
+- **Endpoint:** `POST /api/v1/auth/logout`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. Credential authentication is performed using `refreshToken` in request body. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/logout` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `LogoutRequest`
+- **Response:** HTTP `204 No Content` (Empty body, no `LogoutResponse` DTO).
+
+**Request Schema:**
+
+```json
+{
+  "refreshToken": "..."
+}
+```
+
+*(No metadata fields such as `deviceId`, `deviceName`, `pushToken`, or IP metadata are accepted in M2.9.)*
+
+**Request Validation Rules:**
+- `refreshToken`:
+  - Required (`@NotBlank(message = "Refresh token must not be blank")`).
+  - Opaque random credential.
+  - No strict 43-character regex validation, no JWT parsing.
+  - `null`, empty `""`, or whitespace-only token fails validation → HTTP 400 `VALIDATION_FAILED`.
+
+**Logout Scope & Active Session Revocation:**
+- Narrow current-session revocation: revokes only the matched refresh session.
+- Does NOT revoke all sessions for the user, does NOT revoke all devices, does NOT traverse replacement descendants, does NOT revoke token family, does NOT blacklist access JWTs.
+- For an existing active/current session (`revokedAt == null && now < expiresAt`):
+  - Sets `revokedAt = now`.
+  - `replacedBySessionId` remains `null`.
+  - Atomically commits transaction (`@Transactional`).
+  - Returns HTTP `204 No Content`.
+  - No replacement session is created, and no new token is issued.
+
+**Idempotent Non-Rotated Revoked Session Semantics:**
+- If an existing session in the database has:
+  - `revokedAt != null` AND `replacedBySessionId == null`
+- Logout returns HTTP `204 No Content` without mutating the database.
+- The original `revokedAt` timestamp is strictly preserved (never overwritten).
+- *Semantic Distinction:* An existing refresh session that is already revoked without a replacement is treated as an idempotent logout success. The database schema does not store revocation reasons, so this state may originate from a prior logout, account-status revocation, or future administrative revocation.
+
+**Rotated Token Semantics:**
+- If an old token that has already been rotated (`revokedAt != null && replacedBySessionId != null`) is submitted:
+  - Returns HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - Does NOT return 204.
+  - Does NOT revoke the replacement session ($S_2$).
+  - Does NOT traverse descendant chains or revoke user sessions.
+  - Reason: Old rotated credentials no longer represent the current concrete refresh session.
+
+**Unknown & Expired Token Semantics:**
+- **Unknown/Random Token:**
+  - Token hash absent from `refresh_sessions` → HTTP 401 `REFRESH_TOKEN_INVALID` (`"Invalid refresh token."`). Does not silently return 204 for unknown credentials.
+- **Expired Active Session:**
+  - If `revokedAt == null` and `now >= expiresAt` (exact boundary `now == expiresAt` is expired/invalid) → HTTP 401 `REFRESH_TOKEN_INVALID`.
+  - No `revokedAt` mutation occurs merely because the session is expired.
+
+**Service Check Order:**
+1. Hash incoming raw token via `RefreshTokenService.hashToken(rawToken)`.
+2. Lock matched row via `refreshSessionRepository.findByTokenHashWithLock(tokenHash)`.
+3. If absent → throw `REFRESH_TOKEN_INVALID` (401).
+4. If `revokedAt != null`:
+   - If `replacedBySessionId != null` → throw `REFRESH_TOKEN_INVALID` (401).
+   - If `replacedBySessionId == null` → return normally (idempotent 204).
+5. If `now >= expiresAt` (`!now.isBefore(session.getExpiresAt())`) → throw `REFRESH_TOKEN_INVALID` (401).
+6. Otherwise (active current session) → `session.setRevokedAt(now)`, save, return normally (204).
+*(Note: Checking revoked-without-replacement before expiry ensures an already-revoked session remains idempotent even after its original expiration timestamp).*
+
+**Account Status Independence:**
+- Logout does NOT require `ACTIVE` user account status.
+- The implementation does not load the `User` entity to authorize logout.
+- A valid refresh session belonging to an unverified (`PENDING_VERIFICATION`), suspended (`SUSPENDED`), or deactivated (`DEACTIVATED`) account can be revoked successfully.
+- Reason: Logout is credential revocation, not access-granting. Does not emit `EMAIL_NOT_VERIFIED`, `ACCOUNT_SUSPENDED`, or `ACCOUNT_DEACTIVATED`.
+
+**Locking & Concurrency:**
+- Logout reuses the exact same row-level lock as refresh: `findByTokenHashWithLock`. Operations on the same refresh session row are serialized without user-global locking.
+- **Refresh vs. Logout Race:**
+  - *Outcome A (Logout wins lock):* $S_1$ revoked with `replacedBy = null` → Logout returns 204. Refresh wakes, observes $S_1$ revoked → fails with 401 `REFRESH_TOKEN_INVALID`. No replacement session $S_2$ is created.
+  - *Outcome B (Refresh wins lock):* Refresh rotates $S_1 \rightarrow S_2$ → Refresh returns 200. Logout wakes with raw $S_1$, observes $S_1$ revoked with `replacedBy = S2.id` → fails with 401 `REFRESH_TOKEN_INVALID`. Replacement session $S_2$ remains active.
+- **Double Logout Concurrency:**
+  - Two concurrent logout requests for the same active session serialize on the row lock: the first revokes the session, the second observes the already-revoked state and succeeds idempotently without overwriting `revokedAt`.
+
+**Access Token Limitation Post-Logout:**
+- Logout revokes the refresh session in the database only.
+- Any already-issued stateless JWT access token remains cryptographically valid until its existing expiration timestamp (up to the remaining portion of its 15-minute TTL).
+- No access-token blacklist or Redis revocation store exists in M2.9. Logout does NOT instantly invalidate an already-issued access token.
+- **Client Responsibility:** Upon receiving HTTP 204, the client must clear `accessToken`, `refreshToken`, and local authenticated state from client-side storage.
+
+**Session State Terminology Summary:**
+- **Active / Current:** `revokedAt == null`.
+- **Revoked without replacement:** `revokedAt != null` AND `replacedBySessionId == null`.
+- **Rotated:** `revokedAt != null` AND `replacedBySessionId != null`.
+
+**Security & Configuration Notes:**
+- Route `POST /api/v1/auth/logout` is public only at the filter-chain level; the refresh token in the body serves as the credential. Public route does not mean unconditional success.
+- No `JwtAuthenticationFilter` is required for logout.
 
 ### AUTH-09 Forgot Password
 
-**Endpoint:** `POST /api/v1/auth/forgot-password`  
-Response must remain neutral whether an email exists, preventing account enumeration.
+- **Endpoint:** `POST /api/v1/auth/forgot-password`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/forgot-password` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `ForgotPasswordRequest`
+- **Response DTO:** `ForgotPasswordResponse` (HTTP 200 OK)
+
+**Request Schema:**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+*(Contains only `email`. No `userId` or client metadata accepted.)*
+
+**Request Validation Rules:**
+- `email`:
+  - Required (`@NotBlank(message = "Email must not be blank")`).
+  - Standard format (`@Email(message = "Email must be a valid email address")`).
+  - Validation failure → HTTP 400 `VALIDATION_FAILED`.
+
+**Email Normalization:**
+- Canonicalized consistently across all auth flows: `trim().toLowerCase(Locale.ROOT)`.
+
+**Success Response Schema (HTTP 200 OK):**
+
+```json
+{
+  "message": "If an account with this email exists, password reset instructions have been sent."
+}
+```
+
+*(Contains strictly `message`. No `userId`, account status, or OTP information is returned.)*
+
+**Response Neutrality & Anti-Enumeration Semantics:**
+- The endpoint returns the exact same HTTP 200 status and response body for:
+  - Known `ACTIVE` accounts
+  - Unknown / non-existent emails
+  - `PENDING_VERIFICATION` accounts
+  - `SUSPENDED` accounts
+  - `DEACTIVATED` accounts
+- *Disclosure Semantics:* The endpoint uses the same outward HTTP status and response body for known, unknown, and ineligible accounts to reduce direct account enumeration through response semantics. (Note: The implementation does not claim absolute timing indistinguishability against statistical side-channel analysis).
+- For unknown or ineligible accounts, no database token or fake user entity is created.
+
+**Token Issuance & Lifecycle (`PASSWORD_RESET`):**
+- Generated only for existing accounts in `ACTIVE` status:
+  1. Resolves user by canonical email.
+  2. Acquires exclusive row lock on `UserCredential` (`findByUserIdWithLock(userId)`).
+  3. Queries current unconsumed `PASSWORD_RESET` tokens.
+  4. Terminally invalidates all prior unconsumed tokens (`consumedAt = now`).
+  5. Generates a fresh 6-digit numeric OTP via `VerificationCodeGenerator`.
+  6. Hashes raw code with HMAC-SHA256 pepper via `AuthTokenHasher.hash(userId, PASSWORD_RESET, rawCode)`.
+  7. Persists new `AuthTokenEntity`:
+     - `tokenType = PASSWORD_RESET`
+     - `tokenHash = hash` (raw code is **never** persisted or logged)
+     - `attempts = 0`
+     - `consumedAt = null`
+     - `expiresAt = now + 15m` (TTL: 15 minutes)
+  8. Publishes `PasswordResetRequestedEvent(userId, normalizedEmail, rawCode)`.
+  9. Returns generic HTTP 200 `ForgotPasswordResponse`.
+
+**Domain Event & Email Delivery Integration Seam:**
+- The backend publishes `PasswordResetRequestedEvent` containing `(userId, email, rawCode)` for downstream delivery integration.
+- M2.10 does not yet include a production mail listener/provider (no `JavaMailSender`, SendGrid, or AWS SES).
+- There is currently no `@TransactionalEventListener(phase = AFTER_COMMIT)` listener registered in production. The event serves as the application handoff boundary seam (consistent with M2.5 email verification).
+- The raw OTP exists transiently only in the in-memory event payload and is never logged.
+
+**Concurrency & Lock Invariant:**
+- Forgot password requests serialize on the `UserCredential` row lock.
+- If two forgot password requests for the same `ACTIVE` user execute concurrently:
+  - The first acquires lock, invalidates prior tokens, creates $T_1$, and commits.
+  - The second waits for lock release, sees $T_1$, invalidates $T_1$, creates $T_2$, and commits.
+- Final invariant: Exactly one unconsumed `PASSWORD_RESET` token exists per user. No database unique constraint is required.
+
+---
 
 ### AUTH-10 Reset Password
 
-**Endpoint:** `POST /api/v1/auth/reset-password`  
-Validate reset token, update hashed password and invalidate existing refresh sessions.
+- **Endpoint:** `POST /api/v1/auth/reset-password`
+- **Authentication:** Public endpoint at Spring Security filter-chain level. No `Authorization: Bearer` access token required. (Note: `GET /api/v1/auth/reset-password` remains protected/unauthorized with HTTP 401. No `/auth/**` wildcard.)
+- **Request DTO:** `ResetPasswordRequest`
+- **Response:** HTTP `204 No Content` (Empty body, no response DTO).
+
+**Request Schema:**
+
+```json
+{
+  "email": "user@example.com",
+  "code": "123456",
+  "newPassword": "MyNewPassword123!"
+}
+```
+
+**Request Validation Rules:**
+- `email`: Required (`@NotBlank`), valid email format (`@Email`).
+- `code`: Required (`@NotBlank`), exactly 6 numeric digits (`@Pattern(regexp = "^\\d{6}$")`).
+- `newPassword`:
+  - Reuses exact registration password rules:
+  - Required (`@NotBlank`).
+  - Length: 8 to 72 characters (`@Size(min = 8, max = 72)`).
+  - UTF-8 byte length safety: $\le 72$ bytes for BCrypt compatibility.
+- Any request failing syntactic validation returns HTTP 400 `VALIDATION_FAILED`.
+
+**Unified Outward Error Contract:**
+- For all reset authorization, account status, token validity, and verification failures, the endpoint returns a single unified outward error:
+  - **HTTP 400 Bad Request**
+  - **Error Code:** `PASSWORD_RESET_CODE_INVALID`
+  - **Message:** `"Invalid password reset code."`
+- Unified outward policy applies to:
+  - Unknown / non-existent email
+  - Account status not `ACTIVE` (`PENDING_VERIFICATION`, `SUSPENDED`, `DEACTIVATED`)
+  - Missing `UserCredential` row
+  - No active unconsumed reset token in database
+  - Expired reset token (`now >= expiresAt`)
+  - Attempt counter exhausted (`attempts >= 5`)
+  - Incorrect OTP code submitted
+- *Oracle Leakage Prevention:* The unified outward error reduces account and reset-state oracle leakage through normal HTTP status/body/error semantics. It does not claim complete timing indistinguishability.
+- No `PASSWORD_RESET_CODE_EXPIRED`, `PASSWORD_RESET_ATTEMPTS_EXCEEDED`, `ACCOUNT_SUSPENDED`, or `EMAIL_NOT_VERIFIED` errors are exposed on this endpoint.
+
+**Internal Verification Check Order & Token Semantics:**
+1. Canonicalize email (`trim().toLowerCase(Locale.ROOT)`).
+2. Look up user by email $\rightarrow$ if absent $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+3. Verify user status is `ACTIVE` $\rightarrow$ if non-ACTIVE $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+4. Acquire exclusive lock on `UserCredential` (`findByUserIdWithLock(userId)`) $\rightarrow$ if absent $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+5. Query unconsumed `PASSWORD_RESET` tokens newest first (`consumedAt IS NULL ORDER BY createdAt DESC, id DESC`) $\rightarrow$ if empty $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+6. **Authoritative Token Selection:** The newest unconsumed token is authoritative. Any older unconsumed tokens in the database are terminally invalidated (`consumedAt = now`).
+7. **Check A — Expiration Boundary:**
+   - Evaluated using `clock.instant()`.
+   - `now < expiresAt`: Usable.
+   - `now >= expiresAt` (exact boundary `now == expiresAt` and beyond): Expired $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400).
+   - For an expired token: No attempt increment, no password mutation, no refresh session revocation.
+8. **Check B — Max Attempts:**
+   - If `token.attempts >= 5` $\rightarrow$ throw `PASSWORD_RESET_CODE_INVALID` (400) without incrementing attempts further.
+9. **Check C — OTP Verification & Attempt Persistence:**
+   - Hashes supplied code via `AuthTokenHasher.hash(userId, PASSWORD_RESET, rawCode)` and compares with `tokenHash`.
+   - **Wrong OTP:**
+     - `token.attempts` is incremented by 1 and persisted to the database.
+     - On the 5th wrong attempt: `attempts` becomes 5, is persisted to DB, and returns `PASSWORD_RESET_CODE_INVALID` (400). Subsequent attempts see `attempts >= 5` and are rejected without further increments.
+     - Throws dedicated `PasswordResetAttemptException` configured with `noRollbackFor = PasswordResetAttemptException.class` so the increment commits even though HTTP 400 is returned.
+10. **Correct OTP:**
+    - `authoritativeToken.consumedAt = now` (one-time use enforced; cannot be reused).
+    - Proceed to password mutation and session revocation.
+
+**consumedAt Terminology & Lifecycle:**
+- In the `auth_tokens` schema, `consumedAt != null` indicates that the token is **terminal and no longer usable**.
+- A non-null `consumedAt` does not necessarily mean the password was reset; it may mean the token was superseded by a subsequent forgot-password request or invalidated during cleanup. The schema does not track explicit revocation reasons.
+
+**Password Mutation Semantics:**
+- Upon valid code verification:
+  - `credential.passwordHash = passwordEncoder.encode(newPassword)`
+  - `credential.failedAttempts = 0` (clears prior failed login attempts)
+  - `credential.lockedUntil = null` (clears prior temporary login lockout)
+  - `credential.passwordChangedAt = now`
+  - `credential.updatedAt = now`
+- Successful password recovery allows a previously locked-out user to log in immediately with their new password.
+
+**Revocation of All Active Refresh Sessions:**
+- As a security requirement, successful password reset revokes **all active refresh sessions** belonging to that user:
+  - SQL: `UPDATE refresh_sessions SET revoked_at = :now WHERE user_id = :userId AND revoked_at IS NULL`
+  - Only updates rows where `revokedAt IS NULL`.
+  - Does **not** overwrite `replacedBySessionId`, preserving historical S1 $\rightarrow$ S2 rotation linkages.
+  - Revokes sessions across all client devices/browsers.
+- No automatic login is performed; no new refresh token or access token is issued. Response is HTTP 204 No Content.
+
+**Access Token Limitation Post-Reset:**
+- Password reset revokes all refresh sessions in the database immediately.
+- However, already-issued stateless JWT access tokens remain cryptographically valid until their existing expiration timestamp (up to the remaining portion of their 15-minute TTL).
+- No access-token blacklist, Redis revocation store, or token-version mechanism exists in M2.10. Password reset does not instantly terminate active HTTP requests with unexpired access JWTs.
+
+---
+
+### Cross-Milestone Security Architecture: Shared Per-User Barrier
+
+**Global Lock Ordering:**
+To serialize security-sensitive per-user credential and session mutations without deadlocks, a strict global lock hierarchy is established:
+$$\text{UserCredential} \longrightarrow \text{RefreshSession}$$
+
+All sensitive operations follow this hierarchy:
+- **Login (`POST /api/v1/auth/login`):** Locks `UserCredential` by `userId`.
+- **Forgot Password (`POST /api/v1/auth/forgot-password`):** Locks `UserCredential` by `userId`.
+- **Reset Password (`POST /api/v1/auth/reset-password`):** Locks `UserCredential` by `userId`, then bulk-revokes active `RefreshSession` rows.
+- **Refresh Token (`POST /api/v1/auth/refresh`):** Preliminary lookup resolves `userId`, locks `UserCredential` by `userId`, then locks `RefreshSession` row. M2.12 family deadline and expiration checks happen strictly after the authoritative locked session is loaded.
+
+*Deadlock Auditing Note:* Under currently audited lock paths, no lock-order cycle has been identified.
+
+**Concurrent Same-Token Handling Invariant:**
+When two concurrent refresh requests submit the exact same raw refresh token (e.g., client race condition or network retry):
+- Exactly one rotation succeeds (HTTP 200).
+- The competing request waits for lock release, re-reads the session row, observes `revokedAt != null`, and receives HTTP 401 `REFRESH_TOKEN_INVALID`.
+- Exactly one replacement session $S_2$ is persisted and remains active. M2.12 family hardening does not weaken this concurrency guarantee.
+
+**Reset vs. Refresh Race Guarantees:**
+When a password reset and a refresh token rotation execute concurrently for the same user:
+- **Case A (Reset acquires `UserCredential` lock first):**
+  - Reset verifies OTP, mutates password, revokes all active refresh sessions, and commits.
+  - Refresh was blocked waiting on `UserCredential` lock. Refresh unblocks, locks its session row, observes `revokedAt != null`, and fails with `401 REFRESH_TOKEN_INVALID`. No replacement session S2 is created.
+- **Case B (Refresh acquires `UserCredential` lock first):**
+  - Refresh verifies session, rotates S1 to S2, and commits.
+  - Reset was blocked waiting on `UserCredential` lock. Reset unblocks, mutates password, and executes bulk revocation (`WHERE userId = :id AND revokedAt IS NULL`), which catches and revokes the newly created active S2 session.
+- **Security Invariant:** In all interleavings, after the `resetPassword` transaction completes commit, **zero active refresh sessions remain** for that user.
+
+**Login vs. Reset Serialization:**
+- If login wins the lock, it completes credential verification and may issue a new session. Reset then executes, changes the password, and revokes the newly issued session.
+- If reset wins the lock, it changes the password. Login unblocks, reads the updated credential hash, and rejects the old password.
+
+**Forgot vs. Reset Serialization:**
+- Forgot and reset requests for the same user serialize on `UserCredential`. Issuing a new token and consuming an existing token cannot corrupt token lifecycle state.
 
 ---
 
@@ -353,9 +1271,63 @@ Validate reset token, update hashed password and invalidate existing refresh ses
 
 ### USER-01 Get My Profile
 
-`GET /api/v1/me`
+- **Endpoint:** `GET /api/v1/me`
+- **Authentication:** Protected (Requires `Authorization: Bearer <accessToken>`)
+- **Controller:** `UserController` (`@AuthenticationPrincipal AuthenticatedUserPrincipal principal`)
+- **Service:** `UserService.getCurrentUser(principal.userId())`
+- **Success Response:** HTTP 200 OK
+- **Response DTO:** `MyProfileResponse`
 
-Returns private profile fields appropriate to the current user: ID, username, email, phone, displayName, avatarUrl, bio, account status and verification state.
+**Response Schema:**
+
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "username": "johndoe",
+  "email": "user@example.com",
+  "phone": "+1234567890",
+  "displayName": "John Doe",
+  "avatarStorageKey": "avatars/user-123.jpg",
+  "bio": "Hello world",
+  "status": "ACTIVE",
+  "emailVerified": true
+}
+```
+
+**Field Specifications (Exactly 9 Fields):**
+- `id` (UUID): User unique identifier.
+- `username` (string | null): Unique user handle, or null if not yet set.
+- `email` (string): Normalized primary email address.
+- `phone` (string | null): Contact phone number, or null.
+- `displayName` (string | null): Public display name, or null.
+- `avatarStorageKey` (string | null): Storage identifier/key for user avatar, or null.
+  - *Implementation Decision:* Current backend stores validated storage keys and does not yet contain a media/CDN URL resolver. The API returns `avatarStorageKey` directly rather than an invented CDN URL. If media architecture later resolves presigned/public URLs, contract may evolve.
+- `bio` (string | null): Profile biography text, or null.
+- `status` (string enum): Current account status (`ACTIVE`). Only accounts in `ACTIVE` status can view profile.
+- `emailVerified` (boolean): The /me contract requires verification state rather than the internal verification timestamp, so M2.11 exposes `emailVerified` as a boolean derived from `emailVerifiedAt != null`. The underlying `emailVerifiedAt` timestamp is not exposed.
+
+**Field Exclusions & Privacy:**
+- `createdAt` is explicitly omitted from `MyProfileResponse` in M2.11.
+- Sensitive credential internals (`passwordHash`, `failedAttempts`, `lockedUntil`, credentials, refresh sessions) are strictly omitted.
+
+**Database Lookup & Account Status Enforcement:**
+- **Zero Filter DB Hit:** `JwtAuthenticationFilter` performs zero database queries. Only resource flows needing user data perform database reads.
+- **Resource Lookup:** `UserService` queries `UserRepository.findById(userId)`.
+- **User Record Not Found:** If a cryptographically valid token contains a user UUID that does not exist in the database (e.g., deleted account), `UserService` throws `BusinessException(ErrorCode.AUTH_TOKEN_INVALID)`, returning HTTP 401 `AUTH_TOKEN_INVALID` (`"Invalid authentication token."`), NOT 404.
+- **Account Status Policy:**
+  - `ACTIVE`: HTTP 200 OK with `MyProfileResponse`.
+  - `SUSPENDED`: HTTP 403 Forbidden with `ACCOUNT_SUSPENDED` (`"Account has been suspended."`).
+  - `DEACTIVATED`: HTTP 403 Forbidden with `ACCOUNT_DEACTIVATED` (`"Account has been deactivated."`).
+  - `PENDING_VERIFICATION`: HTTP 403 Forbidden with `EMAIL_NOT_VERIFIED` (`"Email address has not been verified."`).
+  - *Note:* This check is performed inside `UserService` after database retrieval; it is not performed globally in `JwtAuthenticationFilter`.
+
+**Error Responses:**
+- `401 UNAUTHORIZED`: Emitted by entry point when `Authorization` header is missing or empty on this protected endpoint.
+- `401 AUTH_TOKEN_EXPIRED`: Emitted when the supplied Bearer access JWT has expired.
+- `401 AUTH_TOKEN_INVALID`: Emitted when Bearer access JWT is malformed, invalid signature, non-UUID subject, opaque refresh token, profile-completion token, or user is not found in database.
+- `403 ACCOUNT_SUSPENDED`: Authenticated account is suspended in database.
+- `403 ACCOUNT_DEACTIVATED`: Authenticated account is deactivated in database.
+- `403 EMAIL_NOT_VERIFIED`: Authenticated account is pending verification in database.
 
 ### USER-02 Update Profile
 
@@ -1553,9 +2525,11 @@ Potential action types: RSVP_REQUIRED, POLL_VOTE_REQUIRED, TASK_DUE, SETTLEMENT_
 
 ## 25. Core Error Code Catalogue
 
-### Authentication
+### Authentication & Security
 
 ```text
+UNAUTHORIZED
+ACCESS_DENIED
 AUTH_INVALID_CREDENTIALS
 AUTH_TOKEN_EXPIRED
 AUTH_TOKEN_INVALID
@@ -1565,7 +2539,22 @@ EMAIL_ALREADY_EXISTS
 USERNAME_ALREADY_EXISTS
 ACCOUNT_SUSPENDED
 ACCOUNT_DEACTIVATED
+ACCOUNT_LOCKED
+PASSWORD_RESET_CODE_INVALID
 ```
+
+*Authentication & Security Error Status & Disclosure Semantics:*
+- `UNAUTHORIZED` (HTTP 401, `"Authentication is required."`): Emitted by `RestAuthenticationEntryPoint` when an unauthenticated request attempts to access a protected endpoint (missing, blank, or non-Bearer authorization header).
+- `ACCESS_DENIED` (HTTP 403, `"Access is denied."`): Emitted by `RestAccessDeniedHandler` when an authenticated principal lacks required authority or permission.
+- `AUTH_TOKEN_EXPIRED` (HTTP 401, `"Authentication token has expired."`): Emitted when a Bearer access JWT has expired (`exp < now`).
+- `AUTH_TOKEN_INVALID` (HTTP 401, `"Invalid authentication token."`): Emitted when a Bearer token is malformed, has an invalid cryptographic signature, contains a non-UUID subject, has a blank token string following the Bearer scheme, represents a profile-completion token or opaque refresh token, or when the authenticated user ID no longer exists in the database during protected resource lookup (`GET /api/v1/me`). Parser exception details are never leaked.
+- `AUTH_INVALID_CREDENTIALS` (HTTP 401, `"Invalid email or password."`): Emitted on unknown email or wrong password during login. Also emitted when wrong password is submitted for unverified, suspended, deactivated, or locked accounts.
+- `REFRESH_TOKEN_INVALID` (HTTP 401, `"Invalid refresh token."`): Single external error emitted on unknown/random refresh token, expired sliding session (`now >= expiresAt`), absolute family deadline reached or exceeded (`absoluteExpiresAt != null && now >= absoluteExpiresAt`), revoked session, or previously rotated token during refresh rotation and logout. No separate family-expired error code is exposed to clients; client behavior remains uniform: discard the invalid refresh session and require interactive login.
+- `EMAIL_NOT_VERIFIED` (HTTP 403, `"Email address has not been verified."`): Emitted after password verification succeeds on `PENDING_VERIFICATION` accounts, when attempting refresh with a valid credential for an unverified account (current session is revoked), or when accessing `GET /api/v1/me` with an unverified account.
+- `ACCOUNT_SUSPENDED` (HTTP 403, `"Account has been suspended."`): Emitted after password verification succeeds on `SUSPENDED` accounts, when attempting refresh with a valid credential for a suspended account (current session is revoked), or when accessing `GET /api/v1/me` with a suspended account.
+- `ACCOUNT_DEACTIVATED` (HTTP 403, `"Account has been deactivated."`): Emitted after password verification succeeds on `DEACTIVATED` accounts, when attempting refresh with a valid credential for a deactivated account (current session is revoked), or when accessing `GET /api/v1/me` with a deactivated account.
+- `ACCOUNT_LOCKED` (HTTP 423, `"Account is temporarily locked."`): Emitted **only** when the password is verified as correct while the account is actively locked (`now < locked_until`). Never exposed on wrong-password requests.
+- `PASSWORD_RESET_CODE_INVALID` (HTTP 400, `"Invalid password reset code."`): Single unified external error emitted on unknown email, non-ACTIVE account, missing/consumed/expired reset token, exhausted attempts ($\ge 5$), or wrong OTP code during password reset. Emitted as a single error to reduce reset-flow and account-state oracle leakage through normal response semantics (without claiming timing indistinguishability).
 
 ### Social
 
@@ -1677,6 +2666,7 @@ REIMBURSEMENT_ALREADY_RESOLVED
 ```text
 USER_REGISTERED
 EMAIL_VERIFICATION_REQUESTED
+PASSWORD_RESET_REQUESTED
 FRIEND_REQUEST_SENT
 FRIEND_REQUEST_ACCEPTED
 USER_BLOCKED
@@ -1726,19 +2716,35 @@ Domain events may use Spring `ApplicationEventPublisher` inside the modular mono
 
 ## 27. DTO Catalogue
 
+### Security Principals
+
+```text
+AuthenticatedUserPrincipal (record: UUID userId)
+```
+
 ### Auth
 
 ```text
 RegisterRequest / RegisterResponse
-VerifyEmailRequest
-ResendVerificationRequest
-CompleteProfileRequest
+VerifyEmailRequest / VerifyEmailResponse
+ResendVerificationRequest / ResendVerificationResponse
+CompleteProfileRequest / CompleteProfileResponse
+UsernameAvailabilityResponse
 LoginRequest / LoginResponse
+UserSummaryDto
 RefreshTokenRequest / RefreshTokenResponse
-ForgotPasswordRequest
+LogoutRequest
+ForgotPasswordRequest / ForgotPasswordResponse
 ResetPasswordRequest
 ChangePasswordRequest
 ```
+
+### Auth Internal Value Objects
+
+```text
+SessionClientMetadata (record: String deviceName, String ipAddress)
+```
+*Note on `SessionClientMetadata`:* Internal metadata value object capturing normalized client display name and remote IP address. This is not an external request JSON body. Populated in controller layer from the optional `X-Device-Name` HTTP header and `HttpServletRequest.getRemoteAddr()`.
 
 ### User / Social
 
@@ -1753,6 +2759,10 @@ FriendRequestResponse
 FriendResponse
 BlockedUserResponse
 ```
+
+*Profile DTO Differentiation:*
+- `UserSummaryDto`: Embedded in authentication responses (`LoginResponse`), containing summary fields (`id`, `username`, `email`, `displayName`, `avatarUrl`).
+- `MyProfileResponse`: Dedicated private profile response for `GET /api/v1/me`. Contains exactly 9 fields: `id`, `username`, `email`, `phone`, `displayName`, `avatarStorageKey`, `bio`, `status`, `emailVerified`. Does NOT expose `createdAt`, `emailVerifiedAt`, or credential/session internals.
 
 ### Group
 

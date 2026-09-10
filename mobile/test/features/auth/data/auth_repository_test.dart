@@ -106,6 +106,46 @@ void main() {
     expect(api.logoutToken, isNull);
   });
 
+  test(
+    'logout with remote success and storage clearing failure revokes remotely, clears memory bearer, advances revision, and leaves queue usable',
+    () async {
+      store.values[SecureStorageService.accessTokenKey] = 'access-1';
+      store.values[SecureStorageService.refreshTokenKey] = 'refresh-1';
+      holder.setAccessToken('access-1');
+      final initialRevision = holder.revision;
+      store.failDeletes = true;
+
+      await expectLater(
+        repo.logout(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.failure.type,
+            'failure.type',
+            AuthFailureType.unexpected,
+          ),
+        ),
+      );
+
+      // 1. Stored refresh token R existed and api.logout(R) was called exactly once
+      expect(api.logoutToken, 'refresh-1');
+      expect(api.logoutCalls, 1);
+
+      // 2. AccessTokenHolder in-memory bearer is null and revision advanced by exactly 1
+      expect(holder.currentAccessToken, isNull);
+      expect(holder.revision, initialRevision + 1);
+
+      // 3. Credential mutation queue remains usable afterward (not poisoned)
+      store.failDeletes = false;
+      await repo.clearLocalSession();
+      expect(holder.currentAccessToken, isNull);
+      expect(holder.revision, initialRevision + 2);
+      expect(store.values, isEmpty);
+
+      // 4. No duplicate remote logout occurred during subsequent local clear
+      expect(api.logoutCalls, 1);
+    },
+  );
+
   group('AuthRepository.refreshSession', () {
     test('success path: reads old refresh token, calls API, atomically persists new pair, updates holder', () async {
       store.values[SecureStorageService.accessTokenKey] = 'access-old';
@@ -622,6 +662,7 @@ void main() {
 class FakeApi extends AuthApi {
   FakeApi() : super(Dio(), refreshDio: Dio());
   String? email, password, code, username, profileToken, logoutToken, refreshTokenArg;
+  int logoutCalls = 0;
   bool incomplete = false, failLogout = false, malformedRefresh = false, throwTypeErrorOnRefresh = false;
   ApiException? failRefreshWith;
   Completer<RefreshTokenResponse>? refreshCompleter;
@@ -733,6 +774,7 @@ class FakeApi extends AuthApi {
 
   @override
   Future<void> logout(String token) async {
+    logoutCalls++;
     logoutToken = token;
     if (failLogout) throw StateError('x');
   }

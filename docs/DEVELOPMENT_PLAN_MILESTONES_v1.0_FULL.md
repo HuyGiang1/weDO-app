@@ -119,7 +119,7 @@ Sub-milestones:
 - [x] M2.12 Device / Session Security Hardening
 - [x] M2.13 Flutter Auth Screens
 - [x] M2.14 Secure Storage + Dio Auth Interceptor
-- [ ] M2.15 Refresh Interceptor + Route Guard
+- [x] M2.15 Refresh Interceptor + Route Guard
 - [ ] M2.16 Auth E2E / DoD
 
 Features:
@@ -165,17 +165,62 @@ DoD: register → verify → login → refresh → logout E2E.
 - Forgot/reset password do not auto-login or directly mutate local session.
 - M2.14 verification passed with flutter analyze and the full offline test suite.
 
-### Deferred to M2.15 (Refresh Interceptor + Route Guard)
-The following are intentionally deferred to M2.15:
-- refresh-on-401
-- automatic request retry
-- concurrent refresh single-flight/queue
-- refresh-token rotation handling in interceptor
-- refresh failure session handling
-- startup auth/session restoration
-- route guard
-- automatic authenticated redirect
-- authenticated app shell
+### M2.15 Implementation Status & Boundaries
+- M2.15.1 Startup Session Restoration:
+  - Bootstrap restoration runs before `runApp` without startup `/me` or refresh calls.
+  - Non-blank persisted token pair restores authenticated state; missing tokens mark unauthenticated; partial pairs evict local session.
+  - Storage read failure clears in-memory holder only, without destroying durable storage.
+- M2.15.2 Isolated Refresh Transport & Repository Operation:
+  - Dedicated `DioClient.raw` instance with physically zero interceptors for `POST /api/v1/auth/refresh`.
+  - Serialized through FIFO credential mutation queue: generation-consistent snapshotting against `expectedRevision` before the network call, and atomic compare-and-adopt after successful response.
+  - Strict HTTP 200 payload validation (`accessToken`, `refreshToken`, `tokenType: Bearer`, expiry fields).
+- M2.15.3 Generation-Aware Automatic Refresh Interceptor:
+  - Automatic refresh triggers strictly on `401 Unauthorized` with body `code == 'AUTH_TOKEN_EXPIRED'`.
+  - Generation-scoped single-flight refresh ensures concurrent expired requests for the same generation share one refresh operation, while different-generation requests fail closed.
+  - Stale 401 retry authorized strictly by exact atomic transition proof (`requestRevision == transition.fromRevision && currentRevision == transition.toRevision`).
+  - Retry-dispatch TOCTOU guard asserts generation identity and non-blank access token immediately before network transmission, aborting if the session changed.
+  - Enforces a strict one-retry-per-request ceiling; preserves request properties without duplicate headers.
+- M2.15.4 Generation-Aware Session Invalidation:
+  - Unified invalidation pipeline for definitive refresh failures and protected `401 AUTH_TOKEN_INVALID`.
+  - Explicit allow-list for definitive failures (`refreshTokenInvalid`, `noRefreshableSession`, `refreshSessionUnrecoverable`, `accountSuspended`, `accountDeactivated`, `emailNotVerified`); transient failures (timeouts, 5xx) never log out the user.
+  - Generation-bounded: invalidation against older generations yields `SessionInvalidationSuperseded` and touches nothing.
+  - `AuthSessionInvalidator` transitions `AuthSessionController` to unauthenticated only if target generation is still current.
+- M2.15.5 Route Guard & Single Registry Infrastructure:
+  - Single route registry `Map<String, AppRouteDefinition>` where `access: AppRouteAccess` is strictly required (non-nullable, no default fallback).
+  - All 8 current production routes are explicitly classified as `AppRouteAccess.public`.
+  - Strict evaluation order: Route Lookup → `AuthRouteGuard.evaluate(access, authStatus)` → Route Builder. Denied routes fail closed (`return null`) without executing the target screen builder.
+  - Pure `AuthRouteGuard` evaluator with zero dependencies on widgets, navigation, tokens, or network.
+  - Non-nullable `required AuthSessionStatus authStatus` supplied dynamically at navigation time by `WeDoApp`.
+
+### Durability Boundaries & Failure Analysis
+
+#### Case A — Refresh-Driven Definitive Invalidation
+- When definitive invalidation occurs (e.g. `refreshTokenInvalid`, `AUTH_TOKEN_INVALID`), `AccessTokenHolder` is wiped in RAM, the revision advances, and `AuthSessionController` becomes unauthenticated.
+- If OS secure-storage deletion fails (`SessionInvalidationApplied.durableCredentialsCleared == false`), credentials may physically remain in durable storage.
+- Because the access token involved in refresh-driven invalidation is already expired or invalid, any resurrection upon hard restart fails closed: the very first network request triggers `AUTH_TOKEN_EXPIRED` (leading to refresh rejection with `REFRESH_TOKEN_INVALID`) or `AUTH_TOKEN_INVALID`, re-entering the unified invalidation pipeline immediately.
+
+#### Case B — Explicit Logout Residual Window
+- `POST /api/v1/auth/logout` revokes the matching refresh-session database record.
+- Under the current stateless access-JWT design, the backend does not blacklist already-issued access JWTs or query the refresh-session table on every protected request.
+- Therefore, a double-fault edge case exists:
+  - Remote logout succeeds + local `SecureStorage.clearSession()` fails + app hard-restarts before access JWT expiry.
+  - Stored access JWT may be restored on launch and remain usable on protected endpoints until its natural expiration timestamp (`exp`).
+  - Documented residual access-token validity window under the current stateless access-JWT design.
+  - Once the access token naturally expires, any subsequent refresh attempt using the revoked refresh token receives `401 REFRESH_TOKEN_INVALID` and triggers local invalidation.
+
+#### Future Logout Orchestration Boundary
+- `AuthRepository.logout()` performs remote revocation, always attempts local clear, clears the in-memory `AccessTokenHolder` even when durable deletion fails, may throw `AuthException` if local durable deletion fails, and does NOT own `AuthSessionController`.
+- There is currently no production logout UI or coordinator caller in the application.
+- When a real logout UI or application flow is introduced in later milestones, application-layer orchestration must ensure `AuthSessionController` transitions to unauthenticated even when durable local deletion reports failure.
+
+### Explicit Intentional Deferrals
+The following remain intentionally deferred and are NOT part of M2.15:
+- Authenticated Home / Dashboard / app shell
+- Protected production screens
+- User Profile / Settings
+- Logout UI / user-facing logout triggers
+- Reactive eviction / observer-based redirects of an already-visible protected screen
+- M2.16 Auth E2E / Definition of Done verification
 
 ## 6. M3 — User Profile + Privacy
 

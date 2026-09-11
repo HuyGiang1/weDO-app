@@ -11,6 +11,8 @@ import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/reset_password_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
+import '../features/auth/data/models/auth_models.dart';
+import '../features/profile/presentation/screens/profile_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -55,6 +57,7 @@ abstract final class AppRoutes {
   static const String resetPassword = '/reset-password';
   static const String createUsername = '/create-username';
   static const String completeProfile = '/complete-profile';
+  static const String profile = '/profile';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -214,6 +217,17 @@ abstract final class AppRoutes {
             onBack: () => Navigator.of(context).maybePop(),
             onChangeEmail: () => Navigator.of(context).maybePop(),
           ),
+          settings: settings,
+        );
+      },
+    ),
+    profile: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final loader = settings.arguments;
+        if (loader is! Future<CurrentUser> Function()) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => ProfileScreen(loadCurrentUser: loader),
           settings: settings,
         );
       },

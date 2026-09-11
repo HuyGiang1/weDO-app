@@ -1,0 +1,67 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/auth/data/models/auth_models.dart';
+import 'package:mobile/features/profile/presentation/screens/profile_screen.dart';
+
+void main() {
+  CurrentUser user({
+    String? phone = '+84987654321',
+    String? bio = 'Building weDO.',
+  }) => CurrentUser(
+    id: 'user-id',
+    email: 'huy@wedo.social',
+    status: 'ACTIVE',
+    emailVerified: true,
+    username: 'huy_giang',
+    displayName: 'Huy Giang',
+    phone: phone,
+    bio: bio,
+  );
+
+  Widget subject(Future<CurrentUser> Function() loader) => MaterialApp(
+    home: ProfileScreen(loadCurrentUser: loader),
+  );
+
+  testWidgets('shows loading before the current profile resolves', (tester) async {
+    final completer = Completer<CurrentUser>();
+    await tester.pumpWidget(subject(() => completer.future));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    completer.complete(user());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('renders the authenticated current user fields', (tester) async {
+    await tester.pumpWidget(subject(() async => user()));
+    await tester.pumpAndSettle();
+    expect(find.text('Huy Giang'), findsOneWidget);
+    expect(find.text('@huy_giang'), findsOneWidget);
+    expect(find.text('huy@wedo.social'), findsOneWidget);
+    expect(find.text('+84987654321'), findsOneWidget);
+    expect(find.text('Building weDO.'), findsOneWidget);
+    expect(find.text('Verified'), findsOneWidget);
+  });
+
+  testWidgets('omits nullable optional fields without fabricating values', (tester) async {
+    await tester.pumpWidget(subject(() async => user(phone: null, bio: '   ')));
+    await tester.pumpAndSettle();
+    expect(find.text('Phone'), findsNothing);
+    expect(find.text('Bio'), findsNothing);
+  });
+
+  testWidgets('shows an error and retries loading', (tester) async {
+    var attempts = 0;
+    await tester.pumpWidget(subject(() async {
+      attempts++;
+      if (attempts == 1) throw StateError('offline');
+      return user();
+    }));
+    await tester.pumpAndSettle();
+    expect(find.text('Unable to load your profile.'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(find.text('Huy Giang'), findsOneWidget);
+  });
+}

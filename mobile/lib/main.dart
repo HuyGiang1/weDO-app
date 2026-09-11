@@ -66,6 +66,7 @@ void main() async {
         sessionController: sessionController,
       ),
       authSessionController: sessionController,
+      loadCurrentUser: repository.getCurrentUser,
     ),
   );
 }

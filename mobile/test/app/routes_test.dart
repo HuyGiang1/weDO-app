@@ -50,7 +50,10 @@ void main() {
 
     RouteSettings settings() => RouteSettings(
       name: AppRoutes.profile,
-      arguments: loadUser,
+      arguments: ProfileRouteArgs(
+        loadCurrentUser: loadUser,
+        updateProfile: (_) async => loadUser(),
+      ),
     );
 
     test('allows the profile route only for authenticated sessions', () {

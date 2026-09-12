@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -201,5 +202,48 @@ class UserControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"))
                 .andExpect(jsonPath("$.message").value("Invalid authentication token."));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/me/profile updates only allow-listed self-profile fields")
+    void updateMyProfile_activeUser_shouldUpdateAllowedFields() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = new UserEntity(userId, "update." + userId + "@example.com", "update" + userId.toString().substring(0, 8), "Before", UserStatus.ACTIVE, Instant.now(), Instant.now());
+        user.setBio("Before bio");
+        userRepository.save(user);
+
+        mockMvc.perform(patch("/api/v1/me/profile")
+                        .header("Authorization", "Bearer " + jwtService.generateAccessToken(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"  Updated Name  ","bio":"  Updated bio  ","phone":"  +84987654321  ","email":"attacker@example.com","status":"SUSPENDED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Updated Name"))
+                .andExpect(jsonPath("$.bio").value("Updated bio"))
+                .andExpect(jsonPath("$.phone").value("+84987654321"))
+                .andExpect(jsonPath("$.email").value(user.getEmail()))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/me/profile treats null fields as no-op and blank clearable fields as null")
+    void updateMyProfile_patchSemantics_shouldBeApplied() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UserEntity user = new UserEntity(userId, "clear." + userId + "@example.com", "clear" + userId.toString().substring(0, 8), "Original", UserStatus.ACTIVE, Instant.now(), Instant.now());
+        user.setBio("Bio");
+        user.setPhone("Phone");
+        user.setAvatarStorageKey("avatar/key");
+        userRepository.save(user);
+
+        mockMvc.perform(patch("/api/v1/me/profile")
+                        .header("Authorization", "Bearer " + jwtService.generateAccessToken(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":null,\"bio\":\"   \",\"phone\":\" \",\"avatarStorageKey\":\"  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Original"))
+                .andExpect(jsonPath("$.bio").doesNotExist())
+                .andExpect(jsonPath("$.phone").doesNotExist())
+                .andExpect(jsonPath("$.avatarStorageKey").doesNotExist());
     }
 }

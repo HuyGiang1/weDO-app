@@ -4,12 +4,20 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../auth/data/models/auth_models.dart';
+import '../../data/profile_models.dart';
+import 'edit_profile_screen.dart';
 
 /// Read-only self-profile screen backed by the authenticated `/api/v1/me` API.
 class ProfileScreen extends StatefulWidget {
   final Future<CurrentUser> Function() loadCurrentUser;
+  final Future<CurrentUser> Function(UpdateProfileRequest request)
+  updateProfile;
 
-  const ProfileScreen({super.key, required this.loadCurrentUser});
+  const ProfileScreen({
+    super.key,
+    required this.loadCurrentUser,
+    required this.updateProfile,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -46,7 +54,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           final user = snapshot.data;
           if (user == null) return _ProfileError(onRetry: _reload);
-          return _ProfileContent(user: user);
+          return _ProfileContent(
+            user: user,
+            onEdit: () async {
+              final updated = await Navigator.of(context).push<CurrentUser>(
+                MaterialPageRoute(
+                  builder: (_) => EditProfileScreen(
+                    initialUser: user,
+                    updateProfile: widget.updateProfile,
+                  ),
+                ),
+              );
+              if (updated != null && mounted) {
+                setState(() {
+                  _profileFuture = Future.value(updated);
+                });
+              }
+            },
+          );
         },
       ),
     );
@@ -55,8 +80,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
 class _ProfileContent extends StatelessWidget {
   final CurrentUser user;
+  final VoidCallback onEdit;
 
-  const _ProfileContent({required this.user});
+  const _ProfileContent({required this.user, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -109,6 +135,11 @@ class _ProfileContent extends StatelessWidget {
                   _ProfileField(label: 'Phone', value: user.phone!),
                 if (_hasText(user.bio))
                   _ProfileField(label: 'Bio', value: user.bio!),
+                const SizedBox(height: AppSpacing.sm),
+                ElevatedButton(
+                  onPressed: onEdit,
+                  child: const Text('Edit Profile'),
+                ),
               ],
             ),
           ),

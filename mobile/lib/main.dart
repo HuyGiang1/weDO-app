@@ -12,6 +12,8 @@ import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_failure.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/presentation/auth_flow_coordinator.dart';
+import 'features/profile/data/profile_api.dart';
+import 'features/profile/data/profile_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +28,7 @@ void main() async {
     storage: storage,
     accessTokenHolder: holder,
   );
+  final profileRepository = ProfileRepository(api: ProfileApi(dio.dio));
   final sessionController = AuthSessionController(
     storage: storage,
     accessTokenHolder: holder,
@@ -67,6 +70,7 @@ void main() async {
       ),
       authSessionController: sessionController,
       loadCurrentUser: repository.getCurrentUser,
+      updateProfile: profileRepository.updateProfile,
     ),
   );
 }

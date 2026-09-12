@@ -5,18 +5,22 @@ import 'theme/app_colors.dart';
 import '../features/auth/application/auth_session_controller.dart';
 import '../features/auth/presentation/auth_flow_coordinator.dart';
 import '../features/auth/data/models/auth_models.dart';
+import '../features/profile/data/profile_models.dart';
 
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
   final AuthFlowCoordinator? authFlowCoordinator;
   final AuthSessionController authSessionController;
   final Future<CurrentUser> Function()? loadCurrentUser;
+  final Future<CurrentUser> Function(UpdateProfileRequest request)?
+  updateProfile;
 
   const WeDoApp({
     super.key,
     this.authFlowCoordinator,
     required this.authSessionController,
     this.loadCurrentUser,
+    this.updateProfile,
   });
 
   @override
@@ -34,8 +38,16 @@ class WeDoApp extends StatelessWidget {
       ),
       initialRoute: AppRoutes.welcome,
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
-        settings.name == AppRoutes.profile && loadCurrentUser != null
-            ? RouteSettings(name: settings.name, arguments: loadCurrentUser)
+        settings.name == AppRoutes.profile &&
+                loadCurrentUser != null &&
+                updateProfile != null
+            ? RouteSettings(
+                name: settings.name,
+                arguments: ProfileRouteArgs(
+                  loadCurrentUser: loadCurrentUser!,
+                  updateProfile: updateProfile!,
+                ),
+              )
             : settings,
         authStatus: authSessionController.status,
         coordinator: authFlowCoordinator,

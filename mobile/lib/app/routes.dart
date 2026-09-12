@@ -13,6 +13,7 @@ import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
+import '../features/profile/data/profile_models.dart';
 
 export 'auth_route_guard.dart';
 
@@ -33,18 +34,27 @@ class ResetPasswordRouteArgs {
   const ResetPasswordRouteArgs({required this.email});
 }
 
+class ProfileRouteArgs {
+  final Future<CurrentUser> Function() loadCurrentUser;
+  final Future<CurrentUser> Function(UpdateProfileRequest request)
+  updateProfile;
+
+  const ProfileRouteArgs({
+    required this.loadCurrentUser,
+    required this.updateProfile,
+  });
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
   final Route<dynamic>? Function(
     RouteSettings settings,
     AuthFlowCoordinator? coordinator,
-  ) builder;
+  )
+  builder;
 
-  const AppRouteDefinition({
-    required this.access,
-    required this.builder,
-  });
+  const AppRouteDefinition({required this.access, required this.builder});
 }
 
 /// Application route definitions, registry, and Navigator 1.0 generator.
@@ -138,7 +148,8 @@ abstract final class AppRoutes {
         builder: (context) => ForgotPasswordScreen(
           onSubmit: coordinator == null
               ? null
-              : ({required email}) => coordinator.forgotPassword(context, email),
+              : ({required email}) =>
+                    coordinator.forgotPassword(context, email),
           onBack: () => Navigator.of(context).maybePop(),
           onReturnToLogin: () => Navigator.of(context).maybePop(),
           onRequestSuccess: (email) => Navigator.of(context).pushNamed(
@@ -225,9 +236,12 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final loader = settings.arguments;
-        if (loader is! Future<CurrentUser> Function()) return null;
+        if (loader is! ProfileRouteArgs) return null;
         return MaterialPageRoute<void>(
-          builder: (_) => ProfileScreen(loadCurrentUser: loader),
+          builder: (_) => ProfileScreen(
+            loadCurrentUser: loader.loadCurrentUser,
+            updateProfile: loader.updateProfile,
+          ),
           settings: settings,
         );
       },

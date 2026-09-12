@@ -21,7 +21,10 @@ void main() {
   );
 
   Widget subject(Future<CurrentUser> Function() loader) => MaterialApp(
-    home: ProfileScreen(loadCurrentUser: loader),
+    home: ProfileScreen(
+      loadCurrentUser: loader,
+      updateProfile: (_) async => user(),
+    ),
   );
 
   testWidgets('shows loading before the current profile resolves', (tester) async {
@@ -63,5 +66,58 @@ void main() {
     await tester.pumpAndSettle();
     expect(attempts, 2);
     expect(find.text('Huy Giang'), findsOneWidget);
+  });
+
+  testWidgets('renders the edit result without loading /me a second time', (tester) async {
+    var loads = 0;
+    final updated = user(bio: 'Updated bio');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileScreen(
+          loadCurrentUser: () async {
+            loads++;
+            return user();
+          },
+          updateProfile: (_) async => updated,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final edit = find.widgetWithText(ElevatedButton, 'Edit Profile');
+    await tester.ensureVisible(edit);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(loads, 1);
+    expect(find.text('Updated bio'), findsOneWidget);
+  });
+
+  testWidgets('keeps the current profile when editing is canceled', (tester) async {
+    var updates = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileScreen(
+          loadCurrentUser: () async => user(),
+          updateProfile: (_) async {
+            updates++;
+            return user(bio: 'Unexpected');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final edit = find.widgetWithText(ElevatedButton, 'Edit Profile');
+    await tester.ensureVisible(edit);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(updates, 0);
+    expect(find.text('Building weDO.'), findsOneWidget);
   });
 }

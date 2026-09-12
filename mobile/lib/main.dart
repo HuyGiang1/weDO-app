@@ -71,6 +71,7 @@ void main() async {
       authSessionController: sessionController,
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
+      updateUsername: profileRepository.updateUsername,
     ),
   );
 }

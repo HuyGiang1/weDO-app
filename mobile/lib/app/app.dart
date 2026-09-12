@@ -14,6 +14,8 @@ class WeDoApp extends StatelessWidget {
   final Future<CurrentUser> Function()? loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)?
   updateProfile;
+  final Future<CurrentUser> Function(UpdateUsernameRequest request)?
+  updateUsername;
 
   const WeDoApp({
     super.key,
@@ -21,6 +23,7 @@ class WeDoApp extends StatelessWidget {
     required this.authSessionController,
     this.loadCurrentUser,
     this.updateProfile,
+    this.updateUsername,
   });
 
   @override
@@ -40,12 +43,14 @@ class WeDoApp extends StatelessWidget {
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
         settings.name == AppRoutes.profile &&
                 loadCurrentUser != null &&
-                updateProfile != null
+                updateProfile != null &&
+                updateUsername != null
             ? RouteSettings(
                 name: settings.name,
                 arguments: ProfileRouteArgs(
                   loadCurrentUser: loadCurrentUser!,
                   updateProfile: updateProfile!,
+                  updateUsername: updateUsername!,
                 ),
               )
             : settings,

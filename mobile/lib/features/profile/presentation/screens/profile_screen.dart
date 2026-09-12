@@ -5,6 +5,7 @@ import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../auth/data/models/auth_models.dart';
 import '../../data/profile_models.dart';
+import 'change_username_screen.dart';
 import 'edit_profile_screen.dart';
 
 /// Read-only self-profile screen backed by the authenticated `/api/v1/me` API.
@@ -12,11 +13,14 @@ class ProfileScreen extends StatefulWidget {
   final Future<CurrentUser> Function() loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
+  final Future<CurrentUser> Function(UpdateUsernameRequest request)
+  updateUsername;
 
   const ProfileScreen({
     super.key,
     required this.loadCurrentUser,
     required this.updateProfile,
+    required this.updateUsername,
   });
 
   @override
@@ -71,6 +75,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 });
               }
             },
+            onChangeUsername: () async {
+              final updated = await Navigator.of(context).push<CurrentUser>(
+                MaterialPageRoute(
+                  builder: (_) => ChangeUsernameScreen(
+                    initialUser: user,
+                    updateUsername: widget.updateUsername,
+                  ),
+                ),
+              );
+              if (updated != null && mounted) {
+                setState(() {
+                  _profileFuture = Future.value(updated);
+                });
+              }
+            },
           );
         },
       ),
@@ -81,8 +100,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 class _ProfileContent extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onEdit;
+  final VoidCallback onChangeUsername;
 
-  const _ProfileContent({required this.user, required this.onEdit});
+  const _ProfileContent({
+    required this.user,
+    required this.onEdit,
+    required this.onChangeUsername,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -139,6 +163,11 @@ class _ProfileContent extends StatelessWidget {
                 ElevatedButton(
                   onPressed: onEdit,
                   child: const Text('Edit Profile'),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(
+                  onPressed: onChangeUsername,
+                  child: const Text('Change Username'),
                 ),
               ],
             ),

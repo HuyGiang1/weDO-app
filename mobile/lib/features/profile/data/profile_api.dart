@@ -22,4 +22,18 @@ class ProfileApi {
       throw ApiException.fromDio(error);
     }
   }
+
+  Future<CurrentUser> updateUsername(UpdateUsernameRequest request) async {
+    try {
+      final response = await dio.patch(
+        '/api/v1/me/username',
+        data: request.toJson(),
+      );
+      final data = response.data;
+      if (data is! Map) throw const FormatException('Expected JSON object');
+      return CurrentUser.fromJson(Map<String, dynamic>.from(data));
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
 }

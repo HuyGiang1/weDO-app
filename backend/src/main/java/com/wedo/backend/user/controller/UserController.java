@@ -3,6 +3,7 @@ package com.wedo.backend.user.controller;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
 import com.wedo.backend.user.dto.MyProfileResponse;
 import com.wedo.backend.user.dto.UpdateProfileRequest;
+import com.wedo.backend.user.dto.UpdateUsernameRequest;
 import com.wedo.backend.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,15 @@ public class UserController {
             @Valid @RequestBody UpdateProfileRequest request
     ) {
         MyProfileResponse response = userService.updateProfile(principal.userId(), request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/me/username")
+    public ResponseEntity<MyProfileResponse> updateMyUsername(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @Valid @RequestBody UpdateUsernameRequest request
+    ) {
+        MyProfileResponse response = userService.updateUsername(principal.userId(), request);
         return ResponseEntity.ok(response);
     }
 }

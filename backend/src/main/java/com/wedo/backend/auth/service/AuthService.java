@@ -46,6 +46,7 @@ import com.wedo.backend.user.entity.UserStatus;
 import com.wedo.backend.user.repository.UserCredentialRepository;
 import com.wedo.backend.user.repository.UserPrivacySettingsRepository;
 import com.wedo.backend.user.repository.UserRepository;
+import com.wedo.backend.user.service.UsernameUniqueViolationDetector;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -66,7 +67,6 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String USERS_EMAIL_KEY_CONSTRAINT = "users_email_key";
-    private static final String USERS_USERNAME_KEY_CONSTRAINT = "users_username_key";
     private static final String POSTGRES_UNIQUE_VIOLATION_SQL_STATE = "23505";
     private static final Duration EMAIL_VERIFICATION_TTL = Duration.ofMinutes(15);
     private static final Duration PASSWORD_RESET_TTL = Duration.ofMinutes(15);
@@ -419,7 +419,7 @@ public class AuthService {
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException ex) {
-            if (isUsernameUniqueViolation(ex)) {
+            if (UsernameUniqueViolationDetector.isUsernameUniqueViolation(ex)) {
                 throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
             }
             throw ex;
@@ -845,34 +845,4 @@ public class AuthService {
         refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
     }
 
-    private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {
-        Throwable current = ex;
-        while (current != null) {
-            if (current instanceof ConstraintViolationException cve) {
-                String constraint = cve.getConstraintName();
-                if (constraint != null && constraint.equalsIgnoreCase(USERS_USERNAME_KEY_CONSTRAINT)) {
-                    return true;
-                }
-                if (cve.getSQLException() != null) {
-                    String sqlState = cve.getSQLException().getSQLState();
-                    if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)
-                            && constraint != null
-                            && constraint.contains("users_username")) {
-                        return true;
-                    }
-                }
-            }
-            if (current instanceof java.sql.SQLException sqlEx) {
-                String sqlState = sqlEx.getSQLState();
-                if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)) {
-                    String message = sqlEx.getMessage();
-                    if (message != null && message.contains(USERS_USERNAME_KEY_CONSTRAINT)) {
-                        return true;
-                    }
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
 }

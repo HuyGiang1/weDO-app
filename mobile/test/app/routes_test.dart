@@ -53,6 +53,7 @@ void main() {
       arguments: ProfileRouteArgs(
         loadCurrentUser: loadUser,
         updateProfile: (_) async => loadUser(),
+        updateUsername: (_) async => loadUser(),
       ),
     );
 

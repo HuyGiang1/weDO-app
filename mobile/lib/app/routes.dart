@@ -38,10 +38,13 @@ class ProfileRouteArgs {
   final Future<CurrentUser> Function() loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
+  final Future<CurrentUser> Function(UpdateUsernameRequest request)
+  updateUsername;
 
   const ProfileRouteArgs({
     required this.loadCurrentUser,
     required this.updateProfile,
+    required this.updateUsername,
   });
 }
 
@@ -241,6 +244,7 @@ abstract final class AppRoutes {
           builder: (_) => ProfileScreen(
             loadCurrentUser: loader.loadCurrentUser,
             updateProfile: loader.updateProfile,
+            updateUsername: loader.updateUsername,
           ),
           settings: settings,
         );

@@ -24,6 +24,7 @@ void main() {
     home: ProfileScreen(
       loadCurrentUser: loader,
       updateProfile: (_) async => user(),
+      updateUsername: (_) async => user(),
     ),
   );
 
@@ -79,6 +80,7 @@ void main() {
             return user();
           },
           updateProfile: (_) async => updated,
+          updateUsername: (_) async => updated,
         ),
       ),
     );
@@ -105,6 +107,7 @@ void main() {
             updates++;
             return user(bio: 'Unexpected');
           },
+          updateUsername: (_) async => user(),
         ),
       ),
     );
@@ -119,5 +122,40 @@ void main() {
 
     expect(updates, 0);
     expect(find.text('Building weDO.'), findsOneWidget);
+  });
+
+  testWidgets('renders a returned username without loading /me a second time', (tester) async {
+    var loads = 0;
+    final updated = CurrentUser(
+      id: 'user-id',
+      email: 'huy@wedo.social',
+      status: 'ACTIVE',
+      emailVerified: true,
+      username: 'new_name',
+      displayName: 'Huy Giang',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileScreen(
+          loadCurrentUser: () async {
+            loads++;
+            return user();
+          },
+          updateProfile: (_) async => user(),
+          updateUsername: (_) async => updated,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final change = find.widgetWithText(OutlinedButton, 'Change Username');
+    await tester.ensureVisible(change);
+    await tester.tap(change);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save username'));
+    await tester.pumpAndSettle();
+
+    expect(loads, 1);
+    expect(find.text('@new_name'), findsOneWidget);
   });
 }

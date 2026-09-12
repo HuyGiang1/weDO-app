@@ -78,9 +78,26 @@ void main() {
       'avatarStorageKey': '',
     });
   });
+
+  test('PATCHes only normalized username data and parses the updated profile', () async {
+    adapter.response = _profileJson(username: 'new_name');
+
+    final user = await api.updateUsername(
+      const UpdateUsernameRequest(username: 'new_name'),
+    );
+
+    final request = adapter.request;
+    expect(request.method, 'PATCH');
+    expect(request.path, '/api/v1/me/username');
+    expect(request.headers['Authorization'], 'Bearer current-access-token');
+    expect(request.data, {'username': 'new_name'});
+    expect((request.data as Map<String, dynamic>).containsKey('userId'), isFalse);
+    expect(user.username, 'new_name');
+  });
 }
 
 Map<String, dynamic> _profileJson({
+  String username = 'huy_giang',
   String? displayName,
   String? bio,
   String? phone,
@@ -89,7 +106,7 @@ Map<String, dynamic> _profileJson({
   'email': 'huy@wedo.social',
   'status': 'ACTIVE',
   'emailVerified': true,
-  'username': 'huy_giang',
+  'username': username,
   'displayName': displayName ?? 'Huy Giang',
   'bio': bio,
   'phone': phone,

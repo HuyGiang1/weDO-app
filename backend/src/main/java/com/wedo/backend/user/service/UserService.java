@@ -4,18 +4,24 @@ import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.user.dto.MyProfileResponse;
 import com.wedo.backend.user.dto.UpdateProfileRequest;
+import com.wedo.backend.user.dto.UpdateUsernameRequest;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
 import com.wedo.backend.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 import java.time.Clock;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Service
 @Transactional(readOnly = true)
 public class UserService {
+
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,30}$");
 
     private final UserRepository userRepository;
     private final Clock clock;
@@ -50,6 +56,34 @@ public class UserService {
             user.setAvatarStorageKey(request.avatarStorageKey().isBlank() ? null : request.avatarStorageKey());
         }
         user.setUpdatedAt(clock.instant());
+        return MyProfileResponse.from(user);
+    }
+
+    @Transactional
+    public MyProfileResponse updateUsername(UUID userId, UpdateUsernameRequest request) {
+        UserEntity user = requireActiveUser(userId);
+        String canonicalUsername = request.username().trim().toLowerCase(Locale.ROOT);
+        if (!USERNAME_PATTERN.matcher(canonicalUsername).matches()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (user.getUsername() != null
+                && canonicalUsername.equals(user.getUsername().toLowerCase(Locale.ROOT))) {
+            return MyProfileResponse.from(user);
+        }
+        if (userRepository.existsByUsername(canonicalUsername)) {
+            throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+        }
+
+        user.setUsername(canonicalUsername);
+        user.setUpdatedAt(clock.instant());
+        try {
+            userRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            if (UsernameUniqueViolationDetector.isUsernameUniqueViolation(exception)) {
+                throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
+            }
+            throw exception;
+        }
         return MyProfileResponse.from(user);
     }
 

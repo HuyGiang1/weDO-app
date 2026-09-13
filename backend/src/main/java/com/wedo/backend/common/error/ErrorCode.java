@@ -25,6 +25,15 @@ public enum ErrorCode {
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "Authentication token has expired."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "Invalid authentication token."),
     PASSWORD_RESET_CODE_INVALID(HttpStatus.BAD_REQUEST, "Invalid password reset code."),
+    CANNOT_FRIEND_SELF(HttpStatus.BAD_REQUEST, "Cannot send friend request to yourself."),
+    USER_BLOCKED(HttpStatus.FORBIDDEN, "User is blocked."),
+    ALREADY_FRIENDS(HttpStatus.CONFLICT, "Users are already friends."),
+    FRIEND_REQUEST_ALREADY_PENDING(HttpStatus.CONFLICT, "A friend request is already pending."),
+    FRIEND_REQUEST_COOLDOWN_ACTIVE(HttpStatus.TOO_MANY_REQUESTS, "Please wait before sending another friend request."),
+    FRIEND_REQUEST_NOT_ALLOWED(HttpStatus.FORBIDDEN, "User privacy settings do not allow friend requests."),
+    FRIEND_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "Friend request was not found."),
+    FRIENDSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "Friendship was not found."),
+    CANNOT_BLOCK_SELF(HttpStatus.BAD_REQUEST, "Cannot block yourself."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

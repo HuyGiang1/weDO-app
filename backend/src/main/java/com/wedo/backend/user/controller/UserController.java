@@ -4,12 +4,15 @@ import com.wedo.backend.auth.dto.ChangePasswordRequest;
 import com.wedo.backend.auth.service.AuthService;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
 import com.wedo.backend.user.dto.MyProfileResponse;
+import com.wedo.backend.user.dto.PersonalQrResponse;
 import com.wedo.backend.user.dto.PrivacySettingsResponse;
+import com.wedo.backend.user.dto.ResolveQrRequest;
 import com.wedo.backend.user.dto.UpdateProfileRequest;
 import com.wedo.backend.user.dto.UpdatePrivacySettingsRequest;
 import com.wedo.backend.user.dto.UpdateUsernameRequest;
 import com.wedo.backend.user.dto.UserPublicProfileResponse;
 import com.wedo.backend.user.service.UserPrivacySettingsService;
+import com.wedo.backend.user.service.UserQrService;
 import com.wedo.backend.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -30,15 +33,18 @@ public class UserController {
 
     private final UserService userService;
     private final UserPrivacySettingsService userPrivacySettingsService;
+    private final UserQrService userQrService;
     private final AuthService authService;
 
     public UserController(
             UserService userService,
             UserPrivacySettingsService userPrivacySettingsService,
+            UserQrService userQrService,
             AuthService authService
     ) {
         this.userService = userService;
         this.userPrivacySettingsService = userPrivacySettingsService;
+        this.userQrService = userQrService;
         this.authService = authService;
     }
 
@@ -77,12 +83,27 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/me/qr")
+    public ResponseEntity<PersonalQrResponse> getPersonalQr(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal
+    ) {
+        return ResponseEntity.ok(userQrService.getPersonalQr(principal.userId()));
+    }
+
     @GetMapping("/users/{userId}")
     public ResponseEntity<UserPublicProfileResponse> getPublicProfile(
             @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
             @PathVariable UUID userId
     ) {
         return ResponseEntity.ok(userService.getPublicProfile(principal.userId(), userId));
+    }
+
+    @PostMapping("/users/qr/resolve")
+    public ResponseEntity<UserPublicProfileResponse> resolveQr(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @Valid @RequestBody ResolveQrRequest request
+    ) {
+        return ResponseEntity.ok(userQrService.resolveQr(principal.userId(), request.deepLink()));
     }
 
     @GetMapping("/me/privacy")

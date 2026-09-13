@@ -7,6 +7,7 @@ import '../features/auth/presentation/auth_flow_coordinator.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/data/profile_models.dart';
 import '../features/privacy/data/privacy_models.dart';
+import '../features/qr/data/personal_qr.dart';
 
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
@@ -22,6 +23,7 @@ class WeDoApp extends StatelessWidget {
   final Future<PrivacySettings> Function()? loadPrivacySettings;
   final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)?
   updatePrivacySettings;
+  final Future<PersonalQr> Function()? loadPersonalQr;
 
   const WeDoApp({
     super.key,
@@ -34,6 +36,7 @@ class WeDoApp extends StatelessWidget {
     this.endSessionAfterPasswordChange,
     this.loadPrivacySettings,
     this.updatePrivacySettings,
+    this.loadPersonalQr,
   });
 
   @override
@@ -75,6 +78,8 @@ class WeDoApp extends StatelessWidget {
                   updatePrivacySettings: updatePrivacySettings!,
                 ),
               )
+            : settings.name == AppRoutes.personalQr && loadPersonalQr != null
+            ? RouteSettings(name: settings.name, arguments: PersonalQrRouteArgs(loadPersonalQr: loadPersonalQr!))
             : settings,
         authStatus: authSessionController.status,
         coordinator: authFlowCoordinator,

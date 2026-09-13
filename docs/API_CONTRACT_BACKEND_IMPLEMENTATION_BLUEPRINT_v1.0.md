@@ -1378,7 +1378,10 @@ Verify current password, hash new password and optionally revoke other sessions.
 ### USER-07 Personal QR
 
 `GET /api/v1/me/qr`  
-Returns a stable application/user deep-link value; Flutter may generate the QR bitmap locally. No QR-image table is required.
+Bearer required. Returns `{ "deepLink": "wedo://user/<UUID>" }`, where UUID is the immutable `users.id`. The payload is stable and stateless; Flutter renders it locally and no QR-image table is required. `discoverByQr` does not prevent the owner from obtaining this value.
+
+`POST /api/v1/users/qr/resolve`
+Bearer required. Accepts `{ "deepLink": "wedo://user/<UUID>" }` and returns `UserPublicProfileResponse` only when the caller is ACTIVE and the target is ACTIVE with `discoverByQr=true`. Invalid grammar, unknown/non-ACTIVE targets, and QR discovery disabled all return `404 RESOURCE_NOT_FOUND`; known-ID `GET /api/v1/users/{userId}` remains independent of `discoverByQr`.
 
 ### USER-08 Public Profile
 

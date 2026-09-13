@@ -9,8 +9,8 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 11 registered production routes', () {
-      expect(AppRoutes.routes.length, 11);
+    test('contains exactly 12 registered production routes', () {
+      expect(AppRoutes.routes.length, 12);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -24,6 +24,7 @@ void main() {
         AppRoutes.profile,
         AppRoutes.changePassword,
         AppRoutes.privacy,
+        AppRoutes.personalQr,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -33,7 +34,7 @@ void main() {
       for (final entry in AppRoutes.routes.entries) {
         expect(
           entry.value.access,
-          entry.key == AppRoutes.profile || entry.key == AppRoutes.changePassword || entry.key == AppRoutes.privacy
+          entry.key == AppRoutes.profile || entry.key == AppRoutes.changePassword || entry.key == AppRoutes.privacy || entry.key == AppRoutes.personalQr
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -127,6 +128,15 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('Protected Personal QR Route', () {
+    RouteSettings settings() => RouteSettings(name: AppRoutes.personalQr, arguments: PersonalQrRouteArgs(loadPersonalQr: () async => throw UnimplementedError()));
+    test('allows only authenticated sessions', () {
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.authenticated), isNotNull);
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.unauthenticated), isNull);
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.restoring), isNull);
     });
   });
 

@@ -181,6 +181,11 @@ class _ProfileContent extends StatelessWidget {
                 OutlinedButton(onPressed: onChangePassword, child: const Text('Change Password')),
                 const SizedBox(height: AppSpacing.sm),
                 OutlinedButton(
+                  onPressed: () => Navigator.of(context).pushNamed(AppRoutes.personalQr),
+                  child: const Text('My QR'),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(
                   onPressed: () =>
                       Navigator.of(context).pushNamed(AppRoutes.privacy),
                   child: const Text('Privacy Settings'),

@@ -17,6 +17,8 @@ import '../features/profile/presentation/screens/change_password_screen.dart';
 import '../features/profile/data/profile_models.dart';
 import '../features/privacy/data/privacy_models.dart';
 import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
+import '../features/qr/data/personal_qr.dart';
+import '../features/qr/presentation/screens/personal_qr_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -70,6 +72,10 @@ class PrivacyRouteArgs {
     required this.updatePrivacySettings,
   });
 }
+class PersonalQrRouteArgs {
+  final Future<PersonalQr> Function() loadPersonalQr;
+  const PersonalQrRouteArgs({required this.loadPersonalQr});
+}
 
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
@@ -96,6 +102,7 @@ abstract final class AppRoutes {
   static const String profile = '/profile';
   static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
+  static const String personalQr = '/profile/qr';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -306,6 +313,14 @@ abstract final class AppRoutes {
           ),
           settings: settings,
         );
+      },
+    ),
+    personalQr: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! PersonalQrRouteArgs) return null;
+        return MaterialPageRoute<void>(builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr), settings: settings);
       },
     ),
   };

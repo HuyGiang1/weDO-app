@@ -198,4 +198,16 @@ void main() {
     expect(pushedRoute, AppRoutes.privacy);
     expect(find.text('Privacy destination'), findsOneWidget);
   });
+
+  testWidgets('opens My QR from the profile screen', (tester) async {
+    String? pushedRoute;
+    await tester.pumpWidget(MaterialApp(onGenerateRoute: (settings) { pushedRoute = settings.name; return MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('QR destination')), settings: settings); }, home: ProfileScreen(loadCurrentUser: () async => user(), updateProfile: (_) async => user(), updateUsername: (_) async => user(), changePassword: ({required currentPassword, required newPassword}) async {}, endSessionAfterPasswordChange: () async => true)));
+    await tester.pumpAndSettle();
+    final myQr = find.widgetWithText(OutlinedButton, 'My QR');
+    await tester.ensureVisible(myQr);
+    await tester.tap(myQr);
+    await tester.pumpAndSettle();
+    expect(pushedRoute, AppRoutes.personalQr);
+    expect(find.text('QR destination'), findsOneWidget);
+  });
 }

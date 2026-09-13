@@ -4,7 +4,9 @@
 
 - Branch: `feat/m3-user-profile-privacy`
 - M3 commits: `edcc020`, `660006f`, `8cb23b7`, `c78025a`, `0bd926d`, `269674f`, `6057b07`.
-- M3.8 closure work remains uncommitted until mentor approval.
+- M3.8 closure commit: `9d200545bd7501d3f6cbc7c0406c3158ab6f9746` (`chore: close M3 profile and privacy milestone`).
+- M3 feature implementation and verification: COMPLETE on this feature branch; pushed and synchronized with origin.
+- Integration target: `dev`; NOT YET MERGED.
 
 ## Backend API Freeze
 

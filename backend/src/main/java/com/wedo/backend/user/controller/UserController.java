@@ -6,6 +6,7 @@ import com.wedo.backend.user.dto.PrivacySettingsResponse;
 import com.wedo.backend.user.dto.UpdateProfileRequest;
 import com.wedo.backend.user.dto.UpdatePrivacySettingsRequest;
 import com.wedo.backend.user.dto.UpdateUsernameRequest;
+import com.wedo.backend.user.dto.UserPublicProfileResponse;
 import com.wedo.backend.user.service.UserPrivacySettingsService;
 import com.wedo.backend.user.service.UserService;
 import jakarta.validation.Valid;
@@ -13,9 +14,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -53,6 +57,14 @@ public class UserController {
     ) {
         MyProfileResponse response = userService.updateUsername(principal.userId(), request);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<UserPublicProfileResponse> getPublicProfile(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID userId
+    ) {
+        return ResponseEntity.ok(userService.getPublicProfile(principal.userId(), userId));
     }
 
     @GetMapping("/me/privacy")

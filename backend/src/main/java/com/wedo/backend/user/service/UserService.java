@@ -3,6 +3,7 @@ package com.wedo.backend.user.service;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.user.dto.MyProfileResponse;
+import com.wedo.backend.user.dto.UserPublicProfileResponse;
 import com.wedo.backend.user.dto.UpdateProfileRequest;
 import com.wedo.backend.user.dto.UpdateUsernameRequest;
 import com.wedo.backend.user.entity.UserEntity;
@@ -33,6 +34,14 @@ public class UserService {
 
     public MyProfileResponse getCurrentUser(UUID userId) {
         return MyProfileResponse.from(requireActiveUser(userId));
+    }
+
+    public UserPublicProfileResponse getPublicProfile(UUID requesterId, UUID targetUserId) {
+        requireActiveUser(requesterId);
+        UserEntity target = userRepository.findById(targetUserId)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return UserPublicProfileResponse.from(target);
     }
 
     @Transactional

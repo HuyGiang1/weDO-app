@@ -5,11 +5,12 @@ import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/auth/presentation/auth_flow_coordinator.dart';
 import 'package:mobile/features/auth/presentation/screens/create_username_screen.dart';
 import 'package:mobile/features/auth/presentation/screens/verify_email_screen.dart';
+import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 8 registered production routes', () {
-      expect(AppRoutes.routes.length, 8);
+    test('contains exactly 12 registered production routes', () {
+      expect(AppRoutes.routes.length, 12);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -20,19 +21,122 @@ void main() {
         AppRoutes.resetPassword,
         AppRoutes.createUsername,
         AppRoutes.completeProfile,
+        AppRoutes.profile,
+        AppRoutes.changePassword,
+        AppRoutes.privacy,
+        AppRoutes.personalQr,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
     });
 
-    test('every registered route is explicitly AppRouteAccess.public', () {
+    test('every registered route has explicit access metadata', () {
       for (final entry in AppRoutes.routes.entries) {
         expect(
           entry.value.access,
-          AppRouteAccess.public,
-          reason: 'Route ${entry.key} must explicitly declare public access',
+          entry.key == AppRoutes.profile || entry.key == AppRoutes.changePassword || entry.key == AppRoutes.privacy || entry.key == AppRoutes.personalQr
+              ? AppRouteAccess.authenticated
+              : AppRouteAccess.public,
+          reason: 'Route ${entry.key} must declare its intended access',
         );
       }
+    });
+  });
+
+  group('Protected Profile Route', () {
+    Future<CurrentUser> loadUser() async => const CurrentUser(
+      id: 'user-id',
+      email: 'user@wedo.social',
+      status: 'ACTIVE',
+      emailVerified: true,
+    );
+
+    RouteSettings settings() => RouteSettings(
+      name: AppRoutes.profile,
+      arguments: ProfileRouteArgs(
+        loadCurrentUser: loadUser,
+        updateProfile: (_) async => loadUser(),
+        updateUsername: (_) async => loadUser(),
+        changePassword: ({required currentPassword, required newPassword}) async {},
+        endSessionAfterPasswordChange: () async => true,
+      ),
+    );
+
+    test('allows the profile route only for authenticated sessions', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.authenticated,
+        ),
+        isA<MaterialPageRoute<void>>(),
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.restoring,
+        ),
+        isNull,
+      );
+    });
+
+    test('fails closed when the authenticated profile route has no loader', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          const RouteSettings(name: AppRoutes.profile),
+          authStatus: AuthSessionStatus.authenticated,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('Protected Privacy Route', () {
+    RouteSettings settings() => RouteSettings(
+      name: AppRoutes.privacy,
+      arguments: PrivacyRouteArgs(
+        loadPrivacySettings: () async => throw UnimplementedError(),
+        updatePrivacySettings: (_) async => throw UnimplementedError(),
+      ),
+    );
+
+    test('allows only authenticated sessions', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.authenticated,
+        ),
+        isNotNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.restoring,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('Protected Personal QR Route', () {
+    RouteSettings settings() => RouteSettings(name: AppRoutes.personalQr, arguments: PersonalQrRouteArgs(loadPersonalQr: () async => throw UnimplementedError()));
+    test('allows only authenticated sessions', () {
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.authenticated), isNotNull);
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.unauthenticated), isNull);
+      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.restoring), isNull);
     });
   });
 

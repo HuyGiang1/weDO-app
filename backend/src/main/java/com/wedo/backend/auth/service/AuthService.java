@@ -2,6 +2,7 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.ChangePasswordRequest;
 import com.wedo.backend.auth.dto.ForgotPasswordRequest;
 import com.wedo.backend.auth.dto.ForgotPasswordResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
@@ -46,6 +47,8 @@ import com.wedo.backend.user.entity.UserStatus;
 import com.wedo.backend.user.repository.UserCredentialRepository;
 import com.wedo.backend.user.repository.UserPrivacySettingsRepository;
 import com.wedo.backend.user.repository.UserRepository;
+import com.wedo.backend.user.service.UsernameUniqueViolationDetector;
+import com.wedo.backend.user.service.UserService;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -66,7 +69,6 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String USERS_EMAIL_KEY_CONSTRAINT = "users_email_key";
-    private static final String USERS_USERNAME_KEY_CONSTRAINT = "users_username_key";
     private static final String POSTGRES_UNIQUE_VIOLATION_SQL_STATE = "23505";
     private static final Duration EMAIL_VERIFICATION_TTL = Duration.ofMinutes(15);
     private static final Duration PASSWORD_RESET_TTL = Duration.ofMinutes(15);
@@ -75,6 +77,7 @@ public class AuthService {
     private static final int MAX_RESET_ATTEMPTS = 5;
 
     private final UserRepository userRepository;
+    private final UserService userService;
     private final UserCredentialRepository userCredentialRepository;
     private final UserPrivacySettingsRepository userPrivacySettingsRepository;
     private final UserNotificationSettingsRepository userNotificationSettingsRepository;
@@ -94,6 +97,7 @@ public class AuthService {
 
     public AuthService(
             UserRepository userRepository,
+            UserService userService,
             UserCredentialRepository userCredentialRepository,
             UserPrivacySettingsRepository userPrivacySettingsRepository,
             UserNotificationSettingsRepository userNotificationSettingsRepository,
@@ -118,6 +122,7 @@ public class AuthService {
         }
 
         this.userRepository = userRepository;
+        this.userService = userService;
         this.userCredentialRepository = userCredentialRepository;
         this.userPrivacySettingsRepository = userPrivacySettingsRepository;
         this.userNotificationSettingsRepository = userNotificationSettingsRepository;
@@ -419,7 +424,7 @@ public class AuthService {
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException ex) {
-            if (isUsernameUniqueViolation(ex)) {
+            if (UsernameUniqueViolationDetector.isUsernameUniqueViolation(ex)) {
                 throw new BusinessException(ErrorCode.USERNAME_ALREADY_EXISTS);
             }
             throw ex;
@@ -845,34 +850,29 @@ public class AuthService {
         refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
     }
 
-    private boolean isUsernameUniqueViolation(DataIntegrityViolationException ex) {
-        Throwable current = ex;
-        while (current != null) {
-            if (current instanceof ConstraintViolationException cve) {
-                String constraint = cve.getConstraintName();
-                if (constraint != null && constraint.equalsIgnoreCase(USERS_USERNAME_KEY_CONSTRAINT)) {
-                    return true;
-                }
-                if (cve.getSQLException() != null) {
-                    String sqlState = cve.getSQLException().getSQLState();
-                    if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)
-                            && constraint != null
-                            && constraint.contains("users_username")) {
-                        return true;
-                    }
-                }
-            }
-            if (current instanceof java.sql.SQLException sqlEx) {
-                String sqlState = sqlEx.getSQLState();
-                if (POSTGRES_UNIQUE_VIOLATION_SQL_STATE.equals(sqlState)) {
-                    String message = sqlEx.getMessage();
-                    if (message != null && message.contains(USERS_USERNAME_KEY_CONSTRAINT)) {
-                        return true;
-                    }
-                }
-            }
-            current = current.getCause();
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        UserEntity user = userService.requireActiveUser(userId);
+        UserCredentialEntity credential = userCredentialRepository.findByUserIdWithLock(user.getId())
+                .orElseThrow(() -> new IllegalStateException("Authenticated credential invariant violated"));
+
+        if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIALS);
         }
-        return false;
+
+        if (passwordEncoder.matches(request.newPassword(), credential.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        Instant now = clock.instant();
+        credential.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        credential.setFailedAttempts(0);
+        credential.setLockedUntil(null);
+        credential.setPasswordChangedAt(now);
+        credential.setUpdatedAt(now);
+        userCredentialRepository.save(credential);
+
+        refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
     }
+
 }

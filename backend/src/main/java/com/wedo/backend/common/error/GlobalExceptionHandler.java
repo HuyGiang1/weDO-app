@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -86,6 +87,22 @@ public class GlobalExceptionHandler {
         String requestId = MDC.get(REQUEST_ID_KEY);
         ApiErrorResponse response = ApiErrorResponse.validation(errorCode, request.getRequestURI(), errors, requestId);
 
+        return ResponseEntity.status(errorCode.status()).body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableMessage(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        String requestId = MDC.get(REQUEST_ID_KEY);
+        ApiErrorResponse response = ApiErrorResponse.validation(
+                errorCode,
+                request.getRequestURI(),
+                Map.of("request", "Malformed request body."),
+                requestId
+        );
         return ResponseEntity.status(errorCode.status()).body(response);
     }
 

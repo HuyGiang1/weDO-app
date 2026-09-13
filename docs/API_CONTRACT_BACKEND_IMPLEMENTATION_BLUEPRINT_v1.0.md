@@ -1386,7 +1386,7 @@ Bearer required. Accepts `{ "deepLink": "wedo://user/<UUID>" }` and returns `Use
 ### USER-08 Public Profile
 
 `GET /api/v1/users/{userId}`  
-Returns privacy-filtered public fields, relationship status, mutual group count, messaging/friend-request capability and presence fields if allowed.
+M3 base response is `UserPublicProfileResponse` with exactly `id`, `username`, `displayName`, `avatarStorageKey`, and `bio`. Bearer authentication and ACTIVE caller/target eligibility are required. M4/later may deliberately compose social context such as relationship state, mutual groups, messaging eligibility, or presence; those fields are not implemented in this M3 response.
 
 ### USER-09 Search Users
 

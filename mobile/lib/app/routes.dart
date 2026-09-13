@@ -13,6 +13,7 @@ import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
+import '../features/profile/presentation/screens/change_password_screen.dart';
 import '../features/profile/data/profile_models.dart';
 import '../features/privacy/data/privacy_models.dart';
 import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
@@ -42,12 +43,21 @@ class ProfileRouteArgs {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
+  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<bool> Function() endSessionAfterPasswordChange;
 
   const ProfileRouteArgs({
     required this.loadCurrentUser,
     required this.updateProfile,
     required this.updateUsername,
+    required this.changePassword,
+    required this.endSessionAfterPasswordChange,
   });
+}
+class ChangePasswordRouteArgs {
+  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<bool> Function() endSessionAfterPasswordChange;
+  const ChangePasswordRouteArgs({required this.changePassword, required this.endSessionAfterPasswordChange});
 }
 
 class PrivacyRouteArgs {
@@ -84,6 +94,7 @@ abstract final class AppRoutes {
   static const String createUsername = '/create-username';
   static const String completeProfile = '/complete-profile';
   static const String profile = '/profile';
+  static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
 
   static final Map<String, AppRouteDefinition> _routes = {
@@ -259,9 +270,28 @@ abstract final class AppRoutes {
             loadCurrentUser: loader.loadCurrentUser,
             updateProfile: loader.updateProfile,
             updateUsername: loader.updateUsername,
+            changePassword: loader.changePassword,
+            endSessionAfterPasswordChange: loader.endSessionAfterPasswordChange,
           ),
           settings: settings,
         );
+      },
+    ),
+    changePassword: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ChangePasswordRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => ChangePasswordScreen(
+            changePassword: args.changePassword,
+            endSessionAfterPasswordChange: args.endSessionAfterPasswordChange,
+            onSuccess: () {
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.of(context).pushNamedAndRemoveUntil(login, (route) => false);
+              messenger.showSnackBar(const SnackBar(content: Text('Password changed. Please sign in again.')));
+            },
+          ), settings: settings);
       },
     ),
     privacy: AppRouteDefinition(

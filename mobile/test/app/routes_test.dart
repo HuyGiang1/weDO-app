@@ -9,8 +9,8 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 10 registered production routes', () {
-      expect(AppRoutes.routes.length, 10);
+    test('contains exactly 11 registered production routes', () {
+      expect(AppRoutes.routes.length, 11);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -22,6 +22,7 @@ void main() {
         AppRoutes.createUsername,
         AppRoutes.completeProfile,
         AppRoutes.profile,
+        AppRoutes.changePassword,
         AppRoutes.privacy,
       };
 
@@ -32,7 +33,7 @@ void main() {
       for (final entry in AppRoutes.routes.entries) {
         expect(
           entry.value.access,
-          entry.key == AppRoutes.profile || entry.key == AppRoutes.privacy
+          entry.key == AppRoutes.profile || entry.key == AppRoutes.changePassword || entry.key == AppRoutes.privacy
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -55,6 +56,8 @@ void main() {
         loadCurrentUser: loadUser,
         updateProfile: (_) async => loadUser(),
         updateUsername: (_) async => loadUser(),
+        changePassword: ({required currentPassword, required newPassword}) async {},
+        endSessionAfterPasswordChange: () async => true,
       ),
     );
 

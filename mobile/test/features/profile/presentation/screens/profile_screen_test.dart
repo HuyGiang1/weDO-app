@@ -26,6 +26,8 @@ void main() {
       loadCurrentUser: loader,
       updateProfile: (_) async => user(),
       updateUsername: (_) async => user(),
+      changePassword: ({required currentPassword, required newPassword}) async {},
+      endSessionAfterPasswordChange: () async => true,
     ),
   );
 
@@ -82,6 +84,8 @@ void main() {
           },
           updateProfile: (_) async => updated,
           updateUsername: (_) async => updated,
+          changePassword: ({required currentPassword, required newPassword}) async {},
+          endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );
@@ -109,6 +113,8 @@ void main() {
             return user(bio: 'Unexpected');
           },
           updateUsername: (_) async => user(),
+          changePassword: ({required currentPassword, required newPassword}) async {},
+          endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );
@@ -144,6 +150,8 @@ void main() {
           },
           updateProfile: (_) async => user(),
           updateUsername: (_) async => updated,
+          changePassword: ({required currentPassword, required newPassword}) async {},
+          endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );
@@ -175,6 +183,8 @@ void main() {
           loadCurrentUser: () async => user(),
           updateProfile: (_) async => user(),
           updateUsername: (_) async => user(),
+          changePassword: ({required currentPassword, required newPassword}) async {},
+          endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );

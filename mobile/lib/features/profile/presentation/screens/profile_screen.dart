@@ -16,12 +16,16 @@ class ProfileScreen extends StatefulWidget {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
+  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<bool> Function() endSessionAfterPasswordChange;
 
   const ProfileScreen({
     super.key,
     required this.loadCurrentUser,
     required this.updateProfile,
     required this.updateUsername,
+    required this.changePassword,
+    required this.endSessionAfterPasswordChange,
   });
 
   @override
@@ -91,6 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 });
               }
             },
+            onChangePassword: () => Navigator.of(context).pushNamed(AppRoutes.changePassword, arguments: ChangePasswordRouteArgs(changePassword: widget.changePassword, endSessionAfterPasswordChange: widget.endSessionAfterPasswordChange)),
           );
         },
       ),
@@ -102,11 +107,13 @@ class _ProfileContent extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onEdit;
   final VoidCallback onChangeUsername;
+  final VoidCallback onChangePassword;
 
   const _ProfileContent({
     required this.user,
     required this.onEdit,
     required this.onChangeUsername,
+    required this.onChangePassword,
   });
 
   @override
@@ -170,6 +177,8 @@ class _ProfileContent extends StatelessWidget {
                   onPressed: onChangeUsername,
                   child: const Text('Change Username'),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(onPressed: onChangePassword, child: const Text('Change Password')),
                 const SizedBox(height: AppSpacing.sm),
                 OutlinedButton(
                   onPressed: () =>

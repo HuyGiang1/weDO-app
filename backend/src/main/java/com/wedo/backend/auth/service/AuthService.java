@@ -2,6 +2,7 @@ package com.wedo.backend.auth.service;
 
 import com.wedo.backend.auth.dto.CompleteProfileRequest;
 import com.wedo.backend.auth.dto.CompleteProfileResponse;
+import com.wedo.backend.auth.dto.ChangePasswordRequest;
 import com.wedo.backend.auth.dto.ForgotPasswordRequest;
 import com.wedo.backend.auth.dto.ForgotPasswordResponse;
 import com.wedo.backend.auth.dto.LoginRequest;
@@ -47,6 +48,7 @@ import com.wedo.backend.user.repository.UserCredentialRepository;
 import com.wedo.backend.user.repository.UserPrivacySettingsRepository;
 import com.wedo.backend.user.repository.UserRepository;
 import com.wedo.backend.user.service.UsernameUniqueViolationDetector;
+import com.wedo.backend.user.service.UserService;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -75,6 +77,7 @@ public class AuthService {
     private static final int MAX_RESET_ATTEMPTS = 5;
 
     private final UserRepository userRepository;
+    private final UserService userService;
     private final UserCredentialRepository userCredentialRepository;
     private final UserPrivacySettingsRepository userPrivacySettingsRepository;
     private final UserNotificationSettingsRepository userNotificationSettingsRepository;
@@ -94,6 +97,7 @@ public class AuthService {
 
     public AuthService(
             UserRepository userRepository,
+            UserService userService,
             UserCredentialRepository userCredentialRepository,
             UserPrivacySettingsRepository userPrivacySettingsRepository,
             UserNotificationSettingsRepository userNotificationSettingsRepository,
@@ -118,6 +122,7 @@ public class AuthService {
         }
 
         this.userRepository = userRepository;
+        this.userService = userService;
         this.userCredentialRepository = userCredentialRepository;
         this.userPrivacySettingsRepository = userPrivacySettingsRepository;
         this.userNotificationSettingsRepository = userNotificationSettingsRepository;
@@ -842,6 +847,31 @@ public class AuthService {
         userCredentialRepository.save(credential);
 
         // Revoke all active refresh sessions of user (preserves replacedBySessionId on rotated rows)
+        refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        UserEntity user = userService.requireActiveUser(userId);
+        UserCredentialEntity credential = userCredentialRepository.findByUserIdWithLock(user.getId())
+                .orElseThrow(() -> new IllegalStateException("Authenticated credential invariant violated"));
+
+        if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIALS);
+        }
+
+        if (passwordEncoder.matches(request.newPassword(), credential.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        Instant now = clock.instant();
+        credential.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        credential.setFailedAttempts(0);
+        credential.setLockedUntil(null);
+        credential.setPasswordChangedAt(now);
+        credential.setUpdatedAt(now);
+        userCredentialRepository.save(credential);
+
         refreshSessionRepository.revokeAllActiveByUserId(user.getId(), now);
     }
 

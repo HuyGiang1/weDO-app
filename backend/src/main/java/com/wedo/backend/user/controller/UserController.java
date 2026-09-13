@@ -1,5 +1,7 @@
 package com.wedo.backend.user.controller;
 
+import com.wedo.backend.auth.dto.ChangePasswordRequest;
+import com.wedo.backend.auth.service.AuthService;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
 import com.wedo.backend.user.dto.MyProfileResponse;
 import com.wedo.backend.user.dto.PrivacySettingsResponse;
@@ -15,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,10 +30,16 @@ public class UserController {
 
     private final UserService userService;
     private final UserPrivacySettingsService userPrivacySettingsService;
+    private final AuthService authService;
 
-    public UserController(UserService userService, UserPrivacySettingsService userPrivacySettingsService) {
+    public UserController(
+            UserService userService,
+            UserPrivacySettingsService userPrivacySettingsService,
+            AuthService authService
+    ) {
         this.userService = userService;
         this.userPrivacySettingsService = userPrivacySettingsService;
+        this.authService = authService;
     }
 
     @GetMapping("/me")
@@ -57,6 +66,15 @@ public class UserController {
     ) {
         MyProfileResponse response = userService.updateUsername(principal.userId(), request);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/me/change-password")
+    public ResponseEntity<Void> changePassword(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @Valid @RequestBody ChangePasswordRequest request
+    ) {
+        authService.changePassword(principal.userId(), request);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/users/{userId}")

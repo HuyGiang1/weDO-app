@@ -75,6 +75,8 @@ void main() async {
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
       updateUsername: profileRepository.updateUsername,
+      changePassword: repository.changePassword,
+      endSessionAfterPasswordChange: sessionController.endSessionAfterPasswordChange,
       loadPrivacySettings: privacyRepository.getPrivacySettings,
       updatePrivacySettings: privacyRepository.updatePrivacySettings,
     ),

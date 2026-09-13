@@ -737,7 +737,7 @@ Taken username:
 - **Still NOT implemented after M2.12:**
   - Real email delivery provider / JavaMailSender / SendGrid / SES.
   - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
-  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`, USER-06).
+  - Authenticated change-password endpoint (`POST /api/v1/me/change-password`, USER-06).
   - Session-management REST APIs (list active sessions, revoke session by ID, revoke other sessions, logout-all endpoint).
   - Current-session identification (`sid` JWT claim or refresh response session ID).
   - Cryptographic device binding (DPoP, mTLS, device public keys, hardware keystore proofs).

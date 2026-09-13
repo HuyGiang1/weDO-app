@@ -17,6 +17,8 @@ class WeDoApp extends StatelessWidget {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)?
   updateUsername;
+  final Future<void> Function({required String currentPassword, required String newPassword})? changePassword;
+  final Future<bool> Function()? endSessionAfterPasswordChange;
   final Future<PrivacySettings> Function()? loadPrivacySettings;
   final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)?
   updatePrivacySettings;
@@ -28,6 +30,8 @@ class WeDoApp extends StatelessWidget {
     this.loadCurrentUser,
     this.updateProfile,
     this.updateUsername,
+    this.changePassword,
+    this.endSessionAfterPasswordChange,
     this.loadPrivacySettings,
     this.updatePrivacySettings,
   });
@@ -50,13 +54,15 @@ class WeDoApp extends StatelessWidget {
         settings.name == AppRoutes.profile &&
                 loadCurrentUser != null &&
                 updateProfile != null &&
-                updateUsername != null
+                updateUsername != null && changePassword != null && endSessionAfterPasswordChange != null
             ? RouteSettings(
                 name: settings.name,
                 arguments: ProfileRouteArgs(
                   loadCurrentUser: loadCurrentUser!,
                   updateProfile: updateProfile!,
                   updateUsername: updateUsername!,
+                  changePassword: changePassword!,
+                  endSessionAfterPasswordChange: endSessionAfterPasswordChange!,
                 ),
               )
             : settings.name == AppRoutes.privacy &&

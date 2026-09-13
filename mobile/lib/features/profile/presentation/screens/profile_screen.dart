@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../../app/routes.dart';
 import '../../../auth/data/models/auth_models.dart';
 import '../../data/profile_models.dart';
 import 'change_username_screen.dart';
@@ -168,6 +169,12 @@ class _ProfileContent extends StatelessWidget {
                 OutlinedButton(
                   onPressed: onChangeUsername,
                   child: const Text('Change Username'),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(
+                  onPressed: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.privacy),
+                  child: const Text('Privacy Settings'),
                 ),
               ],
             ),

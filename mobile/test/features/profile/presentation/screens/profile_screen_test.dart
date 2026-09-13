@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/app/routes.dart';
 import 'package:mobile/features/auth/data/models/auth_models.dart';
 import 'package:mobile/features/profile/presentation/screens/profile_screen.dart';
 
@@ -157,5 +158,34 @@ void main() {
 
     expect(loads, 1);
     expect(find.text('@new_name'), findsOneWidget);
+  });
+
+  testWidgets('opens the protected privacy route from the profile screen', (tester) async {
+    String? pushedRoute;
+    await tester.pumpWidget(
+      MaterialApp(
+        onGenerateRoute: (settings) {
+          pushedRoute = settings.name;
+          return MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Privacy destination')),
+            settings: settings,
+          );
+        },
+        home: ProfileScreen(
+          loadCurrentUser: () async => user(),
+          updateProfile: (_) async => user(),
+          updateUsername: (_) async => user(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final privacy = find.widgetWithText(OutlinedButton, 'Privacy Settings');
+    await tester.ensureVisible(privacy);
+    await tester.tap(privacy);
+    await tester.pumpAndSettle();
+
+    expect(pushedRoute, AppRoutes.privacy);
+    expect(find.text('Privacy destination'), findsOneWidget);
   });
 }

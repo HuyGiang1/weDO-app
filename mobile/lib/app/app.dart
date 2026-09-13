@@ -6,6 +6,7 @@ import '../features/auth/application/auth_session_controller.dart';
 import '../features/auth/presentation/auth_flow_coordinator.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/data/profile_models.dart';
+import '../features/privacy/data/privacy_models.dart';
 
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
@@ -16,6 +17,9 @@ class WeDoApp extends StatelessWidget {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)?
   updateUsername;
+  final Future<PrivacySettings> Function()? loadPrivacySettings;
+  final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)?
+  updatePrivacySettings;
 
   const WeDoApp({
     super.key,
@@ -24,6 +28,8 @@ class WeDoApp extends StatelessWidget {
     this.loadCurrentUser,
     this.updateProfile,
     this.updateUsername,
+    this.loadPrivacySettings,
+    this.updatePrivacySettings,
   });
 
   @override
@@ -51,6 +57,16 @@ class WeDoApp extends StatelessWidget {
                   loadCurrentUser: loadCurrentUser!,
                   updateProfile: updateProfile!,
                   updateUsername: updateUsername!,
+                ),
+              )
+            : settings.name == AppRoutes.privacy &&
+                  loadPrivacySettings != null &&
+                  updatePrivacySettings != null
+            ? RouteSettings(
+                name: settings.name,
+                arguments: PrivacyRouteArgs(
+                  loadPrivacySettings: loadPrivacySettings!,
+                  updatePrivacySettings: updatePrivacySettings!,
                 ),
               )
             : settings,

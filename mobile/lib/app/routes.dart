@@ -14,6 +14,8 @@ import '../features/auth/presentation/screens/welcome_screen.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
 import '../features/profile/data/profile_models.dart';
+import '../features/privacy/data/privacy_models.dart';
+import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -48,6 +50,17 @@ class ProfileRouteArgs {
   });
 }
 
+class PrivacyRouteArgs {
+  final Future<PrivacySettings> Function() loadPrivacySettings;
+  final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)
+  updatePrivacySettings;
+
+  const PrivacyRouteArgs({
+    required this.loadPrivacySettings,
+    required this.updatePrivacySettings,
+  });
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
@@ -71,6 +84,7 @@ abstract final class AppRoutes {
   static const String createUsername = '/create-username';
   static const String completeProfile = '/complete-profile';
   static const String profile = '/profile';
+  static const String privacy = '/profile/privacy';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -245,6 +259,20 @@ abstract final class AppRoutes {
             loadCurrentUser: loader.loadCurrentUser,
             updateProfile: loader.updateProfile,
             updateUsername: loader.updateUsername,
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    privacy: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! PrivacyRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => PrivacySettingsScreen(
+            loadPrivacySettings: args.loadPrivacySettings,
+            updatePrivacySettings: args.updatePrivacySettings,
           ),
           settings: settings,
         );

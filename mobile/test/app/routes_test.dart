@@ -9,8 +9,8 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 9 registered production routes', () {
-      expect(AppRoutes.routes.length, 9);
+    test('contains exactly 10 registered production routes', () {
+      expect(AppRoutes.routes.length, 10);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -22,6 +22,7 @@ void main() {
         AppRoutes.createUsername,
         AppRoutes.completeProfile,
         AppRoutes.profile,
+        AppRoutes.privacy,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -31,7 +32,7 @@ void main() {
       for (final entry in AppRoutes.routes.entries) {
         expect(
           entry.value.access,
-          entry.key == AppRoutes.profile
+          entry.key == AppRoutes.profile || entry.key == AppRoutes.privacy
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -86,6 +87,40 @@ void main() {
         AppRoutes.onGenerateRoute(
           const RouteSettings(name: AppRoutes.profile),
           authStatus: AuthSessionStatus.authenticated,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('Protected Privacy Route', () {
+    RouteSettings settings() => RouteSettings(
+      name: AppRoutes.privacy,
+      arguments: PrivacyRouteArgs(
+        loadPrivacySettings: () async => throw UnimplementedError(),
+        updatePrivacySettings: (_) async => throw UnimplementedError(),
+      ),
+    );
+
+    test('allows only authenticated sessions', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.authenticated,
+        ),
+        isNotNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.restoring,
         ),
         isNull,
       );

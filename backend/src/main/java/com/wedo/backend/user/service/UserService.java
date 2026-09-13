@@ -87,7 +87,7 @@ public class UserService {
         return MyProfileResponse.from(user);
     }
 
-    private UserEntity requireActiveUser(UUID userId) {
+    UserEntity requireActiveUser(UUID userId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_TOKEN_INVALID));
 

@@ -39,6 +39,39 @@ void main() {
     expect(page.totalElements, 91);
   });
 
+  test('activity logs send exact query and preserve backend order with nullable ids', () async {
+    adapter.data['/api/v1/groups/g/activity-logs'] = {
+      'items': [
+        {
+          'id': 'newest',
+          'action': 'GROUP_UPDATED',
+          'actorUserId': null,
+          'targetUserId': 'target',
+          'createdAt': '2026-01-02T00:00:00Z',
+        },
+        {
+          'id': 'older',
+          'action': 'GROUP_CREATED',
+          'actorUserId': 'actor',
+          'targetUserId': null,
+          'createdAt': '2026-01-01T00:00:00Z',
+        },
+      ],
+      'page': 0,
+      'size': 30,
+      'totalElements': 2,
+      'totalPages': 1,
+      'hasNext': false,
+    };
+
+    final page = await api.getActivityLogs('g');
+    expect(adapter.requests.single.path, '/api/v1/groups/g/activity-logs');
+    expect(adapter.requests.single.queryParameters, {'page': 0, 'size': 30});
+    expect(page.items.map((item) => item.id), ['newest', 'older']);
+    expect(page.items.first.actorUserId, isNull);
+    expect(page.items.last.targetUserId, isNull);
+  });
+
   test(
     'create sends only supplied fields and decodes create response',
     () async {

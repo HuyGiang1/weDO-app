@@ -10,11 +10,12 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
+import 'package:mobile/core/models/paged_response.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 21 registered production routes', () {
-      expect(AppRoutes.routes.length, 21);
+    test('contains exactly 22 registered production routes', () {
+      expect(AppRoutes.routes.length, 22);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -32,6 +33,7 @@ void main() {
         AppRoutes.groups,
         AppRoutes.createGroup,
         AppRoutes.groupInfo,
+        AppRoutes.groupActivityLog,
         AppRoutes.editGroup,
         AppRoutes.groupMembers,
         AppRoutes.memberManagement,
@@ -54,6 +56,7 @@ void main() {
                   entry.key == AppRoutes.groups ||
                   entry.key == AppRoutes.createGroup ||
                   entry.key == AppRoutes.groupInfo ||
+                  entry.key == AppRoutes.groupActivityLog ||
                   entry.key == AppRoutes.editGroup ||
                   entry.key == AppRoutes.groupMembers ||
                   entry.key == AppRoutes.memberManagement ||
@@ -596,6 +599,7 @@ void main() {
       AppRoutes.groups,
       AppRoutes.createGroup,
       AppRoutes.groupInfo,
+      AppRoutes.groupActivityLog,
       AppRoutes.editGroup,
       AppRoutes.groupMembers,
       AppRoutes.memberManagement,
@@ -661,6 +665,7 @@ void main() {
       final repository = _RouteGroupRepository();
       final expectedCalls = <String, List<String>>{
         AppRoutes.groupInfo: ['group:group-id', 'members:group-id'],
+        AppRoutes.groupActivityLog: ['activities:group-id'],
         AppRoutes.editGroup: ['group:group-id'],
         AppRoutes.groupMembers: ['members:group-id'],
         AppRoutes.memberManagement: ['group:group-id', 'member:group-id:user-id'],
@@ -721,6 +726,23 @@ class _RouteGroupRepository extends GroupRepository {
       memberPinMessageAllowed: false,
       chatHistoryPolicy: ChatHistoryPolicy.fullHistory,
       updatedAt: DateTime(2026),
+    );
+  }
+
+  @override
+  Future<PagedResponse<GroupActivityLog>> getActivityLogs(
+    String id, {
+    int page = 0,
+    int size = 30,
+  }) async {
+    calls.add('activities:$id');
+    return const PagedResponse(
+      items: [],
+      page: 0,
+      size: 30,
+      totalElements: 0,
+      totalPages: 0,
+      hasNext: false,
     );
   }
 }

@@ -8,7 +8,7 @@ import '../widgets/group_widgets.dart';
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
   final GroupDetailController controller;
-  final VoidCallback onEdit, onMembers, onSettings, onLeave;
+  final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
 
   const GroupInfoScreen({
     super.key,
@@ -17,6 +17,7 @@ class GroupInfoScreen extends StatefulWidget {
     required this.onEdit,
     required this.onMembers,
     required this.onSettings,
+    required this.onActivityLog,
     required this.onLeave,
   });
 
@@ -58,6 +59,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onEdit: widget.onEdit,
             onMembers: widget.onMembers,
             onSettings: widget.onSettings,
+            onActivityLog: widget.onActivityLog,
             onLeave: () async {
               if (await widget.controller.leave(widget.groupId) && mounted) {
                 widget.onLeave();
@@ -75,7 +77,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 class _GroupInfoContent extends StatelessWidget {
   final GroupDetail group;
   final int? memberCount;
-  final VoidCallback onEdit, onMembers, onSettings, onLeave;
+  final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final bool leaveTransferRequired;
 
   const _GroupInfoContent({
@@ -84,6 +86,7 @@ class _GroupInfoContent extends StatelessWidget {
     required this.onEdit,
     required this.onMembers,
     required this.onSettings,
+    required this.onActivityLog,
     required this.onLeave,
     required this.leaveTransferRequired,
   });
@@ -148,6 +151,12 @@ class _GroupInfoContent extends StatelessWidget {
           leading: Icon(Icons.settings),
           title: Text('Group Settings'),
           trailing: Icon(Icons.chevron_right),
+        ),
+        ListTile(
+          onTap: onActivityLog,
+          leading: const Icon(Icons.history),
+          title: const Text('Activity Log'),
+          trailing: const Icon(Icons.chevron_right),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 16),

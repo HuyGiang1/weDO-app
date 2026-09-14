@@ -190,6 +190,28 @@ class GroupSettings {
   );
 }
 
+/// History is intentionally tolerant of future backend action values.
+/// Presentation maps unknown values to a safe generic activity card.
+class GroupActivityLog {
+  final String id, action;
+  final String? actorUserId, targetUserId;
+  final DateTime createdAt;
+  const GroupActivityLog({
+    required this.id,
+    required this.action,
+    this.actorUserId,
+    this.targetUserId,
+    required this.createdAt,
+  });
+  factory GroupActivityLog.fromJson(Map<String, dynamic> j) => GroupActivityLog(
+    id: _s(j, 'id'),
+    action: _s(j, 'action'),
+    actorUserId: j['actorUserId'] as String?,
+    targetUserId: j['targetUserId'] as String?,
+    createdAt: _d(j, 'createdAt'),
+  );
+}
+
 class CreateGroupRequest {
   final String name;
   final String? description, avatarStorageKey;

@@ -90,6 +90,7 @@ void main() {
           onEdit: () {},
           onMembers: () {},
           onSettings: () {},
+          onActivityLog: () {},
           onLeave: () => left = true,
         ),
       ),
@@ -107,7 +108,7 @@ void main() {
       find.text('Transfer ownership before leaving this group.'),
       findsOneWidget,
     );
-    expect(find.text('Group G'), findsOneWidget);
+    expect(find.byType(GroupInfoScreen), findsOneWidget);
   });
 }
 
@@ -194,6 +195,7 @@ class _LeaveFlowState extends State<_LeaveFlow> {
             onEdit: () {},
             onMembers: () {},
             onSettings: () {},
+            onActivityLog: () {},
             onLeave: () => Navigator.of(childContext).pop(true),
           ),
         ),

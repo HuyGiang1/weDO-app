@@ -23,6 +23,11 @@ class GroupRepository {
     int size = 30,
     GroupStatus status = GroupStatus.active,
   }) => _guard(() => api.listGroups(page: page, size: size, status: status));
+  Future<PagedResponse<GroupActivityLog>> getActivityLogs(
+    String id, {
+    int page = 0,
+    int size = 30,
+  }) => _guard(() => api.getActivityLogs(id, page: page, size: size));
   Future<CreatedGroup> createGroup(CreateGroupRequest q) =>
       _guard(() => api.create(q));
   Future<GroupDetail> getGroup(String id) => _guard(() => api.getGroup(id));

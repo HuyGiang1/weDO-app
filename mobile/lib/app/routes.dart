@@ -25,9 +25,11 @@ import '../features/groups/data/group_repository.dart';
 import '../features/groups/application/groups_controller.dart';
 import '../features/groups/application/create_group_controller.dart';
 import '../features/groups/application/group_detail_controller.dart';
+import '../features/groups/application/group_activity_log_controller.dart';
 import '../features/groups/presentation/screens/my_groups_screen.dart';
 import '../features/groups/presentation/screens/create_group_screen.dart';
 import '../features/groups/presentation/screens/group_info_screen.dart';
+import '../features/groups/presentation/screens/group_activity_log_screen.dart';
 import '../features/groups/application/group_management_controllers.dart';
 import '../features/groups/presentation/screens/group_management_screens.dart';
 
@@ -151,6 +153,7 @@ abstract final class AppRoutes {
   static const String groups = '/groups';
   static const String createGroup = '/groups/create';
   static const String groupInfo = '/groups/info';
+  static const String groupActivityLog = '/groups/activity-log';
   static const String editGroup = '/groups/edit';
   static const String groupMembers = '/groups/members';
   static const String memberManagement = '/groups/member-management';
@@ -456,9 +459,29 @@ abstract final class AppRoutes {
               onSettings: () => Navigator.of(context)
                   .pushNamed(groupPermissions, arguments: args)
                   .whenComplete(() => detail.load(args.groupId)),
+              onActivityLog: () => Navigator.of(context).pushNamed(
+                groupActivityLog,
+                arguments: args,
+              ),
               onLeave: () => Navigator.of(context).pop(true),
             );
           },
+          settings: settings,
+        );
+      },
+    ),
+    groupActivityLog: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupInfoRouteArgs || args.groupId.trim().isEmpty) {
+          return null;
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupActivityLogScreen(
+            groupId: args.groupId,
+            controller: GroupActivityLogController(args.repository),
+          ),
           settings: settings,
         );
       },

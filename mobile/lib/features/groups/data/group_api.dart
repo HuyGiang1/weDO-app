@@ -57,6 +57,17 @@ class GroupApi {
     ),
     (j) => PagedResponse.fromJson(j, GroupSummary.fromJson),
   );
+  Future<PagedResponse<GroupActivityLog>> getActivityLogs(
+    String id, {
+    int page = 0,
+    int size = 30,
+  }) => _call(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(id)}/activity-logs',
+      queryParameters: {'page': page, 'size': size},
+    ),
+    (j) => PagedResponse.fromJson(j, GroupActivityLog.fromJson),
+  );
   Future<CreatedGroup> create(CreateGroupRequest q) => _call(
     () => dio.post('/api/v1/groups', data: q.toJson()),
     CreatedGroup.fromJson,

@@ -6,6 +6,7 @@ import com.wedo.backend.group.dto.GroupDetailResponse;
 import com.wedo.backend.group.dto.GroupMemberResponse;
 import com.wedo.backend.group.dto.GroupSummaryResponse;
 import com.wedo.backend.group.dto.GroupSettingsResponse;
+import com.wedo.backend.group.dto.GroupActivityLogResponse;
 import com.wedo.backend.group.dto.UpdateGroupRequest;
 import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
 import com.wedo.backend.group.entity.GroupActivityAction;
@@ -25,6 +26,7 @@ import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import com.wedo.backend.user.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -118,6 +120,14 @@ public class GroupService {
     }
 
     @Transactional(readOnly = true)
+    public PagedResponse<GroupActivityLogResponse> getActivityLogs(UUID groupId, UUID callerUserId, int page, int size) {
+        groupPermissionService.requireReadableMembership(groupId, callerUserId);
+        Page<GroupActivityLogEntity> logs = groupActivityLogRepository.findByGroupId(groupId,
+                PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))));
+        return PagedResponse.from(logs, logs.getContent().stream().map(GroupActivityLogResponse::from).toList());
+    }
+
+    @Transactional(readOnly = true)
     public GroupMemberResponse getMember(UUID groupId, UUID targetUserId, UUID callerUserId) {
         groupPermissionService.requireReadableMembership(groupId, callerUserId);
         return groupMembershipRepository.findActiveMemberResponseByGroupIdAndUserId(groupId, targetUserId)
@@ -133,6 +143,7 @@ public class GroupService {
         String description = request.description() == null ? group.getDescription() : clearIfBlank(request.description());
         String avatarStorageKey = request.avatarStorageKey() == null ? group.getAvatarStorageKey() : clearIfBlank(request.avatarStorageKey());
         group.updateMetadata(name, description, avatarStorageKey, clock.instant());
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_UPDATED, clock.instant()));
         return detailResponse(group, access.membership().getRole());
     }
 
@@ -154,6 +165,7 @@ public class GroupService {
                 request.chatHistoryPolicy() == null ? settings.getChatHistoryPolicy() : request.chatHistoryPolicy(),
                 clock.instant()
         );
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_SETTINGS_UPDATED, clock.instant()));
         return GroupSettingsResponse.from(settings);
     }
 
@@ -188,6 +200,7 @@ public class GroupService {
         GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
         if (target.getRole() != GroupRole.MEMBER) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
         target.promoteToAdmin();
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_ADMIN_PROMOTED, targetUserId, clock.instant()));
         return activeMemberResponse(groupId, targetUserId);
     }
 
@@ -198,6 +211,7 @@ public class GroupService {
         GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
         if (target.getRole() != GroupRole.ADMIN) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
         target.demoteToMember();
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_ADMIN_DEMOTED, targetUserId, clock.instant()));
         return activeMemberResponse(groupId, targetUserId);
     }
 

@@ -7,6 +7,7 @@ import com.wedo.backend.group.dto.GroupMemberResponse;
 import com.wedo.backend.group.dto.GroupResponse;
 import com.wedo.backend.group.dto.GroupSummaryResponse;
 import com.wedo.backend.group.dto.GroupSettingsResponse;
+import com.wedo.backend.group.dto.GroupActivityLogResponse;
 import com.wedo.backend.group.dto.UpdateGroupRequest;
 import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
 import com.wedo.backend.group.dto.TransferOwnershipRequest;
@@ -76,6 +77,16 @@ public class GroupController {
             @PathVariable UUID groupId
     ) {
         return ResponseEntity.ok(groupService.getMembers(groupId, principal.userId()));
+    }
+
+    @GetMapping("/{groupId}/activity-logs")
+    public ResponseEntity<PagedResponse<GroupActivityLogResponse>> getActivityLogs(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId,
+            @RequestParam(defaultValue = "0") @Min(value = 0, message = "page must be at least 0") int page,
+            @RequestParam(defaultValue = "30") @Min(value = 1, message = "size must be at least 1") @Max(value = 100, message = "size must not exceed 100") int size
+    ) {
+        return ResponseEntity.ok(groupService.getActivityLogs(groupId, principal.userId(), page, size));
     }
 
     @GetMapping("/{groupId}/members/{userId}")

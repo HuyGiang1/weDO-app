@@ -8,6 +8,9 @@ import com.wedo.backend.group.entity.GroupMembershipEntity;
 import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.entity.GroupActivityAction;
+import com.wedo.backend.group.entity.GroupActivityLogEntity;
+import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.security.jwt.JwtService;
@@ -40,6 +43,23 @@ class GroupReadControllerTest extends AbstractPostgresIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private GroupRepository groupRepository;
     @Autowired private GroupMembershipRepository groupMembershipRepository;
+    @Autowired private GroupActivityLogRepository groupActivityLogRepository;
+
+    @Test
+    void activityLogs_areMemberScopedPagedAndDeterministicallyNewestFirst() throws Exception {
+        UUID caller = createUser(UserStatus.ACTIVE); UUID other = createUser(UserStatus.ACTIVE);
+        UUID group = createGroup(caller, GroupStatus.ACTIVE, Instant.now());
+        addMembership(group, caller, GroupRole.OWNER, GroupMembershipStatus.ACTIVE, Instant.now());
+        Instant same = Instant.parse("2026-01-01T00:00:00Z"); UUID low = new UUID(0, 1); UUID high = new UUID(0, 2);
+        groupActivityLogRepository.saveAndFlush(new GroupActivityLogEntity(low, group, null, GroupActivityAction.GROUP_CREATED, same));
+        groupActivityLogRepository.saveAndFlush(new GroupActivityLogEntity(high, group, caller, GroupActivityAction.GROUP_MEMBER_LEFT, caller, same));
+        mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", group).header("Authorization", bearer(caller)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(30))
+                .andExpect(jsonPath("$.items[0].id").value(high.toString())).andExpect(jsonPath("$.items[0].actorUserId").value(caller.toString()))
+                .andExpect(jsonPath("$.items[1].actorUserId").doesNotExist());
+        mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", group).queryParam("size", "101").header("Authorization", bearer(caller))).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", group).header("Authorization", bearer(other))).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP_NOT_FOUND"));
+    }
 
     @Test
     void listGroups_usesOnlyActiveMembershipsFiltersStatusAndAppliesStablePagingOrder() throws Exception {

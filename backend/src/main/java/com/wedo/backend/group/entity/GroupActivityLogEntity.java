@@ -51,7 +51,9 @@ public class GroupActivityLogEntity {
     }
 
     public UUID getGroupId() { return groupId; }
+    public UUID getId() { return id; }
     public UUID getActorId() { return actorId; }
     public GroupActivityAction getAction() { return action; }
     public UUID getTargetUserId() { return targetUserId; }
+    public Instant getCreatedAt() { return createdAt; }
 }

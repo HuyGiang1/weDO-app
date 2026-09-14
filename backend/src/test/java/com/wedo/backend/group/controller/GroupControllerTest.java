@@ -89,7 +89,11 @@ class GroupControllerTest extends AbstractPostgresIntegrationTest {
         assertEquals(GroupMembershipStatus.ACTIVE, owner.getStatus());
         assertNull(owner.getEndedAt());
         assertEquals(1, groupActivityLogRepository.findByGroupId(groupId).size());
-        assertEquals(GroupActivityAction.GROUP_CREATED, groupActivityLogRepository.findByGroupId(groupId).getFirst().getAction());
+        var createdLog = groupActivityLogRepository.findByGroupId(groupId).getFirst();
+        assertEquals(GroupActivityAction.GROUP_CREATED, createdLog.getAction());
+        assertEquals(groupId, createdLog.getGroupId());
+        assertEquals(creatorId, createdLog.getActorId());
+        assertNull(createdLog.getTargetUserId());
 
         UUID peerId = createUser(UserStatus.ACTIVE);
         groupMembershipRepository.saveAndFlush(new GroupMembershipEntity(

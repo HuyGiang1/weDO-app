@@ -9,6 +9,8 @@ import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupSettingsEntity;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.entity.GroupActivityAction;
+import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
@@ -28,6 +30,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,6 +51,7 @@ class GroupUpdateSettingsControllerTest extends AbstractPostgresIntegrationTest 
     @Autowired private GroupSettingsRepository groupSettingsRepository;
     @Autowired private GroupMembershipRepository groupMembershipRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private GroupActivityLogRepository groupActivityLogRepository;
 
     @Test
     void ownerAndAdminUpdateMetadataWhileMemberNonMemberAndHistoricalCallersCannot() throws Exception {
@@ -71,6 +75,13 @@ class GroupUpdateSettingsControllerTest extends AbstractPostgresIntegrationTest 
                         .contentType(MediaType.APPLICATION_JSON).content("{\"description\":\"Admin description\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.description").value("Admin description"));
+        var updatedLogs = groupActivityLogRepository.findByGroupId(groupId).stream()
+                .filter(log -> log.getAction() == GroupActivityAction.GROUP_UPDATED)
+                .toList();
+        assertEquals(2, updatedLogs.size());
+        assertTrue(updatedLogs.stream().allMatch(log -> groupId.equals(log.getGroupId()) && log.getTargetUserId() == null));
+        assertTrue(updatedLogs.stream().anyMatch(log -> ownerId.equals(log.getActorId())));
+        assertTrue(updatedLogs.stream().anyMatch(log -> adminId.equals(log.getActorId())));
         assertError(patch("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(memberId))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Denied\"}"), 403, "INSUFFICIENT_GROUP_PERMISSION");
         assertError(patch("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(outsiderId))
@@ -126,6 +137,11 @@ class GroupUpdateSettingsControllerTest extends AbstractPostgresIntegrationTest 
                 .andExpect(jsonPath("$.joinPolicy").value("APPROVAL_REQUIRED"))
                 .andExpect(jsonPath("$.memberCreateActivityAllowed").value(false))
                 .andExpect(jsonPath("$.chatHistoryPolicy").value("FROM_JOIN_TIME"));
+        assertTrue(groupActivityLogRepository.findByGroupId(groupId).stream().anyMatch(log ->
+                log.getAction() == GroupActivityAction.GROUP_SETTINGS_UPDATED
+                        && groupId.equals(log.getGroupId())
+                        && ownerId.equals(log.getActorId())
+                        && log.getTargetUserId() == null));
     }
 
     @Test

@@ -32,6 +32,8 @@ class GroupMembershipManagementControllerTest extends AbstractPostgresIntegratio
         mvc.perform(post("/api/v1/groups/{id}/members/{u}/promote-admin",id,member).header("Authorization",bearer(owner))).andExpect(status().isOk()).andExpect(jsonPath("$.role").value("ADMIN"));
         mvc.perform(post("/api/v1/groups/{id}/members/{u}/promote-admin",id,member).header("Authorization",bearer(owner))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INVALID_GROUP_ROLE_TRANSITION"));
         mvc.perform(post("/api/v1/groups/{id}/members/{u}/demote-admin",id,admin).header("Authorization",bearer(owner))).andExpect(status().isOk()).andExpect(jsonPath("$.role").value("MEMBER"));
+        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_ADMIN_PROMOTED && owner.equals(l.getActorId()) && member.equals(l.getTargetUserId())));
+        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_ADMIN_DEMOTED && owner.equals(l.getActorId()) && admin.equals(l.getTargetUserId())));
         mvc.perform(post("/api/v1/groups/{id}/members/{u}/demote-admin",id,admin).header("Authorization",bearer(owner))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INVALID_GROUP_ROLE_TRANSITION"));
     }
 
@@ -39,9 +41,10 @@ class GroupMembershipManagementControllerTest extends AbstractPostgresIntegratio
         UUID owner=user(), member=user(), admin=user(), id=group(owner, GroupStatus.ACTIVE); add(id,owner,GroupRole.OWNER,GroupMembershipStatus.ACTIVE); add(id,member,GroupRole.MEMBER,GroupMembershipStatus.ACTIVE); add(id,admin,GroupRole.ADMIN,GroupMembershipStatus.ACTIVE);
         mvc.perform(post("/api/v1/groups/{id}/members/{u}/kick",id,member).header("Authorization",bearer(owner))).andExpect(status().isNoContent());
         GroupMembershipEntity kicked=memberships.findByGroupIdAndUserIdAndStatus(id,member,GroupMembershipStatus.KICKED).getFirst(); assertNotNull(kicked.getEndedAt());
-        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_MEMBER_KICKED && member.equals(l.getTargetUserId())));
+        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_MEMBER_KICKED && id.equals(l.getGroupId()) && owner.equals(l.getActorId()) && member.equals(l.getTargetUserId())));
         mvc.perform(post("/api/v1/groups/{id}/leave",id).header("Authorization",bearer(admin))).andExpect(status().isNoContent());
         assertEquals(GroupMembershipStatus.LEFT,memberships.findByGroupIdAndUserIdAndStatus(id,admin,GroupMembershipStatus.LEFT).getFirst().getStatus());
+        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_MEMBER_LEFT && admin.equals(l.getActorId()) && admin.equals(l.getTargetUserId())));
         mvc.perform(post("/api/v1/groups/{id}/leave",id).header("Authorization",bearer(owner))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("TRANSFER_OWNERSHIP_REQUIRED"));
     }
 
@@ -53,7 +56,7 @@ class GroupMembershipManagementControllerTest extends AbstractPostgresIntegratio
         mvc.perform(post("/api/v1/groups/{id}/transfer-ownership",id).header("Authorization",bearer(owner)).contentType(MediaType.APPLICATION_JSON).content("{\"newOwnerUserId\":\""+member+"\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.ownerUserId").value(member.toString())).andExpect(jsonPath("$.callerRole").value("ADMIN"));
         assertEquals(1,memberships.countByGroupIdAndRoleAndStatus(id,GroupRole.OWNER,GroupMembershipStatus.ACTIVE));
-        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_OWNERSHIP_TRANSFERRED && member.equals(l.getTargetUserId())));
+        assertTrue(logs.findByGroupId(id).stream().anyMatch(l->l.getAction()==GroupActivityAction.GROUP_OWNERSHIP_TRANSFERRED && id.equals(l.getGroupId()) && owner.equals(l.getActorId()) && member.equals(l.getTargetUserId())));
         UUID archived=group(owner,GroupStatus.ARCHIVED); add(archived,owner,GroupRole.OWNER,GroupMembershipStatus.ACTIVE);
         mvc.perform(post("/api/v1/groups/{id}/leave",archived).header("Authorization",bearer(owner))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("GROUP_ARCHIVED"));
     }

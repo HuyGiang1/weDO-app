@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -19,6 +21,10 @@ public interface GroupMembershipRepository extends JpaRepository<GroupMembership
     Optional<GroupMembershipEntity> findFirstByGroupIdAndUserIdAndStatus(UUID groupId, UUID userId, GroupMembershipStatus status);
 
     Optional<GroupMembershipEntity> findFirstByGroupIdAndRoleAndStatus(UUID groupId, GroupRole role, GroupMembershipStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from GroupMembershipEntity m where m.groupId = :groupId and m.userId = :userId and m.status = :status")
+    Optional<GroupMembershipEntity> findActiveByGroupIdAndUserIdForUpdate(@Param("groupId") UUID groupId, @Param("userId") UUID userId, @Param("status") GroupMembershipStatus status);
 
     @Query(value = """
             SELECT g.id AS id, g.name AS name, g.avatar_storage_key AS \"avatarStorageKey\",

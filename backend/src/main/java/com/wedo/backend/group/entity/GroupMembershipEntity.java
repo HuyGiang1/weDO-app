@@ -56,4 +56,22 @@ public class GroupMembershipEntity {
     public GroupRole getRole() { return role; }
     public GroupMembershipStatus getStatus() { return status; }
     public Instant getEndedAt() { return endedAt; }
+
+    public void promoteToAdmin() { requireActiveRole(GroupRole.MEMBER); this.role = GroupRole.ADMIN; }
+    public void demoteToMember() { requireActiveRole(GroupRole.ADMIN); this.role = GroupRole.MEMBER; }
+    public void transferOwnerToAdmin() { requireActiveRole(GroupRole.OWNER); this.role = GroupRole.ADMIN; }
+    public void transferToOwner() {
+        if (status != GroupMembershipStatus.ACTIVE || (role != GroupRole.MEMBER && role != GroupRole.ADMIN)) throw new IllegalStateException("Invalid ownership target");
+        this.role = GroupRole.OWNER;
+    }
+    public void endAsLeft(Instant now) { end(GroupMembershipStatus.LEFT, now); }
+    public void endAsKicked(Instant now) { end(GroupMembershipStatus.KICKED, now); }
+    private void requireActiveRole(GroupRole expected) {
+        if (status != GroupMembershipStatus.ACTIVE || role != expected) throw new IllegalStateException("Invalid group role transition");
+    }
+    private void end(GroupMembershipStatus endingStatus, Instant now) {
+        if (status != GroupMembershipStatus.ACTIVE) throw new IllegalStateException("Membership is not active");
+        this.status = endingStatus;
+        this.endedAt = now;
+    }
 }

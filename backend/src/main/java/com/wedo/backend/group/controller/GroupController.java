@@ -9,6 +9,7 @@ import com.wedo.backend.group.dto.GroupSummaryResponse;
 import com.wedo.backend.group.dto.GroupSettingsResponse;
 import com.wedo.backend.group.dto.UpdateGroupRequest;
 import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
+import com.wedo.backend.group.dto.TransferOwnershipRequest;
 import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.service.GroupService;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
@@ -110,5 +111,32 @@ public class GroupController {
             @RequestBody UpdateGroupSettingsRequest request
     ) {
         return ResponseEntity.ok(groupService.updateSettings(groupId, principal.userId(), request));
+    }
+
+    @PostMapping("/{groupId}/members/{userId}/promote-admin")
+    public ResponseEntity<GroupMemberResponse> promoteAdmin(@AuthenticationPrincipal AuthenticatedUserPrincipal principal, @PathVariable UUID groupId, @PathVariable UUID userId) {
+        return ResponseEntity.ok(groupService.promoteAdmin(groupId, userId, principal.userId()));
+    }
+
+    @PostMapping("/{groupId}/members/{userId}/demote-admin")
+    public ResponseEntity<GroupMemberResponse> demoteAdmin(@AuthenticationPrincipal AuthenticatedUserPrincipal principal, @PathVariable UUID groupId, @PathVariable UUID userId) {
+        return ResponseEntity.ok(groupService.demoteAdmin(groupId, userId, principal.userId()));
+    }
+
+    @PostMapping("/{groupId}/members/{userId}/kick")
+    public ResponseEntity<Void> kick(@AuthenticationPrincipal AuthenticatedUserPrincipal principal, @PathVariable UUID groupId, @PathVariable UUID userId) {
+        groupService.kick(groupId, userId, principal.userId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{groupId}/leave")
+    public ResponseEntity<Void> leave(@AuthenticationPrincipal AuthenticatedUserPrincipal principal, @PathVariable UUID groupId) {
+        groupService.leave(groupId, principal.userId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{groupId}/transfer-ownership")
+    public ResponseEntity<GroupDetailResponse> transferOwnership(@AuthenticationPrincipal AuthenticatedUserPrincipal principal, @PathVariable UUID groupId, @Valid @RequestBody TransferOwnershipRequest request) {
+        return ResponseEntity.ok(groupService.transferOwnership(groupId, request.newOwnerUserId(), principal.userId()));
     }
 }

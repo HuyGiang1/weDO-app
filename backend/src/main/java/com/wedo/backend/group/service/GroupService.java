@@ -180,4 +180,85 @@ public class GroupService {
     private String clearIfBlank(String value) {
         return value.isBlank() ? null : value;
     }
+
+    @Transactional
+    public GroupMemberResponse promoteAdmin(UUID groupId, UUID targetUserId, UUID callerUserId) {
+        GroupMembershipEntity caller = requireLockedMutableCaller(groupId, callerUserId);
+        requireOwner(caller);
+        GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
+        if (target.getRole() != GroupRole.MEMBER) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
+        target.promoteToAdmin();
+        return activeMemberResponse(groupId, targetUserId);
+    }
+
+    @Transactional
+    public GroupMemberResponse demoteAdmin(UUID groupId, UUID targetUserId, UUID callerUserId) {
+        GroupMembershipEntity caller = requireLockedMutableCaller(groupId, callerUserId);
+        requireOwner(caller);
+        GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
+        if (target.getRole() != GroupRole.ADMIN) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
+        target.demoteToMember();
+        return activeMemberResponse(groupId, targetUserId);
+    }
+
+    @Transactional
+    public void kick(UUID groupId, UUID targetUserId, UUID callerUserId) {
+        GroupMembershipEntity caller = requireLockedMutableCaller(groupId, callerUserId);
+        GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
+        boolean allowed = caller.getRole() == GroupRole.OWNER && target.getRole() != GroupRole.OWNER
+                || caller.getRole() == GroupRole.ADMIN && target.getRole() == GroupRole.MEMBER;
+        if (!allowed) throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
+        Instant now = clock.instant();
+        target.endAsKicked(now);
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_MEMBER_KICKED, targetUserId, now));
+    }
+
+    @Transactional
+    public void leave(UUID groupId, UUID callerUserId) {
+        GroupMembershipEntity caller = requireLockedMutableCaller(groupId, callerUserId);
+        if (caller.getRole() == GroupRole.OWNER) throw new BusinessException(ErrorCode.TRANSFER_OWNERSHIP_REQUIRED);
+        Instant now = clock.instant();
+        caller.endAsLeft(now);
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_MEMBER_LEFT, callerUserId, now));
+    }
+
+    @Transactional
+    public GroupDetailResponse transferOwnership(UUID groupId, UUID targetUserId, UUID callerUserId) {
+        GroupMembershipEntity caller = requireLockedMutableCaller(groupId, callerUserId);
+        requireOwner(caller);
+        GroupMembershipEntity target = requireLockedActiveTarget(groupId, targetUserId);
+        if (targetUserId.equals(callerUserId) || (target.getRole() != GroupRole.MEMBER && target.getRole() != GroupRole.ADMIN)) throw new BusinessException(ErrorCode.INVALID_OWNERSHIP_TARGET);
+        caller.transferOwnerToAdmin();
+        groupMembershipRepository.flush();
+        target.transferToOwner();
+        Instant now = clock.instant();
+        groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_OWNERSHIP_TRANSFERRED, targetUserId, now));
+        GroupEntity group = groupRepository.findById(groupId).orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        return detailResponse(group, GroupRole.ADMIN);
+    }
+
+    private GroupMembershipEntity requireLockedMutableCaller(UUID groupId, UUID callerUserId) {
+        userService.requireActiveUser(callerUserId);
+        GroupEntity group = groupRepository.findByIdForUpdate(groupId)
+                .filter(candidate -> candidate.getStatus() != GroupStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        if (group.getStatus() == GroupStatus.ARCHIVED) throw new BusinessException(ErrorCode.GROUP_ARCHIVED);
+        return groupMembershipRepository.findActiveByGroupIdAndUserIdForUpdate(groupId, callerUserId, GroupMembershipStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+    }
+
+    private GroupMembershipEntity requireLockedActiveTarget(UUID groupId, UUID targetUserId) {
+        return groupMembershipRepository.findActiveByGroupIdAndUserIdForUpdate(groupId, targetUserId, GroupMembershipStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_MEMBER_NOT_FOUND));
+    }
+
+    private void requireOwner(GroupMembershipEntity membership) {
+        if (membership.getRole() != GroupRole.OWNER) throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
+    }
+
+    private GroupMemberResponse activeMemberResponse(UUID groupId, UUID userId) {
+        return groupMembershipRepository.findActiveMemberResponseByGroupIdAndUserId(groupId, userId)
+                .map(GroupMemberResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_MEMBER_NOT_FOUND));
+    }
 }

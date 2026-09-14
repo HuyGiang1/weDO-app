@@ -19,6 +19,13 @@ import '../features/privacy/data/privacy_models.dart';
 import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
 import '../features/qr/data/personal_qr.dart';
 import '../features/qr/presentation/screens/personal_qr_screen.dart';
+import '../features/groups/data/group_repository.dart';
+import '../features/groups/application/groups_controller.dart';
+import '../features/groups/application/create_group_controller.dart';
+import '../features/groups/application/group_detail_controller.dart';
+import '../features/groups/presentation/screens/my_groups_screen.dart';
+import '../features/groups/presentation/screens/create_group_screen.dart';
+import '../features/groups/presentation/screens/group_info_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -45,7 +52,11 @@ class ProfileRouteArgs {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
-  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })
+  changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
 
   const ProfileRouteArgs({
@@ -56,10 +67,18 @@ class ProfileRouteArgs {
     required this.endSessionAfterPasswordChange,
   });
 }
+
 class ChangePasswordRouteArgs {
-  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })
+  changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
-  const ChangePasswordRouteArgs({required this.changePassword, required this.endSessionAfterPasswordChange});
+  const ChangePasswordRouteArgs({
+    required this.changePassword,
+    required this.endSessionAfterPasswordChange,
+  });
 }
 
 class PrivacyRouteArgs {
@@ -72,9 +91,21 @@ class PrivacyRouteArgs {
     required this.updatePrivacySettings,
   });
 }
+
 class PersonalQrRouteArgs {
   final Future<PersonalQr> Function() loadPersonalQr;
   const PersonalQrRouteArgs({required this.loadPersonalQr});
+}
+
+class GroupsRouteArgs {
+  final GroupRepository repository;
+  const GroupsRouteArgs({required this.repository});
+}
+
+class GroupInfoRouteArgs {
+  final GroupRepository repository;
+  final String groupId;
+  const GroupInfoRouteArgs({required this.repository, required this.groupId});
 }
 
 /// A unified route definition binding access policy to route construction.
@@ -103,6 +134,9 @@ abstract final class AppRoutes {
   static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
   static const String personalQr = '/profile/qr';
+  static const String groups = '/groups';
+  static const String createGroup = '/groups/create';
+  static const String groupInfo = '/groups/info';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -295,10 +329,17 @@ abstract final class AppRoutes {
             endSessionAfterPasswordChange: args.endSessionAfterPasswordChange,
             onSuccess: () {
               final messenger = ScaffoldMessenger.of(context);
-              Navigator.of(context).pushNamedAndRemoveUntil(login, (route) => false);
-              messenger.showSnackBar(const SnackBar(content: Text('Password changed. Please sign in again.')));
+              Navigator.of(context)
+                  .pushNamedAndRemoveUntil(login, (route) => false);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Password changed. Please sign in again.'),
+                ),
+              );
             },
-          ), settings: settings);
+          ),
+          settings: settings,
+        );
       },
     ),
     privacy: AppRouteDefinition(
@@ -320,7 +361,68 @@ abstract final class AppRoutes {
       builder: (settings, coordinator) {
         final args = settings.arguments;
         if (args is! PersonalQrRouteArgs) return null;
-        return MaterialPageRoute<void>(builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr), settings: settings);
+        return MaterialPageRoute<void>(
+          builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr),
+          settings: settings,
+        );
+      },
+    ),
+    groups: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => MyGroupsScreen(
+            controller: GroupsController(args.repository),
+            onCreate: () =>
+                Navigator.of(context).pushNamed(createGroup, arguments: args),
+            onOpenGroup: (id) => Navigator.of(context).pushNamed(
+              groupInfo,
+              arguments: GroupInfoRouteArgs(
+                repository: args.repository,
+                groupId: id,
+              ),
+            ),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    createGroup: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => CreateGroupScreen(
+            controller: CreateGroupController(args.repository),
+            onCreated: (detail) => Navigator.of(context).pushReplacementNamed(
+              groupInfo,
+              arguments: GroupInfoRouteArgs(
+                repository: args.repository,
+                groupId: detail.id,
+              ),
+            ),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupInfo: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupInfoRouteArgs || args.groupId.trim().isEmpty) {
+          return null;
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupInfoScreen(
+            groupId: args.groupId,
+            controller: GroupDetailController(args.repository),
+          ),
+          settings: settings,
+        );
       },
     ),
   };

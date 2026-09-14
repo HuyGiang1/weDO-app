@@ -9,8 +9,8 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 12 registered production routes', () {
-      expect(AppRoutes.routes.length, 12);
+    test('contains exactly 15 registered production routes', () {
+      expect(AppRoutes.routes.length, 15);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -25,6 +25,9 @@ void main() {
         AppRoutes.changePassword,
         AppRoutes.privacy,
         AppRoutes.personalQr,
+        AppRoutes.groups,
+        AppRoutes.createGroup,
+        AppRoutes.groupInfo,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -34,7 +37,13 @@ void main() {
       for (final entry in AppRoutes.routes.entries) {
         expect(
           entry.value.access,
-          entry.key == AppRoutes.profile || entry.key == AppRoutes.changePassword || entry.key == AppRoutes.privacy || entry.key == AppRoutes.personalQr
+          entry.key == AppRoutes.profile ||
+                  entry.key == AppRoutes.changePassword ||
+                  entry.key == AppRoutes.privacy ||
+                  entry.key == AppRoutes.personalQr ||
+                  entry.key == AppRoutes.groups ||
+                  entry.key == AppRoutes.createGroup ||
+                  entry.key == AppRoutes.groupInfo
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -57,7 +66,10 @@ void main() {
         loadCurrentUser: loadUser,
         updateProfile: (_) async => loadUser(),
         updateUsername: (_) async => loadUser(),
-        changePassword: ({required currentPassword, required newPassword}) async {},
+        changePassword: ({
+          required currentPassword,
+          required newPassword,
+        }) async {},
         endSessionAfterPasswordChange: () async => true,
       ),
     );
@@ -132,11 +144,34 @@ void main() {
   });
 
   group('Protected Personal QR Route', () {
-    RouteSettings settings() => RouteSettings(name: AppRoutes.personalQr, arguments: PersonalQrRouteArgs(loadPersonalQr: () async => throw UnimplementedError()));
+    RouteSettings settings() => RouteSettings(
+      name: AppRoutes.personalQr,
+      arguments: PersonalQrRouteArgs(
+        loadPersonalQr: () async => throw UnimplementedError(),
+      ),
+    );
     test('allows only authenticated sessions', () {
-      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.authenticated), isNotNull);
-      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.unauthenticated), isNull);
-      expect(AppRoutes.onGenerateRoute(settings(), authStatus: AuthSessionStatus.restoring), isNull);
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.authenticated,
+        ),
+        isNotNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          settings(),
+          authStatus: AuthSessionStatus.restoring,
+        ),
+        isNull,
+      );
     });
   });
 
@@ -308,34 +343,34 @@ void main() {
 
       test('returns null when arguments are wrong type', () {
         final route = AppRoutes.onGenerateRoute(
-          const RouteSettings(
-            name: AppRoutes.resetPassword,
-            arguments: 12345,
-          ),
+          const RouteSettings(name: AppRoutes.resetPassword, arguments: 12345),
           authStatus: authStatus,
         );
         expect(route, isNull);
       });
 
-      test('returns null when ResetPasswordRouteArgs email is empty or whitespace', () {
-        final emptyRoute = AppRoutes.onGenerateRoute(
-          const RouteSettings(
-            name: AppRoutes.resetPassword,
-            arguments: ResetPasswordRouteArgs(email: ''),
-          ),
-          authStatus: authStatus,
-        );
-        expect(emptyRoute, isNull);
+      test(
+        'returns null when ResetPasswordRouteArgs email is empty or whitespace',
+        () {
+          final emptyRoute = AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.resetPassword,
+              arguments: ResetPasswordRouteArgs(email: ''),
+            ),
+            authStatus: authStatus,
+          );
+          expect(emptyRoute, isNull);
 
-        final whitespaceRoute = AppRoutes.onGenerateRoute(
-          const RouteSettings(
-            name: AppRoutes.resetPassword,
-            arguments: ResetPasswordRouteArgs(email: '   '),
-          ),
-          authStatus: authStatus,
-        );
-        expect(whitespaceRoute, isNull);
-      });
+          final whitespaceRoute = AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.resetPassword,
+              arguments: ResetPasswordRouteArgs(email: '   '),
+            ),
+            authStatus: authStatus,
+          );
+          expect(whitespaceRoute, isNull);
+        },
+      );
 
       test('generates route when ResetPasswordRouteArgs are valid', () {
         final route = AppRoutes.onGenerateRoute(
@@ -470,82 +505,73 @@ void main() {
   });
 
   group('Denied-Builder Policy (Test-Only Seam)', () {
-    test(
-      'builder is never invoked when route is authenticated-required and status is unauthenticated',
-      () {
-        var builderInvocations = 0;
-        final testProtectedDef = AppRouteDefinition(
-          access: AppRouteAccess.authenticated,
-          builder: (settings, coordinator) {
-            builderInvocations++;
-            return MaterialPageRoute<void>(
-              builder: (_) => const SizedBox.shrink(),
-              settings: settings,
-            );
-          },
-        );
+    test('builder is never invoked when route is authenticated-required and status is unauthenticated', () {
+      var builderInvocations = 0;
+      final testProtectedDef = AppRouteDefinition(
+        access: AppRouteAccess.authenticated,
+        builder: (settings, coordinator) {
+          builderInvocations++;
+          return MaterialPageRoute<void>(
+            builder: (_) => const SizedBox.shrink(),
+            settings: settings,
+          );
+        },
+      );
 
-        final route = AppRoutes.evaluateAndBuildRoute(
-          testProtectedDef,
-          const RouteSettings(name: '/test-protected'),
-          authStatus: AuthSessionStatus.unauthenticated,
-        );
+      final route = AppRoutes.evaluateAndBuildRoute(
+        testProtectedDef,
+        const RouteSettings(name: '/test-protected'),
+        authStatus: AuthSessionStatus.unauthenticated,
+      );
 
-        expect(route, isNull);
-        expect(builderInvocations, 0);
-      },
-    );
+      expect(route, isNull);
+      expect(builderInvocations, 0);
+    });
 
-    test(
-      'builder is never invoked when route is authenticated-required and status is restoring',
-      () {
-        var builderInvocations = 0;
-        final testProtectedDef = AppRouteDefinition(
-          access: AppRouteAccess.authenticated,
-          builder: (settings, coordinator) {
-            builderInvocations++;
-            return MaterialPageRoute<void>(
-              builder: (_) => const SizedBox.shrink(),
-              settings: settings,
-            );
-          },
-        );
+    test('builder is never invoked when route is authenticated-required and status is restoring', () {
+      var builderInvocations = 0;
+      final testProtectedDef = AppRouteDefinition(
+        access: AppRouteAccess.authenticated,
+        builder: (settings, coordinator) {
+          builderInvocations++;
+          return MaterialPageRoute<void>(
+            builder: (_) => const SizedBox.shrink(),
+            settings: settings,
+          );
+        },
+      );
 
-        final route = AppRoutes.evaluateAndBuildRoute(
-          testProtectedDef,
-          const RouteSettings(name: '/test-protected'),
-          authStatus: AuthSessionStatus.restoring,
-        );
+      final route = AppRoutes.evaluateAndBuildRoute(
+        testProtectedDef,
+        const RouteSettings(name: '/test-protected'),
+        authStatus: AuthSessionStatus.restoring,
+      );
 
-        expect(route, isNull);
-        expect(builderInvocations, 0);
-      },
-    );
+      expect(route, isNull);
+      expect(builderInvocations, 0);
+    });
 
-    test(
-      'builder is invoked when route is authenticated-required and status is authenticated',
-      () {
-        var builderInvocations = 0;
-        final testProtectedDef = AppRouteDefinition(
-          access: AppRouteAccess.authenticated,
-          builder: (settings, coordinator) {
-            builderInvocations++;
-            return MaterialPageRoute<void>(
-              builder: (_) => const SizedBox.shrink(),
-              settings: settings,
-            );
-          },
-        );
+    test('builder is invoked when route is authenticated-required and status is authenticated', () {
+      var builderInvocations = 0;
+      final testProtectedDef = AppRouteDefinition(
+        access: AppRouteAccess.authenticated,
+        builder: (settings, coordinator) {
+          builderInvocations++;
+          return MaterialPageRoute<void>(
+            builder: (_) => const SizedBox.shrink(),
+            settings: settings,
+          );
+        },
+      );
 
-        final route = AppRoutes.evaluateAndBuildRoute(
-          testProtectedDef,
-          const RouteSettings(name: '/test-protected'),
-          authStatus: AuthSessionStatus.authenticated,
-        );
+      final route = AppRoutes.evaluateAndBuildRoute(
+        testProtectedDef,
+        const RouteSettings(name: '/test-protected'),
+        authStatus: AuthSessionStatus.authenticated,
+      );
 
-        expect(route, isNotNull);
-        expect(builderInvocations, 1);
-      },
-    );
+      expect(route, isNotNull);
+      expect(builderInvocations, 1);
+    });
   });
 }

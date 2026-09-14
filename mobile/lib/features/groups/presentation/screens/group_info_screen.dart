@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../../application/group_detail_controller.dart';
+import '../../data/group_failure.dart';
 import '../../data/models/group_models.dart';
 import '../widgets/group_widgets.dart';
 
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
   final GroupDetailController controller;
+  final VoidCallback onEdit, onMembers, onSettings, onLeave;
 
   const GroupInfoScreen({
     super.key,
     required this.groupId,
     required this.controller,
+    required this.onEdit,
+    required this.onMembers,
+    required this.onSettings,
+    required this.onLeave,
   });
 
   @override
@@ -49,6 +55,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           return _GroupInfoContent(
             group: group,
             memberCount: state.memberCount,
+            onEdit: widget.onEdit,
+            onMembers: widget.onMembers,
+            onSettings: widget.onSettings,
+            onLeave: () async {
+              if (await widget.controller.leave(widget.groupId) && mounted) {
+                widget.onLeave();
+              }
+            },
+            leaveTransferRequired:
+                state.failure?.type == GroupFailureType.transferRequired,
           );
         },
       ),
@@ -59,8 +75,18 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 class _GroupInfoContent extends StatelessWidget {
   final GroupDetail group;
   final int? memberCount;
+  final VoidCallback onEdit, onMembers, onSettings, onLeave;
+  final bool leaveTransferRequired;
 
-  const _GroupInfoContent({required this.group, required this.memberCount});
+  const _GroupInfoContent({
+    required this.group,
+    required this.memberCount,
+    required this.onEdit,
+    required this.onMembers,
+    required this.onSettings,
+    required this.onLeave,
+    required this.leaveTransferRequired,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +106,8 @@ class _GroupInfoContent extends StatelessWidget {
             child: Text(group.description!, textAlign: TextAlign.center),
           ),
         const SizedBox(height: 24),
+        if (leaveTransferRequired)
+          const Text('Transfer ownership before leaving this group.'),
         Row(
           children: [
             Expanded(
@@ -100,14 +128,23 @@ class _GroupInfoContent extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 24),
-        const ListTile(
-          enabled: false,
+        ListTile(
+          leading: const Icon(Icons.edit),
+          title: const Text('Edit Group'),
+          onTap: onEdit,
+        ),
+        ListTile(
+          leading: const Icon(Icons.groups),
+          title: const Text('Group Members'),
+          onTap: onMembers,
+        ),
+        ListTile(
           leading: Icon(Icons.person_add),
           title: Text('Invite Friends'),
           trailing: Icon(Icons.chevron_right),
         ),
-        const ListTile(
-          enabled: false,
+        ListTile(
+          onTap: onSettings,
           leading: Icon(Icons.settings),
           title: Text('Group Settings'),
           trailing: Icon(Icons.chevron_right),
@@ -116,7 +153,7 @@ class _GroupInfoContent extends StatelessWidget {
           Padding(
             padding: EdgeInsets.only(top: 16),
             child: OutlinedButton.icon(
-              onPressed: null,
+              onPressed: onLeave,
               icon: Icon(Icons.logout),
               label: Text('Leave Group'),
             ),

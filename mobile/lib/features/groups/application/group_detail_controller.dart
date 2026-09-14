@@ -36,4 +36,18 @@ class GroupDetailController extends ValueNotifier<GroupDetailState> {
       value = GroupDetailState(failure: e.failure);
     }
   }
+  Future<bool> leave(String id) async {
+    final old = value;
+    try {
+      await repository.leaveGroup(id);
+      return true;
+    } on GroupException catch (e) {
+      value = GroupDetailState(
+        detail: old.detail,
+        memberCount: old.memberCount,
+        failure: e.failure,
+      );
+      return false;
+    }
+  }
 }

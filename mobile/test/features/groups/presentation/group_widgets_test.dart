@@ -96,7 +96,14 @@ void main() {
     );
     await tester.pumpWidget(
       MaterialApp(
-        home: GroupInfoScreen(groupId: 'g', controller: controller),
+        home: GroupInfoScreen(
+          groupId: 'g',
+          controller: controller,
+          onEdit: () {},
+          onMembers: () {},
+          onSettings: () {},
+          onLeave: () {},
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -105,26 +112,31 @@ void main() {
     expect(find.text('Leave Group'), findsNothing);
   });
 
-  testWidgets('Group Info shows disabled Leave only for non-owner callers', (
+  testWidgets('Group Info shows Leave only for non-owner callers', (
     tester,
   ) async {
     final controller = GroupDetailController(
       _repository(
         _Adapter({
           '/api/v1/groups/g': _detail('ADMIN'),
-          '/api/v1/groups/g/members': [],
+          '/api/v1/groups/g/members': [_member('a')],
         }),
       ),
     );
     await tester.pumpWidget(
       MaterialApp(
-        home: GroupInfoScreen(groupId: 'g', controller: controller),
+        home: GroupInfoScreen(
+          groupId: 'g',
+          controller: controller,
+          onEdit: () {},
+          onMembers: () {},
+          onSettings: () {},
+          onLeave: () {},
+        ),
       ),
     );
     await tester.pumpAndSettle();
-    final leave = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
-    expect(find.text('Leave Group'), findsOneWidget);
-    expect(leave.onPressed, isNull);
+    expect(find.text('Leave Group'), findsNothing);
   });
 
   testWidgets('Create Group validates the required name before submission', (

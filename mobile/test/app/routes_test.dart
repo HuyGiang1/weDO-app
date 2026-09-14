@@ -9,8 +9,8 @@ import 'package:mobile/features/auth/data/models/auth_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 15 registered production routes', () {
-      expect(AppRoutes.routes.length, 15);
+    test('contains exactly 21 registered production routes', () {
+      expect(AppRoutes.routes.length, 21);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -28,6 +28,12 @@ void main() {
         AppRoutes.groups,
         AppRoutes.createGroup,
         AppRoutes.groupInfo,
+        AppRoutes.editGroup,
+        AppRoutes.groupMembers,
+        AppRoutes.memberManagement,
+        AppRoutes.groupPermissions,
+        AppRoutes.groupAdmins,
+        AppRoutes.transferOwnership,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -43,7 +49,13 @@ void main() {
                   entry.key == AppRoutes.personalQr ||
                   entry.key == AppRoutes.groups ||
                   entry.key == AppRoutes.createGroup ||
-                  entry.key == AppRoutes.groupInfo
+                  entry.key == AppRoutes.groupInfo ||
+                  entry.key == AppRoutes.editGroup ||
+                  entry.key == AppRoutes.groupMembers ||
+                  entry.key == AppRoutes.memberManagement ||
+                  entry.key == AppRoutes.groupPermissions ||
+                  entry.key == AppRoutes.groupAdmins ||
+                  entry.key == AppRoutes.transferOwnership
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',

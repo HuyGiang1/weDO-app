@@ -1,3 +1,5 @@
+// ignore_for_file: curly_braces_in_flow_control_structures
+
 import 'package:flutter/material.dart';
 
 import 'auth_route_guard.dart';
@@ -26,6 +28,8 @@ import '../features/groups/application/group_detail_controller.dart';
 import '../features/groups/presentation/screens/my_groups_screen.dart';
 import '../features/groups/presentation/screens/create_group_screen.dart';
 import '../features/groups/presentation/screens/group_info_screen.dart';
+import '../features/groups/application/group_management_controllers.dart';
+import '../features/groups/presentation/screens/group_management_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -108,6 +112,16 @@ class GroupInfoRouteArgs {
   const GroupInfoRouteArgs({required this.repository, required this.groupId});
 }
 
+class GroupMemberRouteArgs {
+  final GroupRepository repository;
+  final String groupId, userId;
+  const GroupMemberRouteArgs({
+    required this.repository,
+    required this.groupId,
+    required this.userId,
+  });
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
@@ -137,6 +151,12 @@ abstract final class AppRoutes {
   static const String groups = '/groups';
   static const String createGroup = '/groups/create';
   static const String groupInfo = '/groups/info';
+  static const String editGroup = '/groups/edit';
+  static const String groupMembers = '/groups/members';
+  static const String memberManagement = '/groups/member-management';
+  static const String groupPermissions = '/groups/permissions';
+  static const String groupAdmins = '/groups/admins';
+  static const String transferOwnership = '/groups/transfer-ownership';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -373,18 +393,23 @@ abstract final class AppRoutes {
         final args = settings.arguments;
         if (args is! GroupsRouteArgs) return null;
         return MaterialPageRoute<void>(
-          builder: (context) => MyGroupsScreen(
-            controller: GroupsController(args.repository),
-            onCreate: () =>
-                Navigator.of(context).pushNamed(createGroup, arguments: args),
-            onOpenGroup: (id) => Navigator.of(context).pushNamed(
-              groupInfo,
-              arguments: GroupInfoRouteArgs(
-                repository: args.repository,
-                groupId: id,
-              ),
-            ),
-          ),
+          builder: (context) {
+            final groupsController = GroupsController(args.repository);
+            return MyGroupsScreen(
+              controller: groupsController,
+              onCreate: () =>
+                  Navigator.of(context).pushNamed(createGroup, arguments: args),
+              onOpenGroup: (id) => Navigator.of(context)
+                  .pushNamed(
+                    groupInfo,
+                    arguments: GroupInfoRouteArgs(
+                      repository: args.repository,
+                      groupId: id,
+                    ),
+                  )
+                  .whenComplete(groupsController.refresh),
+            );
+          },
           settings: settings,
         );
       },
@@ -417,9 +442,125 @@ abstract final class AppRoutes {
           return null;
         }
         return MaterialPageRoute<void>(
-          builder: (_) => GroupInfoScreen(
+          builder: (context) => GroupInfoScreen(
             groupId: args.groupId,
             controller: GroupDetailController(args.repository),
+            onEdit: () =>
+                Navigator.of(context).pushNamed(editGroup, arguments: args),
+            onMembers: () =>
+                Navigator.of(context).pushNamed(groupMembers, arguments: args),
+            onSettings: () =>
+                Navigator.of(context)
+                    .pushNamed(groupPermissions, arguments: args),
+            onLeave: () => Navigator.of(context).pop(),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    editGroup: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => EditGroupScreen(
+            groupId: a.groupId,
+            controller: EditGroupController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupMembers: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) {
+            final members = GroupMembersController(a.repository);
+            return GroupMembersScreen(
+              groupId: a.groupId,
+              controller: members,
+              onMember: (userId) => Navigator.of(context)
+                  .pushNamed(
+                    memberManagement,
+                    arguments: GroupMemberRouteArgs(
+                      repository: a.repository,
+                      groupId: a.groupId,
+                      userId: userId,
+                    ),
+                  )
+                  .whenComplete(() => members.load(a.groupId)),
+            );
+          },
+          settings: settings,
+        );
+      },
+    ),
+    memberManagement: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupMemberRouteArgs ||
+            a.groupId.trim().isEmpty ||
+            a.userId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => MemberManagementScreen(
+            groupId: a.groupId,
+            userId: a.userId,
+            controller: MemberManagementController(a.repository),
+            onKicked: () => Navigator.of(context).pop(),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupPermissions: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => GroupPermissionsScreen(
+            groupId: a.groupId,
+            controller: GroupPermissionsController(a.repository),
+            onAdmins: () =>
+                Navigator.of(context).pushNamed(groupAdmins, arguments: a),
+            onTransfer: () =>
+                Navigator.of(context)
+                    .pushNamed(transferOwnership, arguments: a),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupAdmins: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupAdminManagementScreen(
+            groupId: a.groupId,
+            controller: GroupAdminController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    transferOwnership: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => TransferOwnershipScreen(
+            groupId: a.groupId,
+            controller: TransferOwnershipController(a.repository),
+            onTransferred: (_) => Navigator.of(context).pop(),
           ),
           settings: settings,
         );

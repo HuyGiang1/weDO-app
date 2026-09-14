@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Objects;
 
 @Entity
 @Table(name = "group_settings")
@@ -65,4 +66,29 @@ public class GroupSettingsEntity {
     public boolean isMemberCreateActivityAllowed() { return memberCreateActivityAllowed; }
     public boolean isMemberPinMessageAllowed() { return memberPinMessageAllowed; }
     public ChatHistoryPolicy getChatHistoryPolicy() { return chatHistoryPolicy; }
+    public Instant getUpdatedAt() { return updatedAt; }
+
+    public boolean update(
+            GroupJoinPolicy joinPolicy,
+            boolean memberModifyInfoAllowed,
+            boolean memberCreateActivityAllowed,
+            boolean memberPinMessageAllowed,
+            ChatHistoryPolicy chatHistoryPolicy,
+            Instant now
+    ) {
+        if (this.joinPolicy == joinPolicy
+                && this.memberModifyInfoAllowed == memberModifyInfoAllowed
+                && this.memberCreateActivityAllowed == memberCreateActivityAllowed
+                && this.memberPinMessageAllowed == memberPinMessageAllowed
+                && this.chatHistoryPolicy == chatHistoryPolicy) {
+            return false;
+        }
+        this.joinPolicy = Objects.requireNonNull(joinPolicy);
+        this.memberModifyInfoAllowed = memberModifyInfoAllowed;
+        this.memberCreateActivityAllowed = memberCreateActivityAllowed;
+        this.memberPinMessageAllowed = memberPinMessageAllowed;
+        this.chatHistoryPolicy = Objects.requireNonNull(chatHistoryPolicy);
+        this.updatedAt = now;
+        return true;
+    }
 }

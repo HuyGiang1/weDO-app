@@ -36,6 +36,8 @@ public enum ErrorCode {
     CANNOT_BLOCK_SELF(HttpStatus.BAD_REQUEST, "Cannot block yourself."),
     GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "Group was not found."),
     GROUP_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "Group member was not found."),
+    GROUP_ARCHIVED(HttpStatus.CONFLICT, "Group is archived."),
+    INSUFFICIENT_GROUP_PERMISSION(HttpStatus.FORBIDDEN, "Insufficient group permission."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

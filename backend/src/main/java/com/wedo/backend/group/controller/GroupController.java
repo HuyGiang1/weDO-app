@@ -6,6 +6,9 @@ import com.wedo.backend.group.dto.GroupDetailResponse;
 import com.wedo.backend.group.dto.GroupMemberResponse;
 import com.wedo.backend.group.dto.GroupResponse;
 import com.wedo.backend.group.dto.GroupSummaryResponse;
+import com.wedo.backend.group.dto.GroupSettingsResponse;
+import com.wedo.backend.group.dto.UpdateGroupRequest;
+import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
 import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.service.GroupService;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
@@ -14,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -80,5 +84,31 @@ public class GroupController {
             @PathVariable UUID userId
     ) {
         return ResponseEntity.ok(groupService.getMember(groupId, userId, principal.userId()));
+    }
+
+    @PatchMapping("/{groupId}")
+    public ResponseEntity<GroupDetailResponse> updateGroup(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody UpdateGroupRequest request
+    ) {
+        return ResponseEntity.ok(groupService.updateGroup(groupId, principal.userId(), request));
+    }
+
+    @GetMapping("/{groupId}/settings")
+    public ResponseEntity<GroupSettingsResponse> getSettings(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId
+    ) {
+        return ResponseEntity.ok(groupService.getSettings(groupId, principal.userId()));
+    }
+
+    @PatchMapping("/{groupId}/settings")
+    public ResponseEntity<GroupSettingsResponse> updateSettings(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId,
+            @RequestBody UpdateGroupSettingsRequest request
+    ) {
+        return ResponseEntity.ok(groupService.updateSettings(groupId, principal.userId(), request));
     }
 }

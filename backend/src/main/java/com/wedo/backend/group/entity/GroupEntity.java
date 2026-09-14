@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Objects;
 
 @Entity
 @Table(name = "groups")
@@ -62,4 +63,17 @@ public class GroupEntity {
     public UUID getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    public boolean updateMetadata(String name, String description, String avatarStorageKey, Instant now) {
+        if (Objects.equals(this.name, name)
+                && Objects.equals(this.description, description)
+                && Objects.equals(this.avatarStorageKey, avatarStorageKey)) {
+            return false;
+        }
+        this.name = name;
+        this.description = description;
+        this.avatarStorageKey = avatarStorageKey;
+        this.updatedAt = now;
+        return true;
+    }
 }

@@ -5,6 +5,9 @@ import com.wedo.backend.group.dto.GroupResponse;
 import com.wedo.backend.group.dto.GroupDetailResponse;
 import com.wedo.backend.group.dto.GroupMemberResponse;
 import com.wedo.backend.group.dto.GroupSummaryResponse;
+import com.wedo.backend.group.dto.GroupSettingsResponse;
+import com.wedo.backend.group.dto.UpdateGroupRequest;
+import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
 import com.wedo.backend.group.entity.GroupActivityAction;
 import com.wedo.backend.group.entity.GroupActivityLogEntity;
 import com.wedo.backend.group.entity.GroupEntity;
@@ -120,5 +123,61 @@ public class GroupService {
         return groupMembershipRepository.findActiveMemberResponseByGroupIdAndUserId(groupId, targetUserId)
                 .map(GroupMemberResponse::from)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_MEMBER_NOT_FOUND));
+    }
+
+    @Transactional
+    public GroupDetailResponse updateGroup(UUID groupId, UUID callerUserId, UpdateGroupRequest request) {
+        ReadableGroupAccess access = groupPermissionService.requireAdminOrOwner(groupId, callerUserId);
+        GroupEntity group = access.group();
+        String name = request.name() == null ? group.getName() : requireNonBlankName(request.name());
+        String description = request.description() == null ? group.getDescription() : clearIfBlank(request.description());
+        String avatarStorageKey = request.avatarStorageKey() == null ? group.getAvatarStorageKey() : clearIfBlank(request.avatarStorageKey());
+        group.updateMetadata(name, description, avatarStorageKey, clock.instant());
+        return detailResponse(group, access.membership().getRole());
+    }
+
+    @Transactional(readOnly = true)
+    public GroupSettingsResponse getSettings(UUID groupId, UUID callerUserId) {
+        groupPermissionService.requireReadableMembership(groupId, callerUserId);
+        return GroupSettingsResponse.from(requireSettings(groupId));
+    }
+
+    @Transactional
+    public GroupSettingsResponse updateSettings(UUID groupId, UUID callerUserId, UpdateGroupSettingsRequest request) {
+        groupPermissionService.requireOwner(groupId, callerUserId);
+        GroupSettingsEntity settings = requireSettings(groupId);
+        settings.update(
+                request.joinPolicy() == null ? settings.getJoinPolicy() : request.joinPolicy(),
+                request.memberModifyInfoAllowed() == null ? settings.isMemberModifyInfoAllowed() : request.memberModifyInfoAllowed(),
+                request.memberCreateActivityAllowed() == null ? settings.isMemberCreateActivityAllowed() : request.memberCreateActivityAllowed(),
+                request.memberPinMessageAllowed() == null ? settings.isMemberPinMessageAllowed() : request.memberPinMessageAllowed(),
+                request.chatHistoryPolicy() == null ? settings.getChatHistoryPolicy() : request.chatHistoryPolicy(),
+                clock.instant()
+        );
+        return GroupSettingsResponse.from(settings);
+    }
+
+    private GroupDetailResponse detailResponse(GroupEntity group, GroupRole callerRole) {
+        UUID ownerUserId = groupMembershipRepository
+                .findFirstByGroupIdAndRoleAndStatus(group.getId(), GroupRole.OWNER, GroupMembershipStatus.ACTIVE)
+                .map(GroupMembershipEntity::getUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        return GroupDetailResponse.of(group, ownerUserId, callerRole);
+    }
+
+    private GroupSettingsEntity requireSettings(UUID groupId) {
+        return groupSettingsRepository.findById(groupId)
+                .orElseThrow(() -> new IllegalStateException("Group is missing settings"));
+    }
+
+    private String requireNonBlankName(String value) {
+        if (value.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return value;
+    }
+
+    private String clearIfBlank(String value) {
+        return value.isBlank() ? null : value;
     }
 }

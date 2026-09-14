@@ -737,7 +737,7 @@ Taken username:
 - **Still NOT implemented after M2.12:**
   - Real email delivery provider / JavaMailSender / SendGrid / SES.
   - Access-token blacklist, Redis revocation store, or immediate access JWT revocation.
-  - Authenticated change-password endpoint (`POST /api/v1/auth/change-password`, USER-06).
+  - Authenticated change-password endpoint (`POST /api/v1/me/change-password`, USER-06).
   - Session-management REST APIs (list active sessions, revoke session by ID, revoke other sessions, logout-all endpoint).
   - Current-session identification (`sid` JWT claim or refresh response session ID).
   - Cryptographic device binding (DPoP, mTLS, device public keys, hardware keystore proofs).
@@ -1378,12 +1378,15 @@ Verify current password, hash new password and optionally revoke other sessions.
 ### USER-07 Personal QR
 
 `GET /api/v1/me/qr`  
-Returns a stable application/user deep-link value; Flutter may generate the QR bitmap locally. No QR-image table is required.
+Bearer required. Returns `{ "deepLink": "wedo://user/<UUID>" }`, where UUID is the immutable `users.id`. The payload is stable and stateless; Flutter renders it locally and no QR-image table is required. `discoverByQr` does not prevent the owner from obtaining this value.
+
+`POST /api/v1/users/qr/resolve`
+Bearer required. Accepts `{ "deepLink": "wedo://user/<UUID>" }` and returns `UserPublicProfileResponse` only when the caller is ACTIVE and the target is ACTIVE with `discoverByQr=true`. Invalid grammar, unknown/non-ACTIVE targets, and QR discovery disabled all return `404 RESOURCE_NOT_FOUND`; known-ID `GET /api/v1/users/{userId}` remains independent of `discoverByQr`.
 
 ### USER-08 Public Profile
 
 `GET /api/v1/users/{userId}`  
-Returns privacy-filtered public fields, relationship status, mutual group count, messaging/friend-request capability and presence fields if allowed.
+M3 base response is `UserPublicProfileResponse` with exactly `id`, `username`, `displayName`, `avatarStorageKey`, and `bio`. Bearer authentication and ACTIVE caller/target eligibility are required. M4/later may deliberately compose social context such as relationship state, mutual groups, messaging eligibility, or presence; those fields are not implemented in this M3 response.
 
 ### USER-09 Search Users
 

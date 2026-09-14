@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/network/access_token_holder.dart';
 import '../../../core/storage/secure_storage_service.dart';
+import '../../../core/auth/session_invalidation_outcome.dart';
 import '../data/auth_repository.dart';
 
 enum AuthSessionStatus {
@@ -96,5 +97,13 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
     }
     value = AuthSessionStatus.unauthenticated;
     return true;
+  }
+
+  Future<bool> endSessionAfterPasswordChange() async {
+    final outcome = await repository.invalidateLocalSession(expectedRevision: accessTokenHolder.revision);
+    switch (outcome) {
+      case SessionInvalidationSuperseded(): return false;
+      case SessionInvalidationApplied(:final transition): return markUnauthenticatedIfRevision(transition.toRevision);
+    }
   }
 }

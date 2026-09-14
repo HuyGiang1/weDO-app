@@ -11,6 +11,14 @@ import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/reset_password_screen.dart';
 import '../features/auth/presentation/screens/verify_email_screen.dart';
 import '../features/auth/presentation/screens/welcome_screen.dart';
+import '../features/auth/data/models/auth_models.dart';
+import '../features/profile/presentation/screens/profile_screen.dart';
+import '../features/profile/presentation/screens/change_password_screen.dart';
+import '../features/profile/data/profile_models.dart';
+import '../features/privacy/data/privacy_models.dart';
+import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
+import '../features/qr/data/personal_qr.dart';
+import '../features/qr/presentation/screens/personal_qr_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -31,18 +39,54 @@ class ResetPasswordRouteArgs {
   const ResetPasswordRouteArgs({required this.email});
 }
 
+class ProfileRouteArgs {
+  final Future<CurrentUser> Function() loadCurrentUser;
+  final Future<CurrentUser> Function(UpdateProfileRequest request)
+  updateProfile;
+  final Future<CurrentUser> Function(UpdateUsernameRequest request)
+  updateUsername;
+  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<bool> Function() endSessionAfterPasswordChange;
+
+  const ProfileRouteArgs({
+    required this.loadCurrentUser,
+    required this.updateProfile,
+    required this.updateUsername,
+    required this.changePassword,
+    required this.endSessionAfterPasswordChange,
+  });
+}
+class ChangePasswordRouteArgs {
+  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<bool> Function() endSessionAfterPasswordChange;
+  const ChangePasswordRouteArgs({required this.changePassword, required this.endSessionAfterPasswordChange});
+}
+
+class PrivacyRouteArgs {
+  final Future<PrivacySettings> Function() loadPrivacySettings;
+  final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)
+  updatePrivacySettings;
+
+  const PrivacyRouteArgs({
+    required this.loadPrivacySettings,
+    required this.updatePrivacySettings,
+  });
+}
+class PersonalQrRouteArgs {
+  final Future<PersonalQr> Function() loadPersonalQr;
+  const PersonalQrRouteArgs({required this.loadPersonalQr});
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
   final Route<dynamic>? Function(
     RouteSettings settings,
     AuthFlowCoordinator? coordinator,
-  ) builder;
+  )
+  builder;
 
-  const AppRouteDefinition({
-    required this.access,
-    required this.builder,
-  });
+  const AppRouteDefinition({required this.access, required this.builder});
 }
 
 /// Application route definitions, registry, and Navigator 1.0 generator.
@@ -55,6 +99,10 @@ abstract final class AppRoutes {
   static const String resetPassword = '/reset-password';
   static const String createUsername = '/create-username';
   static const String completeProfile = '/complete-profile';
+  static const String profile = '/profile';
+  static const String changePassword = '/profile/change-password';
+  static const String privacy = '/profile/privacy';
+  static const String personalQr = '/profile/qr';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -135,7 +183,8 @@ abstract final class AppRoutes {
         builder: (context) => ForgotPasswordScreen(
           onSubmit: coordinator == null
               ? null
-              : ({required email}) => coordinator.forgotPassword(context, email),
+              : ({required email}) =>
+                    coordinator.forgotPassword(context, email),
           onBack: () => Navigator.of(context).maybePop(),
           onReturnToLogin: () => Navigator.of(context).maybePop(),
           onRequestSuccess: (email) => Navigator.of(context).pushNamed(
@@ -216,6 +265,62 @@ abstract final class AppRoutes {
           ),
           settings: settings,
         );
+      },
+    ),
+    profile: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final loader = settings.arguments;
+        if (loader is! ProfileRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => ProfileScreen(
+            loadCurrentUser: loader.loadCurrentUser,
+            updateProfile: loader.updateProfile,
+            updateUsername: loader.updateUsername,
+            changePassword: loader.changePassword,
+            endSessionAfterPasswordChange: loader.endSessionAfterPasswordChange,
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    changePassword: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ChangePasswordRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => ChangePasswordScreen(
+            changePassword: args.changePassword,
+            endSessionAfterPasswordChange: args.endSessionAfterPasswordChange,
+            onSuccess: () {
+              final messenger = ScaffoldMessenger.of(context);
+              Navigator.of(context).pushNamedAndRemoveUntil(login, (route) => false);
+              messenger.showSnackBar(const SnackBar(content: Text('Password changed. Please sign in again.')));
+            },
+          ), settings: settings);
+      },
+    ),
+    privacy: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! PrivacyRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => PrivacySettingsScreen(
+            loadPrivacySettings: args.loadPrivacySettings,
+            updatePrivacySettings: args.updatePrivacySettings,
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    personalQr: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! PersonalQrRouteArgs) return null;
+        return MaterialPageRoute<void>(builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr), settings: settings);
       },
     ),
   };

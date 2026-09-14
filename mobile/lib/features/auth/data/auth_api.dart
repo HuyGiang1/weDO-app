@@ -131,6 +131,9 @@ class AuthApi {
       data: {'email': email, 'code': code, 'newPassword': newPassword},
     ),
   );
+  Future<void> changePassword({required String currentPassword, required String newPassword}) => _empty(
+    () => dio.post('/api/v1/me/change-password', data: {'currentPassword': currentPassword, 'newPassword': newPassword}),
+  );
   Future<CurrentUser> getCurrentUser() =>
       _call(() => dio.get('/api/v1/me'), CurrentUser.fromJson);
 }

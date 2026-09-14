@@ -148,6 +148,9 @@ class AuthRepository {
       newPassword: newPassword,
     ),
   );
+  Future<void> changePassword({required String currentPassword, required String newPassword}) => _guard(
+    () => api.changePassword(currentPassword: currentPassword, newPassword: newPassword),
+  );
 
   Future<CurrentUser> getCurrentUser() => _guard(api.getCurrentUser);
 

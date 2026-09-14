@@ -149,15 +149,14 @@ class _GroupInfoContent extends StatelessWidget {
           title: Text('Group Settings'),
           trailing: Icon(Icons.chevron_right),
         ),
-        if (group.callerRole != GroupRole.owner)
-          Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: OutlinedButton.icon(
-              onPressed: onLeave,
-              icon: Icon(Icons.logout),
-              label: Text('Leave Group'),
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: OutlinedButton.icon(
+            onPressed: onLeave,
+            icon: const Icon(Icons.logout),
+            label: const Text('Leave Group'),
           ),
+        ),
       ],
     );
   }

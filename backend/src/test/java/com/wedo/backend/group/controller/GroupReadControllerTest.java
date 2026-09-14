@@ -59,6 +59,17 @@ class GroupReadControllerTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.items[1].actorUserId").doesNotExist());
         mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", group).queryParam("size", "101").header("Authorization", bearer(caller))).andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", group).header("Authorization", bearer(other))).andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP_NOT_FOUND"));
+
+        UUID archived = createGroup(caller, GroupStatus.ARCHIVED, Instant.now());
+        addMembership(archived, caller, GroupRole.MEMBER, GroupMembershipStatus.ACTIVE, Instant.now());
+        groupActivityLogRepository.saveAndFlush(new GroupActivityLogEntity(UUID.randomUUID(), archived, caller, GroupActivityAction.GROUP_UPDATED, Instant.now()));
+        mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", archived).header("Authorization", bearer(caller)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(1));
+
+        UUID deleted = createGroup(caller, GroupStatus.DELETED, Instant.now());
+        addMembership(deleted, caller, GroupRole.MEMBER, GroupMembershipStatus.ACTIVE, Instant.now());
+        mockMvc.perform(get("/api/v1/groups/{groupId}/activity-logs", deleted).header("Authorization", bearer(caller)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("GROUP_NOT_FOUND"));
     }
 
     @Test

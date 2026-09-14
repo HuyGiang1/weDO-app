@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
 import 'package:mobile/app/routes.dart';
 import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/auth/presentation/auth_flow_coordinator.dart';
 import 'package:mobile/features/auth/presentation/screens/create_username_screen.dart';
 import 'package:mobile/features/auth/presentation/screens/verify_email_screen.dart';
 import 'package:mobile/features/auth/data/models/auth_models.dart';
+import 'package:mobile/features/groups/data/group_api.dart';
+import 'package:mobile/features/groups/data/group_repository.dart';
+import 'package:mobile/features/groups/data/models/group_models.dart';
 
 void main() {
   group('AppRoutes Registry', () {
@@ -586,4 +590,169 @@ void main() {
       expect(builderInvocations, 1);
     });
   });
+
+  group('M5 typed protected group routes', () {
+    final protected = <String>[
+      AppRoutes.groups,
+      AppRoutes.createGroup,
+      AppRoutes.groupInfo,
+      AppRoutes.editGroup,
+      AppRoutes.groupMembers,
+      AppRoutes.memberManagement,
+      AppRoutes.groupPermissions,
+      AppRoutes.groupAdmins,
+      AppRoutes.transferOwnership,
+    ];
+
+    test('all M5 group routes are denied before their builders for guests', () {
+      final repository = _RouteGroupRepository();
+      for (final name in protected) {
+        final arguments = _groupRouteArgs(name, repository);
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(name: name, arguments: arguments),
+            authStatus: AuthSessionStatus.unauthenticated,
+          ),
+          isNull,
+          reason: '$name must remain AuthRouteGuard-protected',
+        );
+      }
+    });
+
+    test('M5 group routes fail closed for missing, wrong, or blank arguments', () {
+      final repository = _RouteGroupRepository();
+      for (final name in protected) {
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(name: name),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(name: name, arguments: 'wrong'),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+        if (name != AppRoutes.groups && name != AppRoutes.createGroup) {
+          final blank = name == AppRoutes.memberManagement
+              ? GroupMemberRouteArgs(
+                  repository: repository,
+                  groupId: '',
+                  userId: 'user-id',
+                )
+              : GroupInfoRouteArgs(repository: repository, groupId: '');
+          expect(
+            AppRoutes.onGenerateRoute(
+              RouteSettings(name: name, arguments: blank),
+              authStatus: AuthSessionStatus.authenticated,
+            ),
+            isNull,
+          );
+        }
+      }
+    });
+
+    testWidgets('typed arguments reach M5 route controllers unchanged', (
+      tester,
+    ) async {
+      final repository = _RouteGroupRepository();
+      final expectedCalls = <String, List<String>>{
+        AppRoutes.groupInfo: ['group:group-id', 'members:group-id'],
+        AppRoutes.editGroup: ['group:group-id'],
+        AppRoutes.groupMembers: ['members:group-id'],
+        AppRoutes.memberManagement: ['group:group-id', 'member:group-id:user-id'],
+        AppRoutes.groupPermissions: ['group:group-id', 'settings:group-id'],
+        AppRoutes.groupAdmins: ['group:group-id', 'members:group-id'],
+        AppRoutes.transferOwnership: ['group:group-id', 'members:group-id'],
+      };
+      for (final entry in expectedCalls.entries) {
+        repository.calls.clear();
+        final arguments = entry.key == AppRoutes.memberManagement
+            ? GroupMemberRouteArgs(
+                repository: repository,
+                groupId: 'group-id',
+                userId: 'user-id',
+              )
+            : GroupInfoRouteArgs(repository: repository, groupId: 'group-id');
+        final route = AppRoutes.onGenerateRoute(
+          RouteSettings(name: entry.key, arguments: arguments),
+          authStatus: AuthSessionStatus.authenticated,
+        )! as MaterialPageRoute<void>;
+        await tester.pumpWidget(MaterialApp(home: Builder(builder: route.builder)));
+        await tester.pumpAndSettle();
+        expect(repository.calls, entry.value, reason: entry.key);
+      }
+    });
+  });
+}
+
+class _RouteGroupRepository extends GroupRepository {
+  _RouteGroupRepository() : super(api: GroupApi(Dio()));
+  final List<String> calls = [];
+  @override
+  Future<GroupDetail> getGroup(String id) async {
+    calls.add('group:$id');
+    return _detail();
+  }
+
+  @override
+  Future<List<GroupMember>> getMembers(String id) async {
+    calls.add('members:$id');
+    return [_member('user-id')];
+  }
+
+  @override
+  Future<GroupMember> getMember(String id, String userId) async {
+    calls.add('member:$id:$userId');
+    return _member(userId);
+  }
+
+  @override
+  Future<GroupSettings> getSettings(String id) async {
+    calls.add('settings:$id');
+    return GroupSettings(
+      groupId: id,
+      joinPolicy: GroupJoinPolicy.autoJoin,
+      memberModifyInfoAllowed: false,
+      memberCreateActivityAllowed: false,
+      memberPinMessageAllowed: false,
+      chatHistoryPolicy: ChatHistoryPolicy.fullHistory,
+      updatedAt: DateTime(2026),
+    );
+  }
+}
+
+GroupDetail _detail() => GroupDetail(
+  id: 'group-id',
+  name: 'Group',
+  status: GroupStatus.active,
+  ownerUserId: 'owner',
+  callerRole: GroupRole.owner,
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+);
+
+GroupMember _member(String id) => GroupMember(
+  userId: id,
+  username: id,
+  displayName: id,
+  role: GroupRole.member,
+  joinedAt: DateTime(2026),
+);
+
+Object _groupRouteArgs(String name, GroupRepository repository) {
+  if (name == AppRoutes.groups || name == AppRoutes.createGroup) {
+    return GroupsRouteArgs(repository: repository);
+  }
+  if (name == AppRoutes.memberManagement) {
+    return GroupMemberRouteArgs(
+      repository: repository,
+      groupId: 'group-id',
+      userId: 'user-id',
+    );
+  }
+  return GroupInfoRouteArgs(repository: repository, groupId: 'group-id');
 }

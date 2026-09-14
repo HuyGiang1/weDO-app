@@ -442,18 +442,23 @@ abstract final class AppRoutes {
           return null;
         }
         return MaterialPageRoute<void>(
-          builder: (context) => GroupInfoScreen(
-            groupId: args.groupId,
-            controller: GroupDetailController(args.repository),
-            onEdit: () =>
-                Navigator.of(context).pushNamed(editGroup, arguments: args),
-            onMembers: () =>
-                Navigator.of(context).pushNamed(groupMembers, arguments: args),
-            onSettings: () =>
-                Navigator.of(context)
-                    .pushNamed(groupPermissions, arguments: args),
-            onLeave: () => Navigator.of(context).pop(),
-          ),
+          builder: (context) {
+            final detail = GroupDetailController(args.repository);
+            return GroupInfoScreen(
+              groupId: args.groupId,
+              controller: detail,
+              onEdit: () => Navigator.of(context)
+                  .pushNamed(editGroup, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onMembers: () => Navigator.of(context)
+                  .pushNamed(groupMembers, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onSettings: () => Navigator.of(context)
+                  .pushNamed(groupPermissions, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onLeave: () => Navigator.of(context).pop(true),
+            );
+          },
           settings: settings,
         );
       },
@@ -462,7 +467,7 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final a = settings.arguments;
-        if (a is! GroupInfoRouteArgs) return null;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
           builder: (_) => EditGroupScreen(
             groupId: a.groupId,
@@ -476,7 +481,7 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final a = settings.arguments;
-        if (a is! GroupInfoRouteArgs) return null;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
           builder: (context) {
             final members = GroupMembersController(a.repository);
@@ -512,7 +517,7 @@ abstract final class AppRoutes {
             groupId: a.groupId,
             userId: a.userId,
             controller: MemberManagementController(a.repository),
-            onKicked: () => Navigator.of(context).pop(),
+            onKicked: () => Navigator.of(context).pop(true),
           ),
           settings: settings,
         );
@@ -522,17 +527,21 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final a = settings.arguments;
-        if (a is! GroupInfoRouteArgs) return null;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
-          builder: (context) => GroupPermissionsScreen(
-            groupId: a.groupId,
-            controller: GroupPermissionsController(a.repository),
-            onAdmins: () =>
-                Navigator.of(context).pushNamed(groupAdmins, arguments: a),
-            onTransfer: () =>
-                Navigator.of(context)
-                    .pushNamed(transferOwnership, arguments: a),
-          ),
+          builder: (context) {
+            final permissions = GroupPermissionsController(a.repository);
+            return GroupPermissionsScreen(
+              groupId: a.groupId,
+              controller: permissions,
+              onAdmins: () => Navigator.of(context)
+                  .pushNamed(groupAdmins, arguments: a)
+                  .whenComplete(() => permissions.load(a.groupId)),
+              onTransfer: () => Navigator.of(context)
+                  .pushNamed(transferOwnership, arguments: a)
+                  .whenComplete(() => permissions.load(a.groupId)),
+            );
+          },
           settings: settings,
         );
       },
@@ -541,7 +550,7 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final a = settings.arguments;
-        if (a is! GroupInfoRouteArgs) return null;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
           builder: (_) => GroupAdminManagementScreen(
             groupId: a.groupId,
@@ -555,12 +564,12 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final a = settings.arguments;
-        if (a is! GroupInfoRouteArgs) return null;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
           builder: (context) => TransferOwnershipScreen(
             groupId: a.groupId,
             controller: TransferOwnershipController(a.repository),
-            onTransferred: (_) => Navigator.of(context).pop(),
+            onTransferred: (detail) => Navigator.of(context).pop(detail),
           ),
           settings: settings,
         );

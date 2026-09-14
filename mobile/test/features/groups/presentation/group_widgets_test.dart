@@ -109,10 +109,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
     expect(find.text('Groups'), findsOneWidget);
-    expect(find.text('Leave Group'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
+    expect(find.text('Leave Group'), findsOneWidget);
   });
 
-  testWidgets('Group Info shows Leave only for non-owner callers', (
+  testWidgets('Group Info shows Leave for non-owner callers', (
     tester,
   ) async {
     final controller = GroupDetailController(
@@ -136,7 +137,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Leave Group'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
+    expect(find.text('Leave Group'), findsOneWidget);
   });
 
   testWidgets('Create Group validates the required name before submission', (

@@ -30,7 +30,7 @@ class UserAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.backgroundGradientEnd,
+      backgroundColor: AppColors.surfaceContainerHigh,
       child: Text(
         _getInitials(),
         style: AppTextStyles.label.copyWith(

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Block User - WeDo</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-high": "#e6e8ea",
+                        "inverse-surface": "#2d3133",
+                        "on-primary-fixed": "#25005a",
+                        "primary": "#630ed4",
+                        "secondary-fixed": "#62fae3",
+                        "secondary-container": "#62fae3",
+                        "on-error": "#ffffff",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7d3d00",
+                        "on-surface-variant": "#4a4455",
+                        "tertiary-fixed": "#ffdcc6",
+                        "primary-container": "#7c3aed",
+                        "on-primary-container": "#ede0ff",
+                        "surface-bright": "#f7f9fb",
+                        "on-tertiary-container": "#ffe0cd",
+                        "background": "#f7f9fb",
+                        "surface-container-low": "#f2f4f6",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-tint": "#732ee4",
+                        "on-secondary-container": "#007165",
+                        "tertiary-container": "#a15100",
+                        "on-secondary-fixed-variant": "#005047",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#eaddff",
+                        "on-surface": "#191c1e",
+                        "secondary": "#006b5f",
+                        "surface-container": "#eceef0",
+                        "primary-fixed-dim": "#d2bbff",
+                        "inverse-primary": "#d2bbff",
+                        "secondary-fixed-dim": "#3cddc7",
+                        "on-error-container": "#93000a",
+                        "surface-dim": "#d8dadc",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "outline": "#7b7487",
+                        "outline-variant": "#ccc3d8",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "on-secondary-fixed": "#00201c",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e0e3e5",
+                        "on-tertiary-fixed": "#301400",
+                        "surface": "#f7f9fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "16px",
+                        "lg": "32px",
+                        "xl": "48px",
+                        "base": "4px",
+                        "md": "24px",
+                        "xs": "8px",
+                        "margin-mobile": "20px",
+                        "gutter-mobile": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-md": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "label-sm": [
+                            "Inter"
+                        ],
+                        "label-md": [
+                            "Inter"
+                        ],
+                        "headline-lg-mobile": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "display": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "headline-lg": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "body-lg": [
+                            "Inter"
+                        ],
+                        "body-md": [
+                            "Inter"
+                        ]
+                    },
+                    "fontSize": {
+                        "headline-md": [
+                            "24px",
+                            {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                            }
+                        ],
+                        "label-sm": [
+                            "12px",
+                            {
+                                "lineHeight": "16px",
+                                "fontWeight": "500"
+                            }
+                        ],
+                        "label-md": [
+                            "14px",
+                            {
+                                "lineHeight": "20px",
+                                "fontWeight": "600"
+                            }
+                        ],
+                        "headline-lg-mobile": [
+                            "28px",
+                            {
+                                "lineHeight": "34px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "display": [
+                            "40px",
+                            {
+                                "lineHeight": "48px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "800"
+                            }
+                        ],
+                        "headline-lg": [
+                            "32px",
+                            {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-lg": [
+                            "18px",
+                            {
+                                "lineHeight": "28px",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "body-md": [
+                            "16px",
+                            {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .backdrop-blur-layer {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+
+<body
+    class="bg-background text-on-background antialiased min-h-screen relative flex items-center justify-center font-body-md overflow-hidden">
+    <!-- Mock Background Content to give context -->
+    <div class="absolute inset-0 z-0 opacity-40 select-none pointer-events-none p-margin-mobile flex flex-col gap-sm">
+        <header
+            class="flex items-center justify-between w-full max-w-7xl mx-auto top-0 sticky bg-surface px-margin-mobile py-xs z-10 flat no shadows">
+            <div class="flex items-center gap-sm">
+                <img class="w-10 h-10 rounded-full object-cover"
+                    data-alt="A small circular profile picture of a young professional wearing casual tech attire against a light gray background, bright and optimistic mood. High quality lifestyle photography."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCciQ0BcgsufqVpeICD_w_xM3-u2Tezz6bD3kKZWy0JDs7BeQ52sBG4ctffI9t5JZtjATjMPsXV2rE3gYEqybZPf1-y6rtfjUGxZAsJbt9lRh9qKUFGySB1fbvV3UoZ85xiRCKa7e5p6n8DzT6N3TGfSTNEFYpb4xPdf8Bwa1wRgn6u8ntXZq4y3GDbTGPwAWTtsd3-wrFQGtvP3CKyc1Ri6CkgMdLrR9MmpjpuZYygKXjoxfyArv00aw">
+            </div>
+            <span class="font-headline-md text-headline-md-mobile text-primary font-bold">WeDo</span>
+            <button
+                class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+            </button>
+        </header>
+        <div class="flex flex-col gap-sm mt-md w-full max-w-md mx-auto">
+            <div class="h-48 w-full bg-surface-container rounded-[24px]"></div>
+            <div class="h-32 w-full bg-surface-container rounded-[24px]"></div>
+            <div class="h-64 w-full bg-surface-container rounded-[24px]"></div>
+        </div>
+    </div>
+    <!-- Overlay Layer: Bottom Sheet / Modal for Blocking User -->
+    <div
+        class="fixed inset-0 z-50 flex flex-col justify-end md:justify-center items-center backdrop-blur-layer bg-on-background/20 transition-opacity duration-300">
+        <!-- Bottom Sheet (Mobile) / Modal (Desktop) Container -->
+        <div
+            class="w-full max-w-md bg-surface rounded-t-[24px] md:rounded-[24px] shadow-[0_-4px_20px_0_rgba(99,14,212,0.04)] md:shadow-[0_8px_30px_0_rgba(99,14,212,0.08)] flex flex-col transform transition-transform duration-300 translate-y-0">
+            <!-- Handle for mobile visual cue -->
+            <div class="w-full flex justify-center pt-xs pb-sm md:hidden">
+                <div class="w-12 h-1.5 bg-surface-variant rounded-full"></div>
+            </div>
+            <!-- Content Area -->
+            <div class="px-margin-mobile pt-sm md:pt-md pb-md flex flex-col gap-lg">
+                <!-- Header & Icon -->
+                <div class="flex flex-col items-center text-center gap-xs">
+                    <div
+                        class="w-16 h-16 rounded-full bg-error-container flex items-center justify-center mb-xs text-error">
+                        <span class="material-symbols-outlined" data-icon="block" style="font-size: 32px;">block</span>
+                    </div>
+                    <h2 class="font-headline-md text-headline-md-mobile md:text-headline-md text-on-surface">Block User
+                    </h2>
+                    <p class="font-body-md text-body-md text-on-surface-variant max-w-[280px]">
+                        Are you sure you want to block <span class="font-bold text-on-surface">Alex Mercer</span>?
+                    </p>
+                </div>
+                <!-- Informational List -->
+                <div class="bg-surface-container-low rounded-xl p-sm flex flex-col gap-sm">
+                    <div class="flex items-start gap-xs">
+                        <span class="material-symbols-outlined text-on-surface-variant" data-icon="person_remove"
+                            style="font-size: 20px;">person_remove</span>
+                        <div class="flex flex-col">
+                            <span class="font-label-md text-label-md text-on-surface">Removes Friendship</span>
+                            <span class="font-label-sm text-label-sm text-outline">You will no longer be friends.</span>
+                        </div>
+                    </div>
+                    <div class="h-px w-full bg-surface-variant"></div>
+                    <div class="flex items-start gap-xs">
+                        <span class="material-symbols-outlined text-on-surface-variant" data-icon="speaker_notes_off"
+                            style="font-size: 20px;">speaker_notes_off</span>
+                        <div class="flex flex-col">
+                            <span class="font-label-md text-label-md text-on-surface">Blocks Direct Messages</span>
+                            <span class="font-label-sm text-label-sm text-outline">They cannot message you
+                                directly.</span>
+                        </div>
+                    </div>
+                    <div class="h-px w-full bg-surface-variant"></div>
+                    <div class="flex items-start gap-xs">
+                        <span class="material-symbols-outlined text-on-surface-variant" data-icon="info"
+                            style="font-size: 20px;">info</span>
+                        <div class="flex flex-col">
+                            <span class="font-label-md text-label-md text-on-surface">Group Context</span>
+                            <span class="font-label-sm text-label-sm text-outline">Shared group content might still be
+                                visible.</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Actions -->
+                <div class="flex flex-col gap-xs w-full mt-xs">
+                    <button
+                        class="w-full bg-error text-on-error font-label-md text-label-md py-sm rounded-full flex items-center justify-center gap-xs active:scale-95 transition-transform duration-200 hover:opacity-90">
+                        <span class="material-symbols-outlined" data-icon="block" data-weight="fill"
+                            style="font-variation-settings: 'FILL' 1; font-size: 18px;">block</span>
+                        Block User
+                    </button>
+                    <button
+                        class="w-full bg-surface text-on-surface font-label-md text-label-md py-sm rounded-full active:scale-95 transition-transform duration-200 hover:bg-surface-container-low border border-outline-variant">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Navigation Suppressed intentionally per rules for transactional/task-focused modal views -->
+</body>
+
+</html>

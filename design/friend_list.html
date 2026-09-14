@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Friend Requests - WeDo</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-high": "#e6e8ea",
+                        "inverse-surface": "#2d3133",
+                        "on-primary-fixed": "#25005a",
+                        "primary": "#630ed4",
+                        "secondary-fixed": "#62fae3",
+                        "secondary-container": "#62fae3",
+                        "on-error": "#ffffff",
+                        "error": "#ba1a1a",
+                        "tertiary": "#7d3d00",
+                        "on-surface-variant": "#4a4455",
+                        "tertiary-fixed": "#ffdcc6",
+                        "primary-container": "#7c3aed",
+                        "on-primary-container": "#ede0ff",
+                        "surface-bright": "#f7f9fb",
+                        "on-tertiary-container": "#ffe0cd",
+                        "background": "#f7f9fb",
+                        "surface-container-low": "#f2f4f6",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-tint": "#732ee4",
+                        "on-secondary-container": "#007165",
+                        "tertiary-container": "#a15100",
+                        "on-secondary-fixed-variant": "#005047",
+                        "error-container": "#ffdad6",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#eaddff",
+                        "on-surface": "#191c1e",
+                        "secondary": "#006b5f",
+                        "surface-container": "#eceef0",
+                        "primary-fixed-dim": "#d2bbff",
+                        "inverse-primary": "#d2bbff",
+                        "secondary-fixed-dim": "#3cddc7",
+                        "on-error-container": "#93000a",
+                        "surface-dim": "#d8dadc",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "outline": "#7b7487",
+                        "outline-variant": "#ccc3d8",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "on-secondary-fixed": "#00201c",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e0e3e5",
+                        "on-tertiary-fixed": "#301400",
+                        "surface": "#f7f9fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sm": "16px",
+                        "lg": "32px",
+                        "xl": "48px",
+                        "base": "4px",
+                        "md": "24px",
+                        "xs": "8px",
+                        "margin-mobile": "20px",
+                        "gutter-mobile": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "label-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "display": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 20px 0 rgba(99, 14, 212, 0.04);
+        }
+
+        .tab-active {
+            border-bottom: 2px solid theme('colors.primary');
+            color: theme('colors.primary');
+        }
+
+        .tab-inactive {
+            color: theme('colors.on-surface-variant');
+        }
+    </style>
+</head>
+
+<body class="bg-surface text-on-surface antialiased min-h-screen flex flex-col">
+    <!-- TopAppBar -->
+    <header class="w-full top-0 sticky bg-surface dark:bg-on-background flat no shadows z-50">
+        <div class="flex items-center justify-between px-margin-mobile py-xs w-full max-w-7xl mx-auto z-50">
+            <button
+                class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors active:scale-95 duration-200">
+                <img class="w-8 h-8 rounded-full object-cover border-2 border-surface-container-lowest"
+                    data-alt="A detailed headshot of a young adult with a bright, welcoming smile. The lighting is soft and natural, emphasizing a youthful maturity. The background is a clean, minimal white space, adhering to the premium lifestyle aesthetic of the application."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNnQze0uXp5fSmonJyDq7olIdJZ7PgtBiYkuyRQzUbAKgze3oT20NNQEAXk5DCpATup2Junc0v6kijRnq5a5YTJ9pe5ElHkyWKardMfUq5FKnG0PFUw3pLEOjUoNrmNgwuWm4RtPe9XydUEu3P5MX67RC4NQBxJpbQJ7rJ1ACi5NGmSYgXoYpUIe-9Bwrgextep8ONCzHPkO-oEE8NJ6cq1hMLK9DoKRZ-xL_HiuLUQwmPHmk-mhK8cQ">
+            </button>
+            <div class="font-headline-md text-headline-md text-primary dark:text-primary-fixed-dim font-bold">
+                WeDo
+            </div>
+            <button
+                class="flex items-center justify-center p-2 rounded-full hover:bg-surface-container-low dark:hover:bg-inverse-surface transition-colors active:scale-95 duration-200 text-on-surface-variant dark:text-surface-variant">
+                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+            </button>
+        </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="flex-grow w-full max-w-2xl mx-auto px-margin-mobile pt-sm pb-24 md:pb-lg flex flex-col gap-lg">
+        <!-- Header & Tabs -->
+        <section class="flex flex-col gap-sm">
+            <h1
+                class="font-headline-lg-mobile text-headline-lg-mobile md:font-headline-lg md:text-headline-lg text-on-surface">
+                Friend Requests</h1>
+            <div class="flex border-b border-surface-container-high">
+                <button class="flex-1 py-3 text-center font-label-md text-label-md tab-active transition-colors"
+                    id="tab-received">
+                    Received (3)
+                </button>
+                <button
+                    class="flex-1 py-3 text-center font-label-md text-label-md tab-inactive transition-colors hover:text-primary hover:bg-surface-container-low"
+                    id="tab-sent">
+                    Sent (2)
+                </button>
+            </div>
+        </section>
+        <!-- Received Requests List -->
+        <section class="flex flex-col gap-sm" id="list-received">
+            <!-- Request Item 1 -->
+            <div
+                class="glass-card rounded-xl p-sm flex items-center justify-between gap-sm transition-transform active:scale-98">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                    <img class="w-12 h-12 rounded-full object-cover"
+                        data-alt="A portrait of a young woman with curly hair, wearing a stylish minimalist jacket, set against a bright, airy coffee shop background. The photo is high-quality, embodying a clean, modern aesthetic suitable for a premium social app."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJE7dOEdY1VGHZscgVciIlOclZA4MWqadiGPNLB4f64uIRdzqEYBVX0L8Hu2fE9o1Os2hm1tvcl-uKACH6DEKh2MxAj_crpdP0G6sK0IFr8P5y2WOnBWNPM2ePwzG6Ap56ql_S_qPvusPdk-oRjrtetljMVYXuRSqftGcDQhWs5csSU5NzCTQ2704vHHAtkz0vGqyaFSYhowxsiKsWFEd-YkTmUlPYsi1nsD8ybb6g8LfDIpmWStY7eA">
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label-md text-label-md text-on-surface truncate">Sarah Jenkins</span>
+                        <span class="font-body-md text-body-md text-on-surface-variant text-sm truncate">Wants to join
+                            'Weekend Hikers'</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                    <button
+                        class="font-label-md text-label-md text-on-surface-variant px-3 py-2 rounded-full hover:bg-surface-container-high transition-colors">
+                        Decline
+                    </button>
+                    <button
+                        class="font-label-md text-label-md bg-primary text-on-primary px-4 py-2 rounded-full hover:opacity-90 active:scale-95 transition-all shadow-sm">
+                        Accept
+                    </button>
+                </div>
+            </div>
+            <!-- Request Item 2 -->
+            <div
+                class="glass-card rounded-xl p-sm flex items-center justify-between gap-sm transition-transform active:scale-98">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                    <img class="w-12 h-12 rounded-full object-cover"
+                        data-alt="A portrait of a young man with a slight stubble, wearing a casual grey t-shirt, set against a softly blurred urban park background. The image is brightly lit, clean, and focuses on a friendly, approachable expression."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuANBz2a6T1JuCGo8hWgbc0LBTkipefmVf3SBG8e7ewoMaUMLauLIqToI5z-mYe2F1jM5OXyRm1du2D397TNgfoU7RRmpM9eOBH17W5Qm_kS8V70d_7SPvUX2pnMZJB8n1Xy5XOwELjwdlDelammo_cTX8mroRSTyqq8xxNWNiFmCSec1aqdSkczzdca8RmN5CE75RHDYGySmMmuFHG_wrAofrZ8NVzcR7KNhT3vjS9pphqLbFsBFPUf4Q">
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label-md text-label-md text-on-surface truncate">Michael Chen</span>
+                        <span class="font-body-md text-body-md text-on-surface-variant text-sm truncate">Mutual friend:
+                            Alex</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                    <button
+                        class="font-label-md text-label-md text-on-surface-variant px-3 py-2 rounded-full hover:bg-surface-container-high transition-colors">
+                        Decline
+                    </button>
+                    <button
+                        class="font-label-md text-label-md bg-primary text-on-primary px-4 py-2 rounded-full hover:opacity-90 active:scale-95 transition-all shadow-sm">
+                        Accept
+                    </button>
+                </div>
+            </div>
+            <!-- Request Item 3 -->
+            <div
+                class="glass-card rounded-xl p-sm flex items-center justify-between gap-sm transition-transform active:scale-98">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                    <div
+                        class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center text-primary font-headline-md text-headline-md">
+                        EJ
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label-md text-label-md text-on-surface truncate">Emma Johnson</span>
+                        <span class="font-body-md text-body-md text-on-surface-variant text-sm truncate">From 'Design
+                            Meetup'</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                    <button
+                        class="font-label-md text-label-md text-on-surface-variant px-3 py-2 rounded-full hover:bg-surface-container-high transition-colors">
+                        Decline
+                    </button>
+                    <button
+                        class="font-label-md text-label-md bg-primary text-on-primary px-4 py-2 rounded-full hover:opacity-90 active:scale-95 transition-all shadow-sm">
+                        Accept
+                    </button>
+                </div>
+            </div>
+        </section>
+        <!-- Sent Requests List (Hidden by default) -->
+        <section class="hidden flex-col gap-sm" id="list-sent">
+            <!-- Sent Item 1 -->
+            <div
+                class="glass-card rounded-xl p-sm flex items-center justify-between gap-sm transition-transform active:scale-98">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                    <img class="w-12 h-12 rounded-full object-cover"
+                        data-alt="A headshot of an older adult with stylish glasses, looking thoughtfully off-camera. The background is a bright, minimal creative studio setting. The lighting is high-key and flattering, aligning with a premium lifestyle brand."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOiPI3MdgZw5WFk-lboeWwt4msBxkBQUca1woaGqfbFBHIdNmxoaAhtdIpPAKz1tMU4_IBoLgfuHLlcRJYrJ1MIcpOOOnV-jkkepFAmgCvdgaYsMo_2HVlnFmiv5kPbKMbv4DmfWBuB7TydrDnBSoPnAKsi3yoqE0wgG5XL07aVQs9bb5V4eHnZdLo85xZAtLvIc_IwDGv2soMxR8irjBf571X-Klu2fb6l6lMYHouC5dkEl22CePLcA">
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label-md text-label-md text-on-surface truncate">David Rodriguez</span>
+                        <span class="font-body-md text-body-md text-on-surface-variant text-sm truncate">Requested 2
+                            days ago</span>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <button
+                        class="font-label-md text-label-md text-primary bg-primary/10 px-4 py-2 rounded-full hover:bg-primary/20 transition-colors">
+                        Cancel Request
+                    </button>
+                </div>
+            </div>
+            <!-- Sent Item 2 -->
+            <div
+                class="glass-card rounded-xl p-sm flex items-center justify-between gap-sm transition-transform active:scale-98">
+                <div class="flex items-center gap-sm flex-1 min-w-0">
+                    <img class="w-12 h-12 rounded-full object-cover"
+                        data-alt="A vibrant portrait of a young woman with bright colored hair, laughing naturally. The background is a completely white, seamless studio backdrop to ensure focus remains on the person, fitting a clean, minimalist UI design."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuBLWCUp39BAxmPge3j-I8DqcbQd9mwlxLnXNtSm3Pj7LPk5LrUm-_82Q-mOHEHb9io5xtYoiKmwdSsvFdEL58M8Ip38ryLyu7_ztlRBKS7gEMqcLFnem86GbJ4f-cbV5RrsstkhAKSJ4eG0NJ58QnP6vwnkh88iywpcfNKJgaxQt5vsPm4-ci0aY8Tm9MsuYj6ieO4bqRsK1IcLNaq859beT5CCIG0tMpZrQg-Cwej7-zt1LiODW0qkKw">
+                    <div class="flex flex-col min-w-0">
+                        <span class="font-label-md text-label-md text-on-surface truncate">Chloe Kim</span>
+                        <span class="font-body-md text-body-md text-on-surface-variant text-sm truncate">Requested 1
+                            week ago</span>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <button
+                        class="font-label-md text-label-md text-primary bg-primary/10 px-4 py-2 rounded-full hover:bg-primary/20 transition-colors">
+                        Cancel Request
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+    <!-- BottomNavBar -->
+    <nav
+        class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-xs pb-sm pt-xs bg-surface-container-lowest dark:bg-inverse-surface shadow-[0_-4px_20px_0_rgba(99,14,212,0.04)] shadow-lg rounded-t-xl md:hidden">
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1.5 hover:opacity-80 active:scale-98 transition-transform duration-200">
+            <span class="material-symbols-outlined" data-icon="home">home</span>
+            <span class="font-label-sm text-label-sm mt-1">Home</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-xl px-4 py-1.5 hover:opacity-80 active:scale-98 transition-transform duration-200">
+            <span class="material-symbols-outlined" data-icon="group"
+                style="font-variation-settings: 'FILL' 1;">group</span>
+            <span class="font-label-sm text-label-sm mt-1">Groups</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1.5 hover:opacity-80 active:scale-98 transition-transform duration-200">
+            <span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+            <span class="font-label-sm text-label-sm mt-1">Chat</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1.5 hover:opacity-80 active:scale-98 transition-transform duration-200">
+            <span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+            <span class="font-label-sm text-label-sm mt-1">Calendar</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-4 py-1.5 hover:opacity-80 active:scale-98 transition-transform duration-200">
+            <span class="material-symbols-outlined" data-icon="person">person</span>
+            <span class="font-label-sm text-label-sm mt-1">Profile</span>
+        </button>
+    </nav>
+    <script>
+        // Simple Tab Switching Logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabReceived = document.getElementById('tab-received');
+            const tabSent = document.getElementById('tab-sent');
+            const listReceived = document.getElementById('list-received');
+            const listSent = document.getElementById('list-sent');
+
+            function switchTab(activeTab, inactiveTab, activeList, inactiveList) {
+                activeTab.classList.add('tab-active');
+                activeTab.classList.remove('tab-inactive', 'hover:text-primary', 'hover:bg-surface-container-low');
+
+                inactiveTab.classList.remove('tab-active');
+                inactiveTab.classList.add('tab-inactive', 'hover:text-primary', 'hover:bg-surface-container-low');
+
+                activeList.classList.remove('hidden');
+                activeList.classList.add('flex');
+
+                inactiveList.classList.add('hidden');
+                inactiveList.classList.remove('flex');
+            }
+
+            tabReceived.addEventListener('click', () => {
+                switchTab(tabReceived, tabSent, listReceived, listSent);
+            });
+
+            tabSent.addEventListener('click', () => {
+                switchTab(tabSent, tabReceived, listSent, listReceived);
+            });
+        });
+    </script>
+</body>
+
+</html>

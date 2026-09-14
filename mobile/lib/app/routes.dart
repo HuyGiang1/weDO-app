@@ -1,3 +1,5 @@
+// ignore_for_file: curly_braces_in_flow_control_structures
+
 import 'package:flutter/material.dart';
 
 import 'auth_route_guard.dart';
@@ -19,6 +21,17 @@ import '../features/privacy/data/privacy_models.dart';
 import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
 import '../features/qr/data/personal_qr.dart';
 import '../features/qr/presentation/screens/personal_qr_screen.dart';
+import '../features/groups/data/group_repository.dart';
+import '../features/groups/application/groups_controller.dart';
+import '../features/groups/application/create_group_controller.dart';
+import '../features/groups/application/group_detail_controller.dart';
+import '../features/groups/application/group_activity_log_controller.dart';
+import '../features/groups/presentation/screens/my_groups_screen.dart';
+import '../features/groups/presentation/screens/create_group_screen.dart';
+import '../features/groups/presentation/screens/group_info_screen.dart';
+import '../features/groups/presentation/screens/group_activity_log_screen.dart';
+import '../features/groups/application/group_management_controllers.dart';
+import '../features/groups/presentation/screens/group_management_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -45,7 +58,11 @@ class ProfileRouteArgs {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
-  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })
+  changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
 
   const ProfileRouteArgs({
@@ -56,10 +73,18 @@ class ProfileRouteArgs {
     required this.endSessionAfterPasswordChange,
   });
 }
+
 class ChangePasswordRouteArgs {
-  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })
+  changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
-  const ChangePasswordRouteArgs({required this.changePassword, required this.endSessionAfterPasswordChange});
+  const ChangePasswordRouteArgs({
+    required this.changePassword,
+    required this.endSessionAfterPasswordChange,
+  });
 }
 
 class PrivacyRouteArgs {
@@ -72,9 +97,31 @@ class PrivacyRouteArgs {
     required this.updatePrivacySettings,
   });
 }
+
 class PersonalQrRouteArgs {
   final Future<PersonalQr> Function() loadPersonalQr;
   const PersonalQrRouteArgs({required this.loadPersonalQr});
+}
+
+class GroupsRouteArgs {
+  final GroupRepository repository;
+  const GroupsRouteArgs({required this.repository});
+}
+
+class GroupInfoRouteArgs {
+  final GroupRepository repository;
+  final String groupId;
+  const GroupInfoRouteArgs({required this.repository, required this.groupId});
+}
+
+class GroupMemberRouteArgs {
+  final GroupRepository repository;
+  final String groupId, userId;
+  const GroupMemberRouteArgs({
+    required this.repository,
+    required this.groupId,
+    required this.userId,
+  });
 }
 
 /// A unified route definition binding access policy to route construction.
@@ -103,6 +150,16 @@ abstract final class AppRoutes {
   static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
   static const String personalQr = '/profile/qr';
+  static const String groups = '/groups';
+  static const String createGroup = '/groups/create';
+  static const String groupInfo = '/groups/info';
+  static const String groupActivityLog = '/groups/activity-log';
+  static const String editGroup = '/groups/edit';
+  static const String groupMembers = '/groups/members';
+  static const String memberManagement = '/groups/member-management';
+  static const String groupPermissions = '/groups/permissions';
+  static const String groupAdmins = '/groups/admins';
+  static const String transferOwnership = '/groups/transfer-ownership';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -295,10 +352,17 @@ abstract final class AppRoutes {
             endSessionAfterPasswordChange: args.endSessionAfterPasswordChange,
             onSuccess: () {
               final messenger = ScaffoldMessenger.of(context);
-              Navigator.of(context).pushNamedAndRemoveUntil(login, (route) => false);
-              messenger.showSnackBar(const SnackBar(content: Text('Password changed. Please sign in again.')));
+              Navigator.of(context)
+                  .pushNamedAndRemoveUntil(login, (route) => false);
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Password changed. Please sign in again.'),
+                ),
+              );
             },
-          ), settings: settings);
+          ),
+          settings: settings,
+        );
       },
     ),
     privacy: AppRouteDefinition(
@@ -320,7 +384,218 @@ abstract final class AppRoutes {
       builder: (settings, coordinator) {
         final args = settings.arguments;
         if (args is! PersonalQrRouteArgs) return null;
-        return MaterialPageRoute<void>(builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr), settings: settings);
+        return MaterialPageRoute<void>(
+          builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr),
+          settings: settings,
+        );
+      },
+    ),
+    groups: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) {
+            final groupsController = GroupsController(args.repository);
+            return MyGroupsScreen(
+              controller: groupsController,
+              onCreate: () =>
+                  Navigator.of(context).pushNamed(createGroup, arguments: args),
+              onOpenGroup: (id) => Navigator.of(context)
+                  .pushNamed(
+                    groupInfo,
+                    arguments: GroupInfoRouteArgs(
+                      repository: args.repository,
+                      groupId: id,
+                    ),
+                  )
+                  .whenComplete(groupsController.refresh),
+            );
+          },
+          settings: settings,
+        );
+      },
+    ),
+    createGroup: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => CreateGroupScreen(
+            controller: CreateGroupController(args.repository),
+            onCreated: (detail) => Navigator.of(context).pushReplacementNamed(
+              groupInfo,
+              arguments: GroupInfoRouteArgs(
+                repository: args.repository,
+                groupId: detail.id,
+              ),
+            ),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupInfo: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupInfoRouteArgs || args.groupId.trim().isEmpty) {
+          return null;
+        }
+        return MaterialPageRoute<void>(
+          builder: (context) {
+            final detail = GroupDetailController(args.repository);
+            return GroupInfoScreen(
+              groupId: args.groupId,
+              controller: detail,
+              onEdit: () => Navigator.of(context)
+                  .pushNamed(editGroup, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onMembers: () => Navigator.of(context)
+                  .pushNamed(groupMembers, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onSettings: () => Navigator.of(context)
+                  .pushNamed(groupPermissions, arguments: args)
+                  .whenComplete(() => detail.load(args.groupId)),
+              onActivityLog: () => Navigator.of(context).pushNamed(
+                groupActivityLog,
+                arguments: args,
+              ),
+              onLeave: () => Navigator.of(context).pop(true),
+            );
+          },
+          settings: settings,
+        );
+      },
+    ),
+    groupActivityLog: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! GroupInfoRouteArgs || args.groupId.trim().isEmpty) {
+          return null;
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupActivityLogScreen(
+            groupId: args.groupId,
+            controller: GroupActivityLogController(args.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    editGroup: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => EditGroupScreen(
+            groupId: a.groupId,
+            controller: EditGroupController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupMembers: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) {
+            final members = GroupMembersController(a.repository);
+            return GroupMembersScreen(
+              groupId: a.groupId,
+              controller: members,
+              onMember: (userId) => Navigator.of(context)
+                  .pushNamed(
+                    memberManagement,
+                    arguments: GroupMemberRouteArgs(
+                      repository: a.repository,
+                      groupId: a.groupId,
+                      userId: userId,
+                    ),
+                  )
+                  .whenComplete(() => members.load(a.groupId)),
+            );
+          },
+          settings: settings,
+        );
+      },
+    ),
+    memberManagement: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupMemberRouteArgs ||
+            a.groupId.trim().isEmpty ||
+            a.userId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => MemberManagementScreen(
+            groupId: a.groupId,
+            userId: a.userId,
+            controller: MemberManagementController(a.repository),
+            onKicked: () => Navigator.of(context).pop(true),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupPermissions: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) {
+            final permissions = GroupPermissionsController(a.repository);
+            return GroupPermissionsScreen(
+              groupId: a.groupId,
+              controller: permissions,
+              onAdmins: () => Navigator.of(context)
+                  .pushNamed(groupAdmins, arguments: a)
+                  .whenComplete(() => permissions.load(a.groupId)),
+              onTransfer: () => Navigator.of(context)
+                  .pushNamed(transferOwnership, arguments: a)
+                  .whenComplete(() => permissions.load(a.groupId)),
+            );
+          },
+          settings: settings,
+        );
+      },
+    ),
+    groupAdmins: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupAdminManagementScreen(
+            groupId: a.groupId,
+            controller: GroupAdminController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    transferOwnership: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => TransferOwnershipScreen(
+            groupId: a.groupId,
+            controller: TransferOwnershipController(a.repository),
+            onTransferred: (detail) => Navigator.of(context).pop(detail),
+          ),
+          settings: settings,
+        );
       },
     ),
   };

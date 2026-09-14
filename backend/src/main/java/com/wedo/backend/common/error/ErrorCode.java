@@ -34,6 +34,13 @@ public enum ErrorCode {
     FRIEND_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "Friend request was not found."),
     FRIENDSHIP_NOT_FOUND(HttpStatus.NOT_FOUND, "Friendship was not found."),
     CANNOT_BLOCK_SELF(HttpStatus.BAD_REQUEST, "Cannot block yourself."),
+    GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "Group was not found."),
+    GROUP_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "Group member was not found."),
+    GROUP_ARCHIVED(HttpStatus.CONFLICT, "Group is archived."),
+    INSUFFICIENT_GROUP_PERMISSION(HttpStatus.FORBIDDEN, "Insufficient group permission."),
+    TRANSFER_OWNERSHIP_REQUIRED(HttpStatus.CONFLICT, "Ownership transfer is required."),
+    INVALID_OWNERSHIP_TARGET(HttpStatus.CONFLICT, "Invalid ownership transfer target."),
+    INVALID_GROUP_ROLE_TRANSITION(HttpStatus.CONFLICT, "Invalid group role transition."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

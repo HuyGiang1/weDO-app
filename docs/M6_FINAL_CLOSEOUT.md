@@ -1,26 +1,29 @@
 # M6 FINAL CLOSEOUT REPORT
 **Milestone:** M6 — Group Invitation / Join / Ban / Lifecycle  
-**Integration Truth:** `dev` (`147247d9a4eab03f989d59f82a841bfef62b0a9f`)  
-**Branch:** `feat/m6-group-invitations-join-ban-lifecycle`  
-**Status:** COMPLETED (Backend + Flutter)
+**Target Branch:** `dev`  
+**Merge Commit:** `6515b4d19e7e8594c71bbdc65a382b506ed24eeb`  
+**Status:** MERGED INTO DEV  
+**Post-Merge Verification:** PASSED (Backend 36/36, Flutter Analyze 0 issues, Flutter Tests 486/486)
 
 ---
 
 ## 1. M6 Status
-- **Overall Status:** COMPLETED
+- **Overall Status:** MERGED INTO DEV
 - **Backend Core Services & Repositories:** COMPLETED
 - **Backend Controllers & DTOs:** COMPLETED
 - **Backend Unit & Controller Test Suite:** COMPLETED (36/36 passed, 0 failures)
 - **Concurrency Strategy:** Implemented using pessimistic locking (`SELECT ... FOR UPDATE`) on the parent group record across all admission paths (`admitMemberUnderGroupLock`).
-- **Concurrency Integration Tests:** Test scenarios written (`GroupAdmissionConcurrencyIntegrationTest.java`). Test execution is `TEST ENVIRONMENT BLOCKED` due to Docker daemon not running in local environment.
+- **Concurrency Integration Tests:** Concurrency integration test remains runtime-unverified because Docker daemon was unavailable during local verification. Source-level locking strategy was reviewed and confirmed.
 - **Flutter Integration (M6.11 - M6.12):** COMPLETED (Models, API, Repository, Controllers, Screens, Routing).
 - **Flutter Test Suite:** COMPLETED (486/486 passed, 0 failures, 0 analyze issues).
 
 ---
 
 ## 2. Git Branch & Commits
-- **Branch:** `feat/m6-group-invitations-join-ban-lifecycle`
-- **Base Commit:** `147247d9a4eab03f989d59f82a841bfef62b0a9f` (HEAD of `dev`)
+- **Source Branch:** `feat/m6-group-invitations-join-ban-lifecycle`
+- **Target Branch:** `dev`
+- **Merge Commit:** `6515b4d19e7e8594c71bbdc65a382b506ed24eeb`
+- **Base Commit:** `147247d9a4eab03f989d59f82a841bfef62b0a9f` (HEAD of `dev` pre-merge)
 - **Commits:**
   1. `ca09386`: `feat(m6): add error codes and domain entities and repositories`
   2. `1422251`: `feat(m6): implement group admission, invite links, join requests, bans, lifecycle, and tests`
@@ -229,7 +232,7 @@ stateDiagram-v2
 - **Cases Covered:**
   - Case 1: 98 existing ACTIVE members + 10 concurrent admissions -> exactly 2 succeed, total ACTIVE is 100.
   - Case 2: Link `maxUses = 5` + 15 concurrent joins -> exactly 5 succeed, usesCount = 5.
-- **Execution Status:** `TEST ENVIRONMENT BLOCKED (Docker not running)` (As mandated by Section 28 of prompt).
+- **Execution Status:** Concurrency integration test remains runtime-unverified because Docker daemon was unavailable during local verification. Source-level locking strategy was reviewed and confirmed.
 
 ---
 
@@ -283,9 +286,37 @@ All error codes mapped with exact HTTP statuses:
 
 ---
 
-## 19. M6 → M7 Handoff
-- Group membership, admission, bans, and lifecycle are fully operational and verified.
-- Milestone 7 (Group Chat / Messaging / Activity Feeds) can consume:
-  - Active group memberships for messaging participation.
-  - Lifecycle state enforcement (reject messaging on `ARCHIVED` / `DELETED`).
-  - Banned user rejection on websocket / messaging connect.
+## 19. M6 → M7 Handoff Audit
+- **Milestone 7 Scope:** Activity + RSVP + Waitlist (Phase 7 Master Roadmap, Section 10).
+- **M7 Dependencies:**
+  - Group foundation from M5/M6: All activities are scoped under a `groupId` (`activities.group_id REFERENCES groups(id)`).
+  - Membership gating: Only `ACTIVE` group members can view activities, submit RSVP (`GOING`, `MAYBE`, `NOT_GOING`), or queue in the waitlist.
+  - Lifecycle state enforcement: Creating, modifying, or RSVPing to activities in `ARCHIVED` or `DELETED` groups must be rejected.
+  - Ban enforcement: Banned users (`group_bans`) cannot access group activities or hold participant records.
+- **M6 APIs M7 Will Consume:**
+  - `GET /api/v1/groups/{groupId}`: To verify group exists and is `ACTIVE`.
+  - Group Membership endpoints from M5: Member roster validation.
+- **M6 Entities & Services M7 Will Reuse:**
+  - `GroupEntity` & `GroupRepository`: Parent entity relationship and group status checking.
+  - `GroupMembershipEntity` & `GroupMembershipRepository`: Gating activity participation to active members.
+  - `GroupPermissionService`: Authorizing `OWNER` / `ADMIN` roles for activity lifecycle management (create, update, cancel, complete).
+- **Realtime Architecture & WebSocket/STOMP Infrastructure:**
+  - `spring-boot-starter-websocket` is currently present on classpath in `pom.xml`.
+  - No active `@EnableWebSocketMessageBroker` or STOMP endpoint is configured; per project roadmap, full WebSocket + Redis integration is scheduled for M10.
+- **Notification & Activity-Feed Dependencies:**
+  - `group_activity_logs` (M5/M6 table) is available for group-level audit events.
+  - M7 provides dedicated granular audit tables in schema: `activity_status_history`, `activity_rsvp_history`, and `activity_change_logs`.
+- **Database Dependencies (Ready in Flyway):**
+  - `V5__activities.sql` is already in place with 6 tables:
+    1. `activities` (status: `PLANNING`, `CONFIRMED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`; capacity; location JSONB; start_at / end_at).
+    2. `activity_waitlist_sequences` (current_sequence for atomic FIFO queue numbering).
+    3. `activity_participants` (rsvp_status: `NO_RESPONSE`, `GOING`, `MAYBE`, `NOT_GOING`, `WAITLIST`; waitlist_sequence).
+    4. `activity_rsvp_history` (audit trail of RSVP changes).
+    5. `activity_status_history` (audit trail of activity lifecycle status transitions).
+    6. `activity_change_logs` (field-level change auditing).
+  - Unique constraints and check constraints (e.g. `uq_activity_participants_waitlist_sequence`, `chk_activity_participants_waitlist`) are defined.
+- **Permission Dependencies:**
+  - `OWNER` / `ADMIN`: Activity create, update, cancel, complete, and participant moderation.
+  - `MEMBER`: RSVP participation and FIFO waitlist progression.
+  - `BANNED` / Non-member: Access denied.
+- **Implementation Status:** No M7 code has been written. Repository is clean and fully prepared for M7 kickoff.

@@ -26,12 +26,17 @@ void main() {
       loadCurrentUser: loader,
       updateProfile: (_) async => user(),
       updateUsername: (_) async => user(),
-      changePassword: ({required currentPassword, required newPassword}) async {},
+      changePassword: ({
+        required currentPassword,
+        required newPassword,
+      }) async {},
       endSessionAfterPasswordChange: () async => true,
     ),
   );
 
-  testWidgets('shows loading before the current profile resolves', (tester) async {
+  testWidgets('shows loading before the current profile resolves', (
+    tester,
+  ) async {
     final completer = Completer<CurrentUser>();
     await tester.pumpWidget(subject(() => completer.future));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -50,7 +55,9 @@ void main() {
     expect(find.text('Verified'), findsOneWidget);
   });
 
-  testWidgets('omits nullable optional fields without fabricating values', (tester) async {
+  testWidgets('omits nullable optional fields without fabricating values', (
+    tester,
+  ) async {
     await tester.pumpWidget(subject(() async => user(phone: null, bio: '   ')));
     await tester.pumpAndSettle();
     expect(find.text('Phone'), findsNothing);
@@ -59,11 +66,13 @@ void main() {
 
   testWidgets('shows an error and retries loading', (tester) async {
     var attempts = 0;
-    await tester.pumpWidget(subject(() async {
-      attempts++;
-      if (attempts == 1) throw StateError('offline');
-      return user();
-    }));
+    await tester.pumpWidget(
+      subject(() async {
+        attempts++;
+        if (attempts == 1) throw StateError('offline');
+        return user();
+      }),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Unable to load your profile.'), findsOneWidget);
     await tester.tap(find.text('Retry'));
@@ -72,7 +81,9 @@ void main() {
     expect(find.text('Huy Giang'), findsOneWidget);
   });
 
-  testWidgets('renders the edit result without loading /me a second time', (tester) async {
+  testWidgets('renders the edit result without loading /me a second time', (
+    tester,
+  ) async {
     var loads = 0;
     final updated = user(bio: 'Updated bio');
     await tester.pumpWidget(
@@ -84,7 +95,10 @@ void main() {
           },
           updateProfile: (_) async => updated,
           updateUsername: (_) async => updated,
-          changePassword: ({required currentPassword, required newPassword}) async {},
+          changePassword: ({
+            required currentPassword,
+            required newPassword,
+          }) async {},
           endSessionAfterPasswordChange: () async => true,
         ),
       ),
@@ -102,7 +116,9 @@ void main() {
     expect(find.text('Updated bio'), findsOneWidget);
   });
 
-  testWidgets('keeps the current profile when editing is canceled', (tester) async {
+  testWidgets('keeps the current profile when editing is canceled', (
+    tester,
+  ) async {
     var updates = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -113,7 +129,10 @@ void main() {
             return user(bio: 'Unexpected');
           },
           updateUsername: (_) async => user(),
-          changePassword: ({required currentPassword, required newPassword}) async {},
+          changePassword: ({
+            required currentPassword,
+            required newPassword,
+          }) async {},
           endSessionAfterPasswordChange: () async => true,
         ),
       ),
@@ -131,7 +150,9 @@ void main() {
     expect(find.text('Building weDO.'), findsOneWidget);
   });
 
-  testWidgets('renders a returned username without loading /me a second time', (tester) async {
+  testWidgets('renders a returned username without loading /me a second time', (
+    tester,
+  ) async {
     var loads = 0;
     final updated = CurrentUser(
       id: 'user-id',
@@ -150,25 +171,30 @@ void main() {
           },
           updateProfile: (_) async => user(),
           updateUsername: (_) async => updated,
-          changePassword: ({required currentPassword, required newPassword}) async {},
+          changePassword: ({
+            required currentPassword,
+            required newPassword,
+          }) async {},
           endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final change = find.widgetWithText(OutlinedButton, 'Change Username');
+    final change = find.text('Change Username');
     await tester.ensureVisible(change);
     await tester.tap(change);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save username'));
+    await tester.tap(find.text('Update Username'));
     await tester.pumpAndSettle();
 
     expect(loads, 1);
     expect(find.text('@new_name'), findsOneWidget);
   });
 
-  testWidgets('opens the protected privacy route from the profile screen', (tester) async {
+  testWidgets('opens the protected privacy route from the profile screen', (
+    tester,
+  ) async {
     String? pushedRoute;
     await tester.pumpWidget(
       MaterialApp(
@@ -183,14 +209,17 @@ void main() {
           loadCurrentUser: () async => user(),
           updateProfile: (_) async => user(),
           updateUsername: (_) async => user(),
-          changePassword: ({required currentPassword, required newPassword}) async {},
+          changePassword: ({
+            required currentPassword,
+            required newPassword,
+          }) async {},
           endSessionAfterPasswordChange: () async => true,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    final privacy = find.widgetWithText(OutlinedButton, 'Privacy Settings');
+    final privacy = find.text('Privacy Settings');
     await tester.ensureVisible(privacy);
     await tester.tap(privacy);
     await tester.pumpAndSettle();
@@ -201,9 +230,29 @@ void main() {
 
   testWidgets('opens My QR from the profile screen', (tester) async {
     String? pushedRoute;
-    await tester.pumpWidget(MaterialApp(onGenerateRoute: (settings) { pushedRoute = settings.name; return MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('QR destination')), settings: settings); }, home: ProfileScreen(loadCurrentUser: () async => user(), updateProfile: (_) async => user(), updateUsername: (_) async => user(), changePassword: ({required currentPassword, required newPassword}) async {}, endSessionAfterPasswordChange: () async => true)));
+    await tester.pumpWidget(
+      MaterialApp(
+        onGenerateRoute: (settings) {
+          pushedRoute = settings.name;
+          return MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('QR destination')),
+            settings: settings,
+          );
+        },
+        home: ProfileScreen(
+          loadCurrentUser: () async => user(),
+          updateProfile: (_) async => user(),
+          updateUsername: (_) async => user(),
+          changePassword: ({
+            required currentPassword,
+            required newPassword,
+          }) async {},
+          endSessionAfterPasswordChange: () async => true,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
-    final myQr = find.widgetWithText(OutlinedButton, 'My QR');
+    final myQr = find.text('My QR');
     await tester.ensureVisible(myQr);
     await tester.tap(myQr);
     await tester.pumpAndSettle();

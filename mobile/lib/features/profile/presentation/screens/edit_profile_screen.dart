@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../auth/data/models/auth_models.dart';
 import '../../data/profile_models.dart';
+import '../widgets/profile_ui.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final CurrentUser initialUser;
@@ -102,26 +103,55 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.md),
           children: [
-            TextFormField(
-              controller: _displayName,
-              enabled: !_submitting,
-              validator: _displayNameValidator,
-              decoration: const InputDecoration(labelText: 'Display name'),
+            Center(
+              child: Stack(
+                children: [
+                  ProfileAvatar(
+                    label:
+                        widget.initialUser.displayName ??
+                        widget.initialUser.username ??
+                        widget.initialUser.email,
+                  ),
+                  const Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: CircleAvatar(
+                      radius: 16,
+                      child: Icon(Icons.edit, size: 16),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              controller: _bio,
-              enabled: !_submitting,
-              validator: (value) => _lengthValidator(value, 500, 'Bio'),
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Bio'),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextFormField(
-              controller: _phone,
-              enabled: !_submitting,
-              validator: (value) => _lengthValidator(value, 20, 'Phone'),
-              decoration: const InputDecoration(labelText: 'Phone'),
+            const SizedBox(height: AppSpacing.lg),
+            ProfileSurface(
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _displayName,
+                    enabled: !_submitting,
+                    validator: _displayNameValidator,
+                    decoration: const InputDecoration(
+                      labelText: 'Display name',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    controller: _bio,
+                    enabled: !_submitting,
+                    validator: (value) => _lengthValidator(value, 500, 'Bio'),
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'Bio'),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    controller: _phone,
+                    enabled: !_submitting,
+                    validator: (value) => _lengthValidator(value, 20, 'Phone'),
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                  ),
+                ],
+              ),
             ),
             if (_requestError != null) ...[
               const SizedBox(height: AppSpacing.md),
@@ -133,6 +163,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: AppSpacing.xl),
             ElevatedButton(
               onPressed: _submitting ? null : _submit,
+              style: profilePrimaryButtonStyle(),
               child: _submitting
                   ? const CircularProgressIndicator()
                   : const Text('Save changes'),

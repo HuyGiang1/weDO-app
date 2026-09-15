@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_spacing.dart';
 import '../../data/privacy_models.dart';
+import '../../../profile/presentation/widgets/profile_ui.dart';
 
 class PrivacySettingsScreen extends StatefulWidget {
   final Future<PrivacySettings> Function() loadPrivacySettings;
@@ -118,96 +119,119 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _SectionTitle('Discoverability'),
-              _toggle(
-                'Discover by username',
-                draft.discoverByUsername,
-                (value) => _update(
-                  (current) => current.copyWith(discoverByUsername: value),
-                ),
-              ),
-              _toggle(
-                'Discover by QR',
-                draft.discoverByQr,
-                (value) =>
-                    _update((current) => current.copyWith(discoverByQr: value)),
-              ),
-              _toggle(
-                'Discover by email',
-                draft.discoverByEmail,
-                (value) => _update(
-                  (current) => current.copyWith(discoverByEmail: value),
-                ),
-              ),
-              _toggle(
-                'Discover by phone',
-                draft.discoverByPhone,
-                (value) => _update(
-                  (current) => current.copyWith(discoverByPhone: value),
+              const _SectionTitle('Searchability'),
+              ProfileSurface(
+                child: Column(
+                  children: [
+                    _toggle(
+                      'Discover by username',
+                      draft.discoverByUsername,
+                      (value) => _update(
+                        (current) =>
+                            current.copyWith(discoverByUsername: value),
+                      ),
+                    ),
+                    _toggle(
+                      'Discover by QR',
+                      draft.discoverByQr,
+                      (value) => _update(
+                        (current) => current.copyWith(discoverByQr: value),
+                      ),
+                    ),
+                    _toggle(
+                      'Discover by email',
+                      draft.discoverByEmail,
+                      (value) => _update(
+                        (current) => current.copyWith(discoverByEmail: value),
+                      ),
+                    ),
+                    _toggle(
+                      'Discover by phone',
+                      draft.discoverByPhone,
+                      (value) => _update(
+                        (current) => current.copyWith(discoverByPhone: value),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const _SectionTitle('Social / Requests'),
-              DropdownButtonFormField<DmPolicy>(
-                initialValue: draft.dmPolicy,
-                decoration: const InputDecoration(
-                  labelText: 'Direct message policy',
-                ),
-                items: DmPolicy.values
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(value.wireValue),
+              ProfileSurface(
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<DmPolicy>(
+                      initialValue: draft.dmPolicy,
+                      decoration: const InputDecoration(
+                        labelText: 'Direct message policy',
                       ),
-                    )
-                    .toList(),
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          _update(
-                            (current) => current.copyWith(dmPolicy: value),
-                          );
-                        }
-                      },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<FriendRequestPolicy>(
-                initialValue: draft.friendRequestPolicy,
-                decoration: const InputDecoration(
-                  labelText: 'Friend request policy',
-                ),
-                items: FriendRequestPolicy.values
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(value.wireValue),
+                      items: DmPolicy.values
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value.wireValue),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                _update(
+                                  (current) =>
+                                      current.copyWith(dmPolicy: value),
+                                );
+                              }
+                            },
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    DropdownButtonFormField<FriendRequestPolicy>(
+                      initialValue: draft.friendRequestPolicy,
+                      decoration: const InputDecoration(
+                        labelText: 'Friend request policy',
                       ),
-                    )
-                    .toList(),
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          _update(
-                            (current) =>
-                                current.copyWith(friendRequestPolicy: value),
-                          );
-                        }
-                      },
+                      items: FriendRequestPolicy.values
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value.wireValue),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                _update(
+                                  (current) => current.copyWith(
+                                    friendRequestPolicy: value,
+                                  ),
+                                );
+                              }
+                            },
+                    ),
+                  ],
+                ),
               ),
               const _SectionTitle('Presence'),
-              _toggle(
-                'Show online status',
-                draft.showOnlineStatus,
-                (value) => _update(
-                  (current) => current.copyWith(showOnlineStatus: value),
+              ProfileSurface(
+                child: Column(
+                  children: [
+                    _toggle(
+                      'Show online status',
+                      draft.showOnlineStatus,
+                      (value) => _update(
+                        (current) => current.copyWith(showOnlineStatus: value),
+                      ),
+                    ),
+                    _toggle(
+                      'Show last seen',
+                      draft.showLastSeen,
+                      (value) => _update(
+                        (current) => current.copyWith(showLastSeen: value),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              _toggle(
-                'Show last seen',
-                draft.showLastSeen,
-                (value) =>
-                    _update((current) => current.copyWith(showLastSeen: value)),
               ),
               if (_error != null)
                 Padding(
@@ -222,6 +246,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
               const SizedBox(height: AppSpacing.xl),
               ElevatedButton(
                 onPressed: _saving || !_isDirty ? null : _save,
+                style: profilePrimaryButtonStyle(),
                 child: _saving
                     ? const CircularProgressIndicator()
                     : const Text('Save privacy settings'),

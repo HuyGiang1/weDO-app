@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../data/personal_qr.dart';
+import '../../../profile/presentation/widgets/profile_ui.dart';
 
 class PersonalQrScreen extends StatefulWidget {
   final Future<PersonalQr> Function() loadPersonalQr;
@@ -31,7 +32,7 @@ class _PersonalQrScreenState extends State<PersonalQrScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('My QR')),
+    appBar: AppBar(title: const Text('My QR Code')),
     body: FutureBuilder<PersonalQr>(
       future: _qrFuture,
       builder: (context, snapshot) {
@@ -67,9 +68,9 @@ class _PersonalQrScreenState extends State<PersonalQrScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('My QR', style: AppTextStyles.headline),
+                const Text('My QR Code', style: AppTextStyles.headline),
                 const SizedBox(height: AppSpacing.md),
-                PersonalQrRenderer(deepLink: deepLink),
+                ProfileSurface(child: PersonalQrRenderer(deepLink: deepLink)),
                 const SizedBox(height: AppSpacing.md),
                 const Text(
                   'Share this QR code so others can find your public profile.',

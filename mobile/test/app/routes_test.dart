@@ -11,11 +11,13 @@ import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
 import 'package:mobile/core/models/paged_response.dart';
+import 'package:mobile/features/profile/data/profile_models.dart';
+import 'package:mobile/features/profile/presentation/screens/public_user_profile_screen.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 22 registered production routes', () {
-      expect(AppRoutes.routes.length, 22);
+    test('contains exactly 23 registered production routes', () {
+      expect(AppRoutes.routes.length, 23);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -30,6 +32,7 @@ void main() {
         AppRoutes.changePassword,
         AppRoutes.privacy,
         AppRoutes.personalQr,
+        AppRoutes.publicUserProfile,
         AppRoutes.groups,
         AppRoutes.createGroup,
         AppRoutes.groupInfo,
@@ -53,6 +56,7 @@ void main() {
                   entry.key == AppRoutes.changePassword ||
                   entry.key == AppRoutes.privacy ||
                   entry.key == AppRoutes.personalQr ||
+                  entry.key == AppRoutes.publicUserProfile ||
                   entry.key == AppRoutes.groups ||
                   entry.key == AppRoutes.createGroup ||
                   entry.key == AppRoutes.groupInfo ||
@@ -192,6 +196,80 @@ void main() {
         isNull,
       );
     });
+  });
+
+  group('Protected Public User Profile Route', () {
+    RouteSettings settings(String id) => RouteSettings(
+      name: AppRoutes.publicUserProfile,
+      arguments: PublicUserProfileRouteArgs(
+        userId: id,
+        loadPublicProfile: (userId) async =>
+            PublicUserProfile(id: userId, username: 'maya'),
+      ),
+    );
+    test(
+      'is guarded and fails closed for missing, wrong, or blank arguments',
+      () {
+        expect(
+          AppRoutes.onGenerateRoute(
+            settings('target'),
+            authStatus: AuthSessionStatus.unauthenticated,
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(name: AppRoutes.publicUserProfile),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            const RouteSettings(
+              name: AppRoutes.publicUserProfile,
+              arguments: 'target',
+            ),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+        expect(
+          AppRoutes.onGenerateRoute(
+            settings('  '),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+      },
+    );
+    testWidgets(
+      'forwards the exact typed userId to the public profile screen',
+      (tester) async {
+        var received = '';
+        final route =
+            AppRoutes.onGenerateRoute(
+                  RouteSettings(
+                    name: AppRoutes.publicUserProfile,
+                    arguments: PublicUserProfileRouteArgs(
+                      userId: 'target-id',
+                      loadPublicProfile: (id) async {
+                        received = id;
+                        return PublicUserProfile(id: id, username: 'maya');
+                      },
+                    ),
+                  ),
+                  authStatus: AuthSessionStatus.authenticated,
+                )!
+                as MaterialPageRoute<void>;
+        await tester.pumpWidget(
+          MaterialApp(home: Builder(builder: route.builder)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(PublicUserProfileScreen), findsOneWidget);
+        expect(received, 'target-id');
+      },
+    );
   });
 
   group('Public Route Generation Across Session Statuses', () {
@@ -623,41 +701,44 @@ void main() {
       }
     });
 
-    test('M5 group routes fail closed for missing, wrong, or blank arguments', () {
-      final repository = _RouteGroupRepository();
-      for (final name in protected) {
-        expect(
-          AppRoutes.onGenerateRoute(
-            RouteSettings(name: name),
-            authStatus: AuthSessionStatus.authenticated,
-          ),
-          isNull,
-        );
-        expect(
-          AppRoutes.onGenerateRoute(
-            RouteSettings(name: name, arguments: 'wrong'),
-            authStatus: AuthSessionStatus.authenticated,
-          ),
-          isNull,
-        );
-        if (name != AppRoutes.groups && name != AppRoutes.createGroup) {
-          final blank = name == AppRoutes.memberManagement
-              ? GroupMemberRouteArgs(
-                  repository: repository,
-                  groupId: '',
-                  userId: 'user-id',
-                )
-              : GroupInfoRouteArgs(repository: repository, groupId: '');
+    test(
+      'M5 group routes fail closed for missing, wrong, or blank arguments',
+      () {
+        final repository = _RouteGroupRepository();
+        for (final name in protected) {
           expect(
             AppRoutes.onGenerateRoute(
-              RouteSettings(name: name, arguments: blank),
+              RouteSettings(name: name),
               authStatus: AuthSessionStatus.authenticated,
             ),
             isNull,
           );
+          expect(
+            AppRoutes.onGenerateRoute(
+              RouteSettings(name: name, arguments: 'wrong'),
+              authStatus: AuthSessionStatus.authenticated,
+            ),
+            isNull,
+          );
+          if (name != AppRoutes.groups && name != AppRoutes.createGroup) {
+            final blank = name == AppRoutes.memberManagement
+                ? GroupMemberRouteArgs(
+                    repository: repository,
+                    groupId: '',
+                    userId: 'user-id',
+                  )
+                : GroupInfoRouteArgs(repository: repository, groupId: '');
+            expect(
+              AppRoutes.onGenerateRoute(
+                RouteSettings(name: name, arguments: blank),
+                authStatus: AuthSessionStatus.authenticated,
+              ),
+              isNull,
+            );
+          }
         }
-      }
-    });
+      },
+    );
 
     testWidgets('typed arguments reach M5 route controllers unchanged', (
       tester,
@@ -668,7 +749,10 @@ void main() {
         AppRoutes.groupActivityLog: ['activities:group-id'],
         AppRoutes.editGroup: ['group:group-id'],
         AppRoutes.groupMembers: ['members:group-id'],
-        AppRoutes.memberManagement: ['group:group-id', 'member:group-id:user-id'],
+        AppRoutes.memberManagement: [
+          'group:group-id',
+          'member:group-id:user-id',
+        ],
         AppRoutes.groupPermissions: ['group:group-id', 'settings:group-id'],
         AppRoutes.groupAdmins: ['group:group-id', 'members:group-id'],
         AppRoutes.transferOwnership: ['group:group-id', 'members:group-id'],
@@ -682,11 +766,15 @@ void main() {
                 userId: 'user-id',
               )
             : GroupInfoRouteArgs(repository: repository, groupId: 'group-id');
-        final route = AppRoutes.onGenerateRoute(
-          RouteSettings(name: entry.key, arguments: arguments),
-          authStatus: AuthSessionStatus.authenticated,
-        )! as MaterialPageRoute<void>;
-        await tester.pumpWidget(MaterialApp(home: Builder(builder: route.builder)));
+        final route =
+            AppRoutes.onGenerateRoute(
+                  RouteSettings(name: entry.key, arguments: arguments),
+                  authStatus: AuthSessionStatus.authenticated,
+                )!
+                as MaterialPageRoute<void>;
+        await tester.pumpWidget(
+          MaterialApp(home: Builder(builder: route.builder)),
+        );
         await tester.pumpAndSettle();
         expect(repository.calls, entry.value, reason: entry.key);
       }

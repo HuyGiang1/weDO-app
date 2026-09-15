@@ -33,7 +33,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Discoverability'), findsOneWidget);
+    expect(find.text('Searchability'), findsOneWidget);
       expect(
         tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
         isNull,

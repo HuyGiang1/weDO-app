@@ -36,4 +36,15 @@ class ProfileApi {
       throw ApiException.fromDio(error);
     }
   }
+
+  Future<PublicUserProfile> getPublicProfile(String userId) async {
+    try {
+      final response = await dio.get('/api/v1/users/$userId');
+      final data = response.data;
+      if (data is! Map) throw const FormatException('Expected JSON object');
+      return PublicUserProfile.fromJson(Map<String, dynamic>.from(data));
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
 }

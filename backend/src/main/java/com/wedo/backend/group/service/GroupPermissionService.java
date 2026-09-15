@@ -65,4 +65,12 @@ public class GroupPermissionService {
         }
         return access;
     }
+
+    public ReadableGroupAccess requireOwnerForRestore(UUID groupId, UUID callerUserId) {
+        ReadableGroupAccess access = requireReadableMembership(groupId, callerUserId);
+        if (access.membership().getRole() != GroupRole.OWNER) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
+        }
+        return access;
+    }
 }

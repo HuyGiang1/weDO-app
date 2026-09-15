@@ -45,7 +45,7 @@ public class GroupSettingsEntity {
     protected GroupSettingsEntity() {
     }
 
-    private GroupSettingsEntity(UUID groupId, GroupJoinPolicy joinPolicy, boolean memberModifyInfoAllowed, boolean memberCreateActivityAllowed, boolean memberPinMessageAllowed, ChatHistoryPolicy chatHistoryPolicy, Instant createdAt, Instant updatedAt) {
+    public GroupSettingsEntity(UUID groupId, GroupJoinPolicy joinPolicy, boolean memberModifyInfoAllowed, boolean memberCreateActivityAllowed, boolean memberPinMessageAllowed, ChatHistoryPolicy chatHistoryPolicy, Instant createdAt, Instant updatedAt) {
         this.groupId = groupId;
         this.joinPolicy = joinPolicy;
         this.memberModifyInfoAllowed = memberModifyInfoAllowed;

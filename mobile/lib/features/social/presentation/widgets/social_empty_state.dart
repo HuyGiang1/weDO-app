@@ -21,33 +21,52 @@ class SocialEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.xl,
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 64.0,
-              color: AppColors.outlineVariant,
+            Container(
+              width: 96.0,
+              height: 96.0,
+              decoration: const BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Icon(
+                  icon,
+                  size: 48.0,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               title,
-              style: AppTextStyles.label.copyWith(
-                fontSize: 16.0,
+              style: AppTextStyles.headline.copyWith(
+                fontSize: 24.0,
+                fontWeight: FontWeight.w600,
                 color: AppColors.onSurface,
               ),
               textAlign: TextAlign.center,
             ),
             if (subtitle != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                subtitle!,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.onSurfaceVariant,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360.0),
+                child: Text(
+                  subtitle!,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    fontSize: 16.0,
+                    color: AppColors.onSurfaceVariant,
+                    height: 24.0 / 16.0,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
               ),
             ],
           ],

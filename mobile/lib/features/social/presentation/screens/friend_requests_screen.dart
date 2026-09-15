@@ -12,6 +12,7 @@ import '../widgets/social_error_view.dart';
 import '../widgets/user_avatar.dart';
 
 /// Screen displaying incoming and outgoing friend requests with pagination and pull-to-refresh.
+/// Faithfully ported from design/friend_requests.html.
 class FriendRequestsScreen extends StatefulWidget {
   final FriendRequestsController controller;
 
@@ -45,29 +46,77 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Lời mời kết bạn'),
+        toolbarHeight: 64.0,
         backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.onSurface,
-        elevation: 0.5,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.onSurfaceVariant,
-          indicatorColor: AppColors.primary,
-          indicatorWeight: 3.0,
-          tabs: const [
-            Tab(text: 'Đã nhận'),
-            Tab(text: 'Đã gửi'),
-          ],
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: Navigator.of(context).canPop()
+            ? Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  color: AppColors.onSurfaceVariant,
+                  tooltip: 'Quay lại',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              )
+            : null,
+        title: Text(
+          'Lời mời kết bạn',
+          style: AppTextStyles.headline.copyWith(
+            fontSize: 24.0,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onSurface,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48.0),
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: AppColors.surfaceContainerHigh,
+                  width: 1.0,
+                ),
+              ),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: AppColors.primary,
+              unselectedLabelColor: AppColors.onSurfaceVariant,
+              indicatorColor: AppColors.primary,
+              indicatorWeight: 2.0,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelStyle: AppTextStyles.label.copyWith(
+                fontSize: 14.0,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: AppTextStyles.label.copyWith(
+                fontSize: 14.0,
+                fontWeight: FontWeight.w600,
+              ),
+              tabs: const [
+                Tab(text: 'Đã nhận'),
+                Tab(text: 'Đã gửi'),
+              ],
+            ),
+          ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _ReceivedRequestsView(controller: widget.controller),
-          _SentRequestsView(controller: widget.controller),
-        ],
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 672.0),
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _ReceivedRequestsView(controller: widget.controller),
+              _SentRequestsView(controller: widget.controller),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -197,13 +246,12 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
           child: ListView.separated(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            itemCount: state.items.length + (state.hasNext ? 1 : 0),
-            separatorBuilder: (context, index) => const Divider(
-              height: 1.0,
-              indent: 72.0,
-              endIndent: AppSpacing.md,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 20.0,
             ),
+            itemCount: state.items.length + (state.hasNext ? 1 : 0),
+            separatorBuilder: (context, index) => const SizedBox(height: 16.0),
             itemBuilder: (context, index) {
               if (index >= state.items.length) {
                 if (state.isErrorMore) {
@@ -235,25 +283,58 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
               final item = state.items[index];
               final isActionPending = _activeActionRequestId == item.id;
 
-              return ListTile(
-                leading: UserAvatar(
-                  displayName: item.sender.displayName,
-                  avatarStorageKey: item.sender.avatarStorageKey,
+              return Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12.0),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: AppColors.softShadow,
+                      blurRadius: 20.0,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  item.sender.displayName,
-                  style: AppTextStyles.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '@${item.sender.username}',
-                  style: AppTextStyles.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: isActionPending
-                    ? const SizedBox(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    UserAvatar(
+                      displayName: item.sender.displayName,
+                      avatarStorageKey: item.sender.avatarStorageKey,
+                      radius: 24.0,
+                    ),
+                    const SizedBox(width: 16.0),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            item.sender.displayName,
+                            style: AppTextStyles.label.copyWith(
+                              fontSize: 14.0,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2.0),
+                          Text(
+                            '@${item.sender.username}',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontSize: 14.0,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8.0),
+                    if (isActionPending)
+                      const SizedBox(
                         width: 24.0,
                         height: 24.0,
                         child: CircularProgressIndicator(
@@ -261,37 +342,57 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                           color: AppColors.primary,
                         ),
                       )
-                    : Row(
+                    else
+                      Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          FilledButton(
-                            onPressed: () => _handleAccept(item),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              shape: const StadiumBorder(),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
-                              ),
-                            ),
-                            child: const Text('Chấp nhận'),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
                           OutlinedButton(
                             onPressed: () => _handleDecline(item),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.onSurfaceVariant,
-                              side: const BorderSide(
-                                color: AppColors.outlineVariant,
-                              ),
+                              side: BorderSide.none,
+                              backgroundColor: Colors.transparent,
                               shape: const StadiumBorder(),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
+                                horizontal: 12.0,
+                                vertical: 8.0,
                               ),
                             ),
-                            child: const Text('Từ chối'),
+                            child: Text(
+                              'Từ chối',
+                              style: AppTextStyles.label.copyWith(
+                                fontSize: 14.0,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8.0),
+                          FilledButton(
+                            onPressed: () => _handleAccept(item),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.onPrimary,
+                              elevation: 1.0,
+                              shape: const StadiumBorder(),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16.0,
+                                vertical: 8.0,
+                              ),
+                            ),
+                            child: Text(
+                              'Chấp nhận',
+                              style: AppTextStyles.label.copyWith(
+                                fontSize: 14.0,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onPrimary,
+                              ),
+                            ),
                           ),
                         ],
                       ),
+                  ],
+                ),
               );
             },
           ),
@@ -312,7 +413,7 @@ class _SentRequestsView extends StatefulWidget {
 
 class _SentRequestsViewState extends State<_SentRequestsView> {
   final ScrollController _scrollController = ScrollController();
-  String? _activeActionRequestId;
+  String? _cancelingRequestId;
 
   @override
   void initState() {
@@ -334,10 +435,10 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
   }
 
   Future<void> _handleCancel(FriendRequest request) async {
-    setState(() => _activeActionRequestId = request.id);
+    setState(() => _cancelingRequestId = request.id);
     final ok = await widget.controller.cancel(request.id);
     if (!mounted) return;
-    setState(() => _activeActionRequestId = null);
+    setState(() => _cancelingRequestId = null);
 
     final messenger = ScaffoldMessenger.of(context);
     if (ok) {
@@ -369,7 +470,7 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
           return SocialErrorView(
             message: state.failure != null
                 ? SocialErrorLocalizer.localize(state.failure!)
-                : 'Đã có lỗi xảy ra khi tải danh sách.',
+                : 'Đã có lỗi xảy ra khi tải danh sách đã gửi.',
             onRetry: () => widget.controller.loadSent(refresh: true),
           );
         }
@@ -384,9 +485,9 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                 SizedBox(
                   height: MediaQuery.of(context).size.height * 0.6,
                   child: const SocialEmptyState(
-                    icon: Icons.outgoing_mail,
+                    icon: Icons.outbox_rounded,
                     title: 'Chưa gửi lời mời nào',
-                    subtitle: 'Những lời mời bạn đã gửi sẽ hiển thị tại đây.',
+                    subtitle: 'Các lời mời kết bạn bạn đã gửi sẽ xuất hiện ở đây.',
                   ),
                 ),
               ],
@@ -400,13 +501,12 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
           child: ListView.separated(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            itemCount: state.items.length + (state.hasNext ? 1 : 0),
-            separatorBuilder: (context, index) => const Divider(
-              height: 1.0,
-              indent: 72.0,
-              endIndent: AppSpacing.md,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20.0,
+              vertical: 20.0,
             ),
+            itemCount: state.items.length + (state.hasNext ? 1 : 0),
+            separatorBuilder: (context, index) => const SizedBox(height: 16.0),
             itemBuilder: (context, index) {
               if (index >= state.items.length) {
                 if (state.isErrorMore) {
@@ -436,27 +536,60 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
               }
 
               final item = state.items[index];
-              final isActionPending = _activeActionRequestId == item.id;
+              final isCanceling = _cancelingRequestId == item.id;
 
-              return ListTile(
-                leading: UserAvatar(
-                  displayName: item.receiver.displayName,
-                  avatarStorageKey: item.receiver.avatarStorageKey,
+              return Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12.0),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: AppColors.softShadow,
+                      blurRadius: 20.0,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-                title: Text(
-                  item.receiver.displayName,
-                  style: AppTextStyles.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '@${item.receiver.username}',
-                  style: AppTextStyles.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: isActionPending
-                    ? const SizedBox(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    UserAvatar(
+                      displayName: item.receiver.displayName,
+                      avatarStorageKey: item.receiver.avatarStorageKey,
+                      radius: 24.0,
+                    ),
+                    const SizedBox(width: 16.0),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            item.receiver.displayName,
+                            style: AppTextStyles.label.copyWith(
+                              fontSize: 14.0,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2.0),
+                          Text(
+                            '@${item.receiver.username}',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              fontSize: 14.0,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12.0),
+                    if (isCanceling)
+                      const SizedBox(
                         width: 24.0,
                         height: 24.0,
                         child: CircularProgressIndicator(
@@ -464,20 +597,31 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                           color: AppColors.primary,
                         ),
                       )
-                    : OutlinedButton(
+                    else
+                      OutlinedButton(
                         onPressed: () => _handleCancel(item),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.onSurfaceVariant,
-                          side: const BorderSide(
-                            color: AppColors.outlineVariant,
-                          ),
+                          backgroundColor:
+                              const Color(0x1A630ED4), // primary/10
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide.none,
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
+                            horizontal: 16.0,
+                            vertical: 8.0,
                           ),
                         ),
-                        child: const Text('Hủy'),
+                        child: Text(
+                          'Hủy',
+                          style: AppTextStyles.label.copyWith(
+                            fontSize: 14.0,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
                       ),
+                  ],
+                ),
               );
             },
           ),

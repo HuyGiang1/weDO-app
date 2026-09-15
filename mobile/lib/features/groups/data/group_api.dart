@@ -133,4 +133,155 @@ class GroupApi {
     ),
     GroupDetail.fromJson,
   );
+
+  // M6: Invitations
+  Future<GroupInvitationResponse> createInvitation(
+    String groupId,
+    CreateInvitationRequest q,
+  ) => _call(
+    () => dio.post(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/invitations',
+      data: q.toJson(),
+    ),
+    GroupInvitationResponse.fromJson,
+  );
+
+  Future<PagedResponse<GroupInvitationResponse>> listMyInvitations({
+    int page = 0,
+    int size = 20,
+    String status = 'PENDING',
+  }) => _call(
+    () => dio.get(
+      '/api/v1/me/group-invitations',
+      queryParameters: {'page': page, 'size': size, 'status': status},
+    ),
+    (j) => PagedResponse.fromJson(j, GroupInvitationResponse.fromJson),
+  );
+
+  Future<void> acceptInvitation(String id) => _empty(
+    () => dio.post(
+      '/api/v1/group-invitations/${Uri.encodeComponent(id)}/accept',
+    ),
+  );
+
+  Future<void> declineInvitation(String id) => _empty(
+    () => dio.post(
+      '/api/v1/group-invitations/${Uri.encodeComponent(id)}/decline',
+    ),
+  );
+
+  Future<void> cancelInvitation(String id) => _empty(
+    () => dio.post(
+      '/api/v1/group-invitations/${Uri.encodeComponent(id)}/cancel',
+    ),
+  );
+
+  // M6: Invite Links
+  Future<InviteLinkResponse> createInviteLink(
+    String groupId,
+    CreateInviteLinkRequest q,
+  ) => _call(
+    () => dio.post(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/invite-links',
+      data: q.toJson(),
+    ),
+    InviteLinkResponse.fromJson,
+  );
+
+  Future<List<InviteLinkResponse>> listInviteLinks(String groupId) => _list(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/invite-links',
+    ),
+    InviteLinkResponse.fromJson,
+  );
+
+  Future<void> revokeInviteLink(String id) => _empty(
+    () => dio.post(
+      '/api/v1/group-invite-links/${Uri.encodeComponent(id)}/revoke',
+    ),
+  );
+
+  Future<GroupInviteSummaryResponse> resolveInviteCode(String code) => _call(
+    () => dio.get('/api/v1/group-invites/${Uri.encodeComponent(code)}'),
+    GroupInviteSummaryResponse.fromJson,
+  );
+
+  Future<void> joinViaInviteCode(String code) => _empty(
+    () => dio.post('/api/v1/group-invites/${Uri.encodeComponent(code)}/join'),
+  );
+
+  // M6: Join Requests
+  Future<PagedResponse<JoinRequestResponse>> listJoinRequests(
+    String groupId, {
+    int page = 0,
+    int size = 20,
+  }) => _call(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/join-requests',
+      queryParameters: {'page': page, 'size': size},
+    ),
+    (j) => PagedResponse.fromJson(j, JoinRequestResponse.fromJson),
+  );
+
+  Future<void> approveJoinRequest(String requestId) => _empty(
+    () => dio.post(
+      '/api/v1/group-join-requests/${Uri.encodeComponent(requestId)}/approve',
+    ),
+  );
+
+  Future<void> rejectJoinRequest(String requestId) => _empty(
+    () => dio.post(
+      '/api/v1/group-join-requests/${Uri.encodeComponent(requestId)}/reject',
+    ),
+  );
+
+  Future<void> cancelJoinRequest(String requestId) => _empty(
+    () => dio.post(
+      '/api/v1/group-join-requests/${Uri.encodeComponent(requestId)}/cancel',
+    ),
+  );
+
+  // M6: Bans
+  Future<GroupBanResponse> banMember(
+    String groupId,
+    String userId,
+    BanMemberRequest q,
+  ) => _call(
+    () => dio.post(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/members/${Uri.encodeComponent(userId)}/ban',
+      data: q.toJson(),
+    ),
+    GroupBanResponse.fromJson,
+  );
+
+  Future<PagedResponse<GroupBanResponse>> listBans(
+    String groupId, {
+    int page = 0,
+    int size = 30,
+  }) => _call(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/bans',
+      queryParameters: {'page': page, 'size': size},
+    ),
+    (j) => PagedResponse.fromJson(j, GroupBanResponse.fromJson),
+  );
+
+  Future<void> unbanUser(String groupId, String userId) => _empty(
+    () => dio.delete(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/bans/${Uri.encodeComponent(userId)}',
+    ),
+  );
+
+  // M6: Lifecycle
+  Future<void> archiveGroup(String groupId) => _empty(
+    () => dio.post('/api/v1/groups/${Uri.encodeComponent(groupId)}/archive'),
+  );
+
+  Future<void> restoreGroup(String groupId) => _empty(
+    () => dio.post('/api/v1/groups/${Uri.encodeComponent(groupId)}/restore'),
+  );
+
+  Future<void> deleteGroup(String groupId) => _empty(
+    () => dio.delete('/api/v1/groups/${Uri.encodeComponent(groupId)}'),
+  );
 }

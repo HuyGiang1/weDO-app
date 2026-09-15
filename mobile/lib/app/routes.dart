@@ -33,6 +33,8 @@ import '../features/groups/presentation/screens/group_info_screen.dart';
 import '../features/groups/presentation/screens/group_activity_log_screen.dart';
 import '../features/groups/application/group_management_controllers.dart';
 import '../features/groups/presentation/screens/group_management_screens.dart';
+import '../features/groups/application/group_admission_controllers.dart';
+import '../features/groups/presentation/screens/group_admission_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -171,6 +173,11 @@ abstract final class AppRoutes {
   static const String groupPermissions = '/groups/permissions';
   static const String groupAdmins = '/groups/admins';
   static const String transferOwnership = '/groups/transfer-ownership';
+  static const String groupInvitations = '/groups/invitations';
+  static const String joinGroupByCode = '/groups/join-by-code';
+  static const String groupInviteLinks = '/groups/invite-links';
+  static const String groupJoinRequests = '/groups/join-requests';
+  static const String groupBans = '/groups/bans';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -437,6 +444,12 @@ abstract final class AppRoutes {
                     ),
                   )
                   .whenComplete(groupsController.refresh),
+              onJoinByCode: () => Navigator.of(context)
+                  .pushNamed(joinGroupByCode, arguments: args)
+                  .whenComplete(groupsController.refresh),
+              onInvitations: () => Navigator.of(context)
+                  .pushNamed(groupInvitations, arguments: args)
+                  .whenComplete(groupsController.refresh),
             );
           },
           settings: settings,
@@ -491,6 +504,57 @@ abstract final class AppRoutes {
               onActivityLog: () =>
                   Navigator.of(context)
                       .pushNamed(groupActivityLog, arguments: args),
+              onInviteLinks: () => Navigator.of(context)
+                  .pushNamed(groupInviteLinks, arguments: args),
+              onJoinRequests: () => Navigator.of(context)
+                  .pushNamed(groupJoinRequests, arguments: args),
+              onBans: () =>
+                  Navigator.of(context).pushNamed(groupBans, arguments: args),
+              onArchive: () async {
+                final ok = await GroupLifecycleController(args.repository)
+                    .archive(args.groupId);
+                if (ok && context.mounted) {
+                  detail.load(args.groupId);
+                }
+              },
+              onRestore: () async {
+                final ok = await GroupLifecycleController(args.repository)
+                    .restore(args.groupId);
+                if (ok && context.mounted) {
+                  detail.load(args.groupId);
+                }
+              },
+              onDelete: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Delete Group'),
+                    content: const Text(
+                      'Are you sure you want to permanently delete this group?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  final ok = await GroupLifecycleController(args.repository)
+                      .delete(args.groupId);
+                  if (ok && context.mounted) {
+                    Navigator.of(context).pop(true);
+                  }
+                }
+              },
               onLeave: () => Navigator.of(context).pop(true),
             );
           },
@@ -623,6 +687,74 @@ abstract final class AppRoutes {
             groupId: a.groupId,
             controller: TransferOwnershipController(a.repository),
             onTransferred: (detail) => Navigator.of(context).pop(detail),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupInvitations: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => MyGroupInvitationsScreen(
+            controller: GroupInvitationsController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    joinGroupByCode: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => JoinByInviteCodeScreen(
+            controller: JoinByCodeController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupInviteLinks: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupInviteLinksScreen(
+            groupId: a.groupId,
+            controller: InviteLinksController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupJoinRequests: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupJoinRequestsScreen(
+            groupId: a.groupId,
+            controller: JoinRequestsController(a.repository),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    groupBans: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final a = settings.arguments;
+        if (a is! GroupInfoRouteArgs || a.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => GroupBansScreen(
+            groupId: a.groupId,
+            controller: GroupBansController(a.repository),
           ),
           settings: settings,
         );

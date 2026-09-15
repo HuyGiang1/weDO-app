@@ -98,8 +98,21 @@ class MemberManagementController
 
   Future<bool> kick(String id, String user) async {
     final old = value.data;
+    if (old == null) return false;
     try {
       await repository.kickMember(id, user);
+      return true;
+    } on GroupException catch (e) {
+      value = GroupAsyncState(data: old, failure: e.failure);
+      return false;
+    }
+  }
+
+  Future<bool> ban(String id, String user, {String? reason}) async {
+    final old = value.data;
+    if (old == null) return false;
+    try {
+      await repository.banMember(id, user, BanMemberRequest(reason: reason));
       return true;
     } on GroupException catch (e) {
       value = GroupAsyncState(data: old, failure: e.failure);

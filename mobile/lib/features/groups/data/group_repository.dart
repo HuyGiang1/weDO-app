@@ -53,4 +53,85 @@ class GroupRepository {
     String id,
     TransferOwnershipRequest q,
   ) => _guard(() => api.transfer(id, q));
+
+  // M6: Invitations
+  Future<GroupInvitationResponse> createInvitation(
+    String groupId,
+    CreateInvitationRequest q,
+  ) => _guard(() => api.createInvitation(groupId, q));
+
+  Future<PagedResponse<GroupInvitationResponse>> listMyInvitations({
+    int page = 0,
+    int size = 20,
+    String status = 'PENDING',
+  }) => _guard(() => api.listMyInvitations(page: page, size: size, status: status));
+
+  Future<void> acceptInvitation(String id) =>
+      _guard(() => api.acceptInvitation(id));
+
+  Future<void> declineInvitation(String id) =>
+      _guard(() => api.declineInvitation(id));
+
+  Future<void> cancelInvitation(String id) =>
+      _guard(() => api.cancelInvitation(id));
+
+  // M6: Invite Links
+  Future<InviteLinkResponse> createInviteLink(
+    String groupId,
+    CreateInviteLinkRequest q,
+  ) => _guard(() => api.createInviteLink(groupId, q));
+
+  Future<List<InviteLinkResponse>> listInviteLinks(String groupId) =>
+      _guard(() => api.listInviteLinks(groupId));
+
+  Future<void> revokeInviteLink(String id) =>
+      _guard(() => api.revokeInviteLink(id));
+
+  Future<GroupInviteSummaryResponse> resolveInviteCode(String code) =>
+      _guard(() => api.resolveInviteCode(code));
+
+  Future<void> joinViaInviteCode(String code) =>
+      _guard(() => api.joinViaInviteCode(code));
+
+  // M6: Join Requests
+  Future<PagedResponse<JoinRequestResponse>> listJoinRequests(
+    String groupId, {
+    int page = 0,
+    int size = 20,
+  }) => _guard(() => api.listJoinRequests(groupId, page: page, size: size));
+
+  Future<void> approveJoinRequest(String requestId) =>
+      _guard(() => api.approveJoinRequest(requestId));
+
+  Future<void> rejectJoinRequest(String requestId) =>
+      _guard(() => api.rejectJoinRequest(requestId));
+
+  Future<void> cancelJoinRequest(String requestId) =>
+      _guard(() => api.cancelJoinRequest(requestId));
+
+  // M6: Bans
+  Future<GroupBanResponse> banMember(
+    String groupId,
+    String userId,
+    BanMemberRequest q,
+  ) => _guard(() => api.banMember(groupId, userId, q));
+
+  Future<PagedResponse<GroupBanResponse>> listBans(
+    String groupId, {
+    int page = 0,
+    int size = 30,
+  }) => _guard(() => api.listBans(groupId, page: page, size: size));
+
+  Future<void> unbanUser(String groupId, String userId) =>
+      _guard(() => api.unbanUser(groupId, userId));
+
+  // M6: Lifecycle
+  Future<void> archiveGroup(String groupId) =>
+      _guard(() => api.archiveGroup(groupId));
+
+  Future<void> restoreGroup(String groupId) =>
+      _guard(() => api.restoreGroup(groupId));
+
+  Future<void> deleteGroup(String groupId) =>
+      _guard(() => api.deleteGroup(groupId));
 }

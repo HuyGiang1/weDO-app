@@ -312,8 +312,8 @@ class GroupInvitationResponse {
       GroupInvitationResponse(
         id: _s(j, 'id'),
         groupId: _s(j, 'groupId'),
-        inviterUserId: _s(j, 'inviterUserId'),
-        inviteeUserId: _s(j, 'inviteeUserId'),
+        inviterUserId: (j['inviterId'] ?? j['inviterUserId']) as String,
+        inviteeUserId: (j['inviteeId'] ?? j['inviteeUserId']) as String,
         status: GroupInvitationStatus.fromWire(_s(j, 'status')),
         createdAt: _d(j, 'createdAt'),
         respondedAt: _nd(j, 'respondedAt'),
@@ -350,8 +350,8 @@ class InviteLinkResponse {
       InviteLinkResponse(
         id: _s(j, 'id'),
         groupId: _s(j, 'groupId'),
-        inviteCode: _s(j, 'inviteCode'),
-        creatorUserId: _s(j, 'creatorUserId'),
+        inviteCode: (j['code'] ?? j['inviteCode']) as String,
+        creatorUserId: (j['createdBy'] ?? j['creatorUserId']) as String,
         expiresAt: _nd(j, 'expiresAt'),
         maxUses: _ni(j, 'maxUses'),
         usesCount: (j['usesCount'] as num).toInt(),
@@ -390,11 +390,11 @@ class GroupInviteSummaryResponse {
   factory GroupInviteSummaryResponse.fromJson(Map<String, dynamic> j) =>
       GroupInviteSummaryResponse(
         groupId: _s(j, 'groupId'),
-        groupName: _s(j, 'groupName'),
-        groupAvatarStorageKey: j['groupAvatarStorageKey'] as String?,
-        groupDescription: j['groupDescription'] as String?,
+        groupName: (j['name'] ?? j['groupName']) as String,
+        groupAvatarStorageKey: (j['avatarStorageKey'] ?? j['groupAvatarStorageKey']) as String?,
+        groupDescription: (j['description'] ?? j['groupDescription']) as String?,
         joinPolicy: GroupJoinPolicy.fromWire(_s(j, 'joinPolicy')),
-        activeMemberCount: (j['activeMemberCount'] as num).toInt(),
+        activeMemberCount: ((j['memberCount'] ?? j['activeMemberCount']) as num).toInt(),
       );
 }
 
@@ -434,11 +434,11 @@ class JoinRequestResponse {
       JoinRequestResponse(
         id: _s(j, 'id'),
         groupId: _s(j, 'groupId'),
-        requesterUserId: _s(j, 'requesterUserId'),
+        requesterUserId: (j['userId'] ?? j['requesterUserId']) as String,
         status: GroupJoinRequestStatus.fromWire(_s(j, 'status')),
-        reviewedByUserId: j['reviewedByUserId'] as String?,
+        reviewedByUserId: (j['respondedBy'] ?? j['reviewedByUserId']) as String?,
         createdAt: _d(j, 'createdAt'),
-        reviewedAt: _nd(j, 'reviewedAt'),
+        reviewedAt: _nd(j, 'respondedAt') ?? _nd(j, 'reviewedAt'),
       );
 }
 
@@ -465,8 +465,8 @@ class GroupBanResponse {
   factory GroupBanResponse.fromJson(Map<String, dynamic> j) => GroupBanResponse(
     id: _s(j, 'id'),
     groupId: _s(j, 'groupId'),
-    bannedUserId: _s(j, 'bannedUserId'),
-    bannedByUserId: _s(j, 'bannedByUserId'),
+    bannedUserId: (j['userId'] ?? j['bannedUserId']) as String,
+    bannedByUserId: (j['bannedBy'] ?? j['bannedByUserId']) as String,
     reason: j['reason'] as String?,
     createdAt: _d(j, 'createdAt'),
   );

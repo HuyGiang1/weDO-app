@@ -10,6 +10,11 @@ abstract final class AppColors {
   static const Color primaryFixedDim = Color(0xFFD2BBFF);
   static const Color primaryShadow = Color(0x33630ED4); // rgba(99, 14, 212, 0.20)
   static const Color softShadow = Color(0x0B630ED4); // rgba(99, 14, 212, 0.04)
+  static const Color softVioletShadow = Color(0x0A7C3AED); // rgba(124, 58, 237, 0.04)
+
+  // Secondary
+  static const Color secondary = Color(0xFF006B5F);
+  static const Color secondaryContainer = Color(0xFF62FAE3);
 
   // Background & Surfaces
   static const Color background = Color(0xFFF7F9FB);

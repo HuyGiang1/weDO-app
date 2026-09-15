@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../app/theme/app_colors.dart';
 import '../../application/group_detail_controller.dart';
 import '../../data/group_failure.dart';
 import '../../data/models/group_models.dart';
@@ -43,7 +44,25 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(centerTitle: true, title: const Text('Group Info')),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppColors.background,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.primary),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Group Info',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurface,
+            letterSpacing: -0.3,
+          ),
+        ),
+      ),
       bottomNavigationBar: const GroupsBottomNavigation(),
       body: ValueListenableBuilder<GroupDetailState>(
         valueListenable: widget.controller,
@@ -119,118 +138,275 @@ class _GroupInfoContent extends StatelessWidget {
     final isAdminOrOwner = isOwner || group.callerRole == GroupRole.admin;
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       children: [
-        Center(child: GroupAvatar(name: group.name, radius: 64)),
+        // Header Profile Section
+        Center(
+          child: Container(
+            width: 128,
+            height: 128,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                  color: AppColors.softVioletShadow,
+                  blurRadius: 20,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: GroupAvatar(name: group.name, radius: 64),
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
           group.name,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onSurface,
+            letterSpacing: -0.5,
+          ),
         ),
         if (group.description?.trim().isNotEmpty ?? false)
           Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(group.description!, textAlign: TextAlign.center),
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              group.description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
           ),
         const SizedBox(height: 24),
         if (leaveTransferRequired)
-          const Text('Transfer ownership before leaving this group.'),
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.errorContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              'Transfer ownership before leaving this group.',
+              style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w500),
+            ),
+          ),
+        // Stats / Bento Row
         Row(
           children: [
             Expanded(
               child: _StatCard(
                 icon: Icons.groups,
+                iconColor: AppColors.primary,
                 value: memberCount?.toString() ?? '—',
-                label: 'Members',
+                label: 'MEMBERS',
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: _StatCard(
                 icon: Icons.event,
-                value: 'Est. ${group.createdAt.year}',
-                label: 'Created',
+                iconColor: AppColors.secondary,
+                value: "Est. '${group.createdAt.year % 100}",
+                label: 'CREATED',
               ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        ListTile(
-          leading: const Icon(Icons.edit),
-          title: const Text('Edit Group'),
-          onTap: onEdit,
-        ),
-        ListTile(
-          leading: const Icon(Icons.groups),
-          title: const Text('Group Members'),
-          onTap: onMembers,
-        ),
-        if (isAdminOrOwner) ...[
-          if (onInviteLinks != null)
-            ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('Invite Links'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onInviteLinks,
-            ),
-          if (onJoinRequests != null)
-            ListTile(
-              leading: const Icon(Icons.person_add),
-              title: const Text('Join Requests'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onJoinRequests,
-            ),
-          if (onBans != null)
-            ListTile(
-              leading: const Icon(Icons.block),
-              title: const Text('Banned Users'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onBans,
-            ),
-        ],
-        ListTile(
-          onTap: onSettings,
-          leading: const Icon(Icons.settings),
-          title: const Text('Group Settings'),
-          trailing: const Icon(Icons.chevron_right),
-        ),
-        ListTile(
-          onTap: onActivityLog,
-          leading: const Icon(Icons.history),
-          title: const Text('Activity Log'),
-          trailing: const Icon(Icons.chevron_right),
-        ),
-        if (isOwner) ...[
-          const Divider(height: 32),
-          if (group.status == GroupStatus.active && onArchive != null)
-            ListTile(
-              leading: const Icon(Icons.archive, color: Colors.amber),
-              title: const Text('Archive Group'),
-              onTap: onArchive,
-            ),
-          if (group.status == GroupStatus.archived && onRestore != null)
-            ListTile(
-              leading: const Icon(Icons.unarchive, color: Colors.green),
-              title: const Text('Restore Group'),
-              onTap: onRestore,
-            ),
-          if (onDelete != null)
-            ListTile(
-              leading: const Icon(Icons.delete_forever, color: Colors.red),
-              title: const Text(
-                'Delete Group',
-                style: TextStyle(color: Colors.red),
+        const SizedBox(height: 16),
+        // Group Admin / Owner Card
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: AppColors.softVioletShadow,
+                blurRadius: 20,
+                offset: Offset(0, 4),
               ),
-              onTap: onDelete,
+            ],
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.1),
+                child: const Icon(Icons.person, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOwner ? 'Nhóm trưởng (Owner)' : 'Ban Quản trị',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                    const Text(
+                      'Group Admin',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.mail_outline,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Action Links Bento Container
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: AppColors.softVioletShadow,
+                blurRadius: 20,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              if (isAdminOrOwner) ...[
+                if (onInviteLinks != null) ...[
+                  _ActionTile(
+                    icon: Icons.link,
+                    iconColor: AppColors.primary,
+                    title: 'Invite Links',
+                    onTap: onInviteLinks!,
+                  ),
+                  const Divider(height: 1),
+                ],
+                if (onJoinRequests != null) ...[
+                  _ActionTile(
+                    icon: Icons.person_add,
+                    iconColor: AppColors.primary,
+                    title: 'Join Requests',
+                    onTap: onJoinRequests!,
+                  ),
+                  const Divider(height: 1),
+                ],
+                if (onBans != null) ...[
+                  _ActionTile(
+                    icon: Icons.block,
+                    iconColor: AppColors.outline,
+                    title: 'Banned Users',
+                    onTap: onBans!,
+                  ),
+                  const Divider(height: 1),
+                ],
+              ],
+              _ActionTile(
+                icon: Icons.edit_outlined,
+                iconColor: AppColors.onSurfaceVariant,
+                title: 'Edit Group',
+                onTap: onEdit,
+              ),
+              const Divider(height: 1),
+              _ActionTile(
+                icon: Icons.groups_outlined,
+                iconColor: AppColors.onSurfaceVariant,
+                title: 'Group Members',
+                onTap: onMembers,
+              ),
+              const Divider(height: 1),
+              _ActionTile(
+                icon: Icons.settings_outlined,
+                iconColor: AppColors.onSurfaceVariant,
+                title: 'Group Settings',
+                onTap: onSettings,
+              ),
+              const Divider(height: 1),
+              _ActionTile(
+                icon: Icons.history,
+                iconColor: AppColors.onSurfaceVariant,
+                title: 'Activity Log',
+                onTap: onActivityLog,
+              ),
+              if (isOwner) ...[
+                if (group.status == GroupStatus.active && onArchive != null) ...[
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.archive_outlined,
+                    iconColor: Colors.amber.shade700,
+                    title: 'Archive Group',
+                    onTap: onArchive!,
+                  ),
+                ],
+                if (group.status == GroupStatus.archived && onRestore != null) ...[
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.unarchive_outlined,
+                    iconColor: Colors.green.shade700,
+                    title: 'Restore Group',
+                    onTap: onRestore!,
+                  ),
+                ],
+                if (onDelete != null) ...[
+                  const Divider(height: 1),
+                  _ActionTile(
+                    icon: Icons.delete_forever,
+                    iconColor: AppColors.error,
+                    title: 'Delete Group',
+                    titleColor: AppColors.error,
+                    onTap: onDelete!,
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Danger Zone: Leave Group
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.error.withValues(alpha: 0.1),
+            foregroundColor: AppColors.error,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-        ],
-        Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: OutlinedButton.icon(
-            onPressed: onLeave,
-            icon: const Icon(Icons.logout),
-            label: const Text('Leave Group'),
+            minimumSize: const Size.fromHeight(50),
+          ),
+          onPressed: onLeave,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.logout, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Leave Group',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ),
       ],
@@ -240,25 +416,96 @@ class _GroupInfoContent extends StatelessWidget {
 
 class _StatCard extends StatelessWidget {
   final IconData icon;
+  final Color iconColor;
   final String value;
   final String label;
+
   const _StatCard({
     required this.icon,
+    required this.iconColor,
     required this.value,
     required this.label,
   });
+
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      children: [
-        Icon(icon),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.softVioletShadow,
+            blurRadius: 20,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 28, color: iconColor),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final Color? titleColor;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    this.titleColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        leading: Icon(icon, color: iconColor),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: titleColor ?? AppColors.onSurface,
+          ),
         ),
-        Text(label),
-      ],
-    ),
-  );
+        trailing: const Icon(
+          Icons.chevron_right,
+          size: 20,
+          color: AppColors.onSurfaceVariant,
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
 }

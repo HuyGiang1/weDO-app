@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../application/group_admission_controllers.dart';
@@ -33,7 +34,24 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Group Invitations')),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppColors.surface,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text(
+          'WeDo',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ),
       body: ValueListenableBuilder<GroupAsyncState<List<GroupInvitationResponse>>>(
         valueListenable: widget.controller,
         builder: (context, state, _) {
@@ -42,92 +60,228 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
           }
           final items = state.data ?? const [];
           if (items.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.mail_outline, size: 56, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text(
-                    'No pending group invitations',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.mail_outline,
+                      size: 40,
+                      color: AppColors.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Không có lời mời nào',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Các lời mời vào nhóm của bạn sẽ xuất hiện ở đây.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final inv = items[i];
-              return Card(
-                child: Padding(
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            children: [
+              // Header Section
+              const Text(
+                'Lời mời vào nhóm',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Bạn có ${items.length} lời mời đang chờ xử lý.',
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // List of Invitation Cards
+              ...items.map((inv) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.softVioletShadow,
+                        blurRadius: 20,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.groups, color: AppColors.primary),
-                          const SizedBox(width: 8),
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.groups_rounded,
+                                size: 36,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
                           Expanded(
-                            child: Text(
-                              'Group ID: ${inv.groupId}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  inv.groupId,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.person,
+                                      size: 14,
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text.rich(
+                                        TextSpan(
+                                          children: [
+                                            const TextSpan(text: 'Được mời bởi '),
+                                            TextSpan(
+                                              text: inv.inviterUserId,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.onSurfaceVariant,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Gửi: ${inv.createdAt.toLocal().toString().split('.').first}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.outline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.onPrimary,
+                                elevation: 0,
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: () async {
+                                final ok = await widget.controller.accept(inv.id);
+                                if (ok && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Joined group successfully!'),
+                                    ),
+                                  );
+                                  widget.onAccepted?.call();
+                                }
+                              },
+                              child: const Text(
+                                'Chấp nhận',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.surfaceContainerHigh,
+                                foregroundColor: AppColors.onSurface,
+                                elevation: 0,
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: () async {
+                                final ok = await widget.controller.decline(inv.id);
+                                if (ok && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Invitation declined'),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: const Text(
+                                'Từ chối',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text('Invited by: ${inv.inviterUserId}'),
-                      Text(
-                        'Sent: ${inv.createdAt.toLocal().toString().split('.').first}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          OutlinedButton(
-                            onPressed: () async {
-                              final ok = await widget.controller.decline(inv.id);
-                              if (ok && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Invitation declined'),
-                                  ),
-                                );
-                              }
-                            },
-                            child: const Text('Decline'),
-                          ),
-                          const SizedBox(width: 12),
-                          ElevatedButton(
-                            onPressed: () async {
-                              final ok = await widget.controller.accept(inv.id);
-                              if (ok && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Joined group successfully!'),
-                                  ),
-                                );
-                                widget.onAccepted?.call();
-                              }
-                            },
-                            child: const Text('Accept'),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
-                ),
-              );
-            },
+                );
+              }),
+            ],
           );
         },
       ),
@@ -380,11 +534,27 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Invite Links'),
+        elevation: 0,
+        backgroundColor: AppColors.background,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Invite Links',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurface,
+            letterSpacing: -0.3,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, color: AppColors.primary),
             onPressed: _showCreateDialog,
           ),
         ],
@@ -396,55 +566,374 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final items = state.data ?? const [];
-          if (items.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.link_off, size: 56, color: Colors.grey),
-                  const SizedBox(height: 12),
-                  const Text('No invite links yet'),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _showCreateDialog,
-                    child: const Text('Generate Invite Link'),
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final link = items[i];
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.link, color: AppColors.primary),
-                  title: SelectableText(
-                    link.inviteCode,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            children: [
+              if (items.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: const BoxDecoration(
+                            color: AppColors.surfaceContainer,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.link_off,
+                            size: 36,
+                            color: AppColors.outline,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No invite links yet',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  subtitle: Text(
-                    'Uses: ${link.usesCount}${link.maxUses != null ? '/${link.maxUses}' : ' (unlimited)'}\n'
-                    'Status: ${link.isRevoked ? 'Revoked' : 'Active'}',
-                  ),
-                  trailing: link.isRevoked
-                      ? const Chip(label: Text('Revoked'))
-                      : OutlinedButton(
-                          onPressed: () => widget.controller.revoke(
-                            widget.groupId,
-                            link.id,
-                          ),
-                          child: const Text('Revoke'),
+                )
+              else
+                ...items.map((link) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x0A630ED4),
+                          blurRadius: 20,
+                          offset: Offset(0, 4),
                         ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Card Header
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'Squad Access',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'General invitation link for group members.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: link.isRevoked
+                                    ? AppColors.surfaceContainerHigh
+                                    : AppColors.primaryContainer.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                link.isRevoked ? 'Revoked' : 'Active',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: link.isRevoked
+                                      ? AppColors.outline
+                                      : AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Link display box
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'wedo.app/inv/${link.inviteCode.toLowerCase()}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.onSurface,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              InkWell(
+                                onTap: () {
+                                  Clipboard.setData(
+                                    ClipboardData(
+                                      text: 'https://wedo.app/inv/${link.inviteCode.toLowerCase()}',
+                                    ),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Đã sao chép liên kết vào clipboard!'),
+                                    ),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(999),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.content_copy,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        // Code display box
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.qr_code_scanner,
+                                size: 22,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                link.inviteCode.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 2.0,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.1),
+                                  shape: const StadiumBorder(),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                ),
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: link.inviteCode));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Đã sao chép mã mời!'),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  'Share Code',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Divider(height: 1, color: AppColors.surfaceContainerHigh),
+                        const SizedBox(height: 12),
+                        // Metadata Grid
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: const [
+                                  Text(
+                                    'Expires',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.outline,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Never',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Usage',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.outline,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: '${link.usesCount}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: ' / ${link.maxUses ?? '∞'} uses',
+                                        ),
+                                      ],
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (!link.isRevoked) ...[
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.error,
+                              side: const BorderSide(color: AppColors.error),
+                              shape: const StadiumBorder(),
+                              minimumSize: const Size.fromHeight(44),
+                            ),
+                            icon: const Icon(Icons.delete_forever, size: 20),
+                            label: const Text(
+                              'Revoke Link',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () => widget.controller.revoke(
+                              widget.groupId,
+                              link.id,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+              // "Create New Prompt" Card
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.outlineVariant,
+                    style: BorderStyle.solid,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0A630ED4),
+                      blurRadius: 20,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-              );
-            },
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.add_link,
+                        size: 32,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Need another link?',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Create specific links with custom expiration dates and usage limits for different groups.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.surfaceContainer,
+                        foregroundColor: AppColors.onSurface,
+                        elevation: 0,
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                      onPressed: _showCreateDialog,
+                      child: const Text(
+                        'Create New Link',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -476,7 +965,24 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Join Requests')),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppColors.surface,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text(
+          'WeDo',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ),
       body: ValueListenableBuilder<GroupAsyncState<List<JoinRequestResponse>>>(
         valueListenable: widget.controller,
         builder: (context, state, _) {
@@ -485,71 +991,194 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
           }
           final items = state.data ?? const [];
           if (items.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.person_add_disabled, size: 56, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text('No pending join requests'),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: AppColors.surfaceContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person_add_disabled,
+                      size: 36,
+                      color: AppColors.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'No pending join requests',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
                 ],
               ),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final req = items[i];
-              return Card(
-                child: Padding(
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            children: [
+              // Header Section
+              const Text(
+                'Yêu cầu tham gia',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Bạn có ${items.length} yêu cầu đang chờ phê duyệt cho nhóm.',
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              // Requests list
+              ...items.map((req) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.softVioletShadow,
+                        blurRadius: 20,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const CircleAvatar(child: Icon(Icons.person)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'User: ${req.requesterUserId}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            backgroundColor: AppColors.surfaceContainer,
+                            child: const Icon(
+                              Icons.person,
+                              color: AppColors.primary,
                             ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  req.requesterUserId,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '@${req.requesterUserId} • ${req.createdAt.toLocal().toString().split('.').first}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.group,
+                              size: 16,
+                              color: AppColors.secondary,
+                            ),
+                            SizedBox(width: 6),
                             Text(
-                              'Requested: ${req.createdAt.toLocal().toString().split('.').first}',
-                              style: const TextStyle(
+                              'Đang chờ phê duyệt',
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey,
+                                color: AppColors.onSurfaceVariant,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.check, color: Colors.green),
-                        onPressed: () => widget.controller.approve(
-                          widget.groupId,
-                          req.id,
-                        ),
-                        tooltip: 'Approve',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.red),
-                        onPressed: () => widget.controller.reject(
-                          widget.groupId,
-                          req.id,
-                        ),
-                        tooltip: 'Reject',
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.surfaceContainerHighest,
+                                foregroundColor: AppColors.onSurface,
+                                elevation: 0,
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                              onPressed: () => widget.controller.reject(
+                                widget.groupId,
+                                req.id,
+                              ),
+                              child: const Text(
+                                'Từ chối',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: AppColors.onPrimary,
+                                elevation: 1,
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                              onPressed: () => widget.controller.approve(
+                                widget.groupId,
+                                req.id,
+                              ),
+                              child: const Text(
+                                'Duyệt',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ),
-              );
-            },
+                );
+              }),
+            ],
           );
         },
       ),
@@ -580,7 +1209,23 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Banned Users')),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: AppColors.surface,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: const Text(
+          'Ban List',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+          ),
+        ),
+      ),
       body: ValueListenableBuilder<GroupAsyncState<List<GroupBanResponse>>>(
         valueListenable: widget.controller,
         builder: (context, state, _) {
@@ -589,48 +1234,160 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
           }
           final items = state.data ?? const [];
           if (items.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.block, size: 56, color: Colors.grey),
-                  SizedBox(height: 12),
-                  Text('No banned users in this group'),
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(
+                      color: AppColors.surfaceContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.block,
+                      size: 36,
+                      color: AppColors.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'No banned users in this group',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
                 ],
               ),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              final ban = items[i];
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.block, color: Colors.red),
-                  title: Text('User: ${ban.bannedUserId}'),
-                  subtitle: Text(
-                    'Reason: ${ban.reason ?? 'No reason provided'}\n'
-                    'Banned: ${ban.createdAt.toLocal().toString().split('.').first}',
-                  ),
-                  trailing: OutlinedButton(
-                    onPressed: () async {
-                      final ok = await widget.controller.unban(
-                        widget.groupId,
-                        ban.bannedUserId,
-                      );
-                      if (ok && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('User unbanned')),
-                        );
-                      }
-                    },
-                    child: const Text('Unban'),
-                  ),
+          return ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            children: [
+              // Header Section
+              const Text(
+                'Banned Users',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.5,
                 ),
-              );
-            },
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Review and manage users who have been restricted from WeDo groups.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ...items.map((ban) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.softVioletShadow,
+                        blurRadius: 20,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: AppColors.surfaceContainerLow,
+                        child: const Icon(
+                          Icons.person,
+                          color: AppColors.outline,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              ban.bannedUserId,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Banned: ${ban.createdAt.toLocal().toString().split('.').first}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.shield_outlined,
+                                  size: 14,
+                                  color: AppColors.outline,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    ban.reason ?? 'By Admin',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.outline,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                          foregroundColor: AppColors.primary,
+                          elevation: 0,
+                          shape: const StadiumBorder(),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        ),
+                        onPressed: () async {
+                          final ok = await widget.controller.unban(
+                            widget.groupId,
+                            ban.bannedUserId,
+                          );
+                          if (ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('User unbanned')),
+                            );
+                          }
+                        },
+                        child: const Text(
+                          'Unban',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
           );
         },
       ),

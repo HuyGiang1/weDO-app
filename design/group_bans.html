@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Ban List - WeDo</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed-dim": "#d2bbff",
+                        "secondary-container": "#62fae3",
+                        "tertiary-fixed": "#ffdcc6",
+                        "primary-container": "#7c3aed",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-surface": "#191c1e",
+                        "secondary-fixed-dim": "#3cddc7",
+                        "on-tertiary-fixed": "#301400",
+                        "surface-bright": "#f7f9fb",
+                        "on-tertiary-container": "#ffe0cd",
+                        "surface-variant": "#e0e3e5",
+                        "surface-tint": "#732ee4",
+                        "on-primary-fixed": "#25005a",
+                        "on-primary": "#ffffff",
+                        "secondary": "#006b5f",
+                        "tertiary": "#7d3d00",
+                        "inverse-primary": "#d2bbff",
+                        "surface-container": "#eceef0",
+                        "on-error-container": "#93000a",
+                        "surface-container-lowest": "#ffffff",
+                        "outline-variant": "#ccc3d8",
+                        "secondary-fixed": "#62fae3",
+                        "on-surface-variant": "#4a4455",
+                        "tertiary-container": "#a15100",
+                        "on-primary-container": "#ede0ff",
+                        "inverse-surface": "#2d3133",
+                        "surface-container-high": "#e6e8ea",
+                        "on-secondary-fixed": "#00201c",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f2f4f6",
+                        "background": "#f7f9fb",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-secondary": "#ffffff",
+                        "surface": "#f7f9fb",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "on-secondary-fixed-variant": "#005047",
+                        "on-error": "#ffffff",
+                        "outline": "#7b7487",
+                        "error": "#ba1a1a",
+                        "primary": "#630ed4",
+                        "on-secondary-container": "#007165",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "on-background": "#191c1e",
+                        "primary-fixed": "#eaddff",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-dim": "#d8dadc"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "48px",
+                        "lg": "32px",
+                        "md": "24px",
+                        "sm": "16px",
+                        "xs": "8px",
+                        "base": "4px",
+                        "margin-mobile": "20px",
+                        "gutter-mobile": "12px"
+                    },
+                    "fontFamily": {
+                        "label-sm": [
+                            "Inter"
+                        ],
+                        "body-md": [
+                            "Inter"
+                        ],
+                        "headline-lg": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "headline-lg-mobile": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "body-lg": [
+                            "Inter"
+                        ],
+                        "headline-md": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "display": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "label-md": [
+                            "Inter"
+                        ]
+                    },
+                    "fontSize": {
+                        "label-sm": [
+                            "12px",
+                            {
+                                "lineHeight": "16px",
+                                "fontWeight": "500"
+                            }
+                        ],
+                        "body-md": [
+                            "16px",
+                            {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "headline-lg": [
+                            "32px",
+                            {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "headline-lg-mobile": [
+                            "28px",
+                            {
+                                "lineHeight": "34px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-lg": [
+                            "18px",
+                            {
+                                "lineHeight": "28px",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "headline-md": [
+                            "24px",
+                            {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                            }
+                        ],
+                        "display": [
+                            "40px",
+                            {
+                                "lineHeight": "48px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "800"
+                            }
+                        ],
+                        "label-md": [
+                            "14px",
+                            {
+                                "lineHeight": "20px",
+                                "fontWeight": "600"
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-on-background min-h-screen flex flex-col antialiased">
+    <!-- TopAppBar -->
+    <header
+        class="fixed top-0 w-full bg-surface dark:bg-inverse-surface z-50 flex items-center justify-between px-margin-mobile h-16 w-full z-50">
+        <button
+            class="text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high transition-colors scale-95 active:scale-90 transition-transform p-2 rounded-full flex items-center justify-center">
+            <span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+        </button>
+        <h1 class="font-headline-md text-headline-md-mobile text-primary dark:text-primary-fixed-dim">Ban List</h1>
+        <div class="w-10"></div> <!-- Spacer for center alignment -->
+    </header>
+    <!-- Main Content -->
+    <main class="flex-grow pt-[80px] pb-[100px] px-margin-mobile md:px-lg max-w-3xl mx-auto w-full">
+        <div class="mb-sm">
+            <h2 class="font-headline-md text-headline-md-mobile text-on-surface mb-xs">Banned Users</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Review and manage users who have been
+                restricted from WeDo groups.</p>
+        </div>
+        <div class="flex flex-col gap-sm">
+            <!-- Ban Item 1 -->
+            <div
+                class="bg-surface-container-lowest rounded-xl p-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-md shadow-[0_4px_20px_0_rgba(124,58,237,0.04)]">
+                <div class="flex items-center gap-md">
+                    <img class="w-12 h-12 rounded-full object-cover border-2 border-surface-container-lowest shrink-0"
+                        data-alt="A youthful, expressive avatar portrait of a young adult with bright pastel colored hair on a light minimalist background, modern social platform style."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuBb7TIuQLpI7xJhpcaraCenyvstbbfrMhdMS85yCKG6dAbw1Ev8SdTVCW45mhFEZhSYNVW9Zf4Pff3Q7rQcwxhrDft6ixmIMQ_16KC7MGeJ4ri5zMtkPPLxSIDFFpi-RXjZh3ZqaZg77E8mnVLrM8i_aGQSAuusKYlRrYAGgbAna79wyH9JL-IXXWYvnJjkwa2mdwnVuQmSkZsi-1hUuuSp_vKRCTnTJbrzCEzWhrrpBw8hMsk1vj9PpQ">
+                    <div>
+                        <h3 class="font-label-md text-label-md text-on-surface">Alex Rivera</h3>
+                        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Banned: Oct 12, 2023</p>
+                        <p class="font-label-sm text-label-sm text-outline mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">shield</span>
+                            By Admin Sarah
+                        </p>
+                    </div>
+                </div>
+                <button
+                    class="bg-primary/10 text-primary font-label-md text-label-md px-4 py-2 rounded-full hover:bg-primary/20 transition-colors w-full sm:w-auto">
+                    Unban
+                </button>
+            </div>
+            <!-- Ban Item 2 -->
+            <div
+                class="bg-surface-container-lowest rounded-xl p-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-md shadow-[0_4px_20px_0_rgba(124,58,237,0.04)]">
+                <div class="flex items-center gap-md">
+                    <img class="w-12 h-12 rounded-full object-cover border-2 border-surface-container-lowest shrink-0"
+                        data-alt="A trendy, casual avatar photo of a young man wearing a simple beanie against a soft violet gradient background, typical of a modern lifestyle app profile."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuDVKh40Jm6QGy9AsiRlEUHMnSQnrEsOneb9EKIj2sVjdKUWH3qJJYoEMbgXmmlXW15GT7oLZTdq_HSmjoJKP4LFmSb2Dp0WBky1QFAZKtLFYnmG5po2Z0PidE4odqsvZH0aI6bp8HWJC-ugrk8FhXSyaUl2ROsvVBYmArGTbo-IIs5sgkETzR3Cm2n42ag-XLFY4kU3Wt0Ldl_Px-bwIZZsRWLhBbtIDEwXakWUIgSfJnCBjN4IsDqQ">
+                    <div>
+                        <h3 class="font-label-md text-label-md text-on-surface">Jordan Lee</h3>
+                        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Banned: Sep 28, 2023</p>
+                        <p class="font-label-sm text-label-sm text-outline mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">shield</span>
+                            By Admin Mike
+                        </p>
+                    </div>
+                </div>
+                <button
+                    class="bg-primary/10 text-primary font-label-md text-label-md px-4 py-2 rounded-full hover:bg-primary/20 transition-colors w-full sm:w-auto">
+                    Unban
+                </button>
+            </div>
+            <!-- Ban Item 3 -->
+            <div
+                class="bg-surface-container-lowest rounded-xl p-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-md shadow-[0_4px_20px_0_rgba(124,58,237,0.04)]">
+                <div class="flex items-center gap-md">
+                    <img class="w-12 h-12 rounded-full object-cover border-2 border-surface-container-lowest shrink-0"
+                        data-alt="A bright, cheerful profile picture of a young woman smiling, with soft natural lighting, reflecting a premium youthful social network aesthetic."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuB6iPmiScvXGPdcH4MjEpykUirtbBML18jp-xUT8xAld579U6SBMuybM88OtymjADLWIjYtbFK6Qd-yhLV4jxkk52Qo9am78qcyzdhg2WEI_g5MH4oMIqk_vG2assILzJsVbXo9pS1PdLhIISfBL397vf96G8pQ8VNdfoDautZAPsmMVm_JY3FNkk8-EycawBHjs88WZe3PTTpz3e6_ItG0uecQeWMQGsFJkGZ5sAOqKRk9MpnOhzG0Nw">
+                    <div>
+                        <h3 class="font-label-md text-label-md text-on-surface">Taylor Smith</h3>
+                        <p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Banned: Aug 05, 2023</p>
+                        <p class="font-label-sm text-label-sm text-outline mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">shield</span>
+                            By Admin Sarah
+                        </p>
+                    </div>
+                </div>
+                <button
+                    class="bg-primary/10 text-primary font-label-md text-label-md px-4 py-2 rounded-full hover:bg-primary/20 transition-colors w-full sm:w-auto">
+                    Unban
+                </button>
+            </div>
+        </div>
+    </main>
+    <!-- Note: BottomNavBar is intentionally omitted as this is a sub-page/transactional settings screen, adhering to the Semantic Shell Mandate for hiding nav on linear/task-focused flows with a 'Back' action. -->
+</body>
+
+</html>

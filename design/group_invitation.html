@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Pending Group Invitations - WeDo</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "outline": "#7b7487",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed": "#25005a",
+                        "secondary": "#006b5f",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-primary-container": "#ede0ff",
+                        "on-tertiary-fixed": "#301400",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-highest": "#e0e3e5",
+                        "primary-container": "#7c3aed",
+                        "surface-container-high": "#e6e8ea",
+                        "inverse-surface": "#2d3133",
+                        "surface-bright": "#f7f9fb",
+                        "surface-container-low": "#f2f4f6",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "tertiary-container": "#a15100",
+                        "on-surface-variant": "#4a4455",
+                        "on-surface": "#191c1e",
+                        "surface-tint": "#732ee4",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "surface-variant": "#e0e3e5",
+                        "surface": "#f7f9fb",
+                        "on-secondary-container": "#007165",
+                        "primary-fixed": "#eaddff",
+                        "tertiary-fixed": "#ffdcc6",
+                        "surface-container": "#eceef0",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#7d3d00",
+                        "outline-variant": "#ccc3d8",
+                        "secondary-container": "#62fae3",
+                        "on-secondary-fixed-variant": "#005047",
+                        "on-tertiary-container": "#ffe0cd",
+                        "on-secondary-fixed": "#00201c",
+                        "secondary-fixed-dim": "#3cddc7",
+                        "primary": "#630ed4",
+                        "surface-dim": "#d8dadc",
+                        "background": "#f7f9fb",
+                        "inverse-primary": "#d2bbff",
+                        "secondary-fixed": "#62fae3",
+                        "on-error-container": "#93000a",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "primary-fixed-dim": "#d2bbff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "card": "1.5rem"
+                    },
+                    "spacing": {
+                        "lg": "32px",
+                        "xs": "8px",
+                        "base": "4px",
+                        "xl": "48px",
+                        "margin-mobile": "20px",
+                        "md": "24px",
+                        "sm": "16px",
+                        "gutter-mobile": "12px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "label-md": ["Inter"],
+                        "display": ["Plus Jakarta Sans"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "fontWeight": "600" }],
+                        "display": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .soft-shadow {
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.04);
+        }
+    </style>
+</head>
+
+<body class="bg-surface text-on-surface min-h-screen font-body-md pb-[100px] md:pb-0">
+    <!-- TopAppBar -->
+    <header
+        class="fixed top-0 w-full z-50 bg-surface dark:bg-surface-dim shadow-[0_4px_20px_rgba(124,58,237,0.04)] shadow-sm flex justify-between items-center px-margin-mobile h-16">
+        <div class="flex items-center gap-xs">
+            <button
+                class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center hover:opacity-80 transition-opacity active:scale-95 duration-200">
+                <span class="material-symbols-outlined text-on-surface" data-icon="arrow_back">arrow_back</span>
+            </button>
+            <h1
+                class="font-headline-lg-mobile text-headline-lg-mobile text-primary dark:text-primary-fixed tracking-tight">
+                WeDo</h1>
+        </div>
+        <div class="flex items-center gap-xs">
+            <div class="w-10 h-10 rounded-full overflow-hidden border-2 border-surface bg-surface-container">
+                <img alt="User profile photo" class="w-full h-full object-cover"
+                    data-alt="A youthful male user avatar, bright soft lighting, modern social media profile style, pastel background."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB1MSgM8Xyddn1M5GrTDet3PWiFypgEvqcNYp098wn7e3anHBBG2BWGMbeQJn3ij6F7J76_rXOOtd5N7_R5t_BUE3MiMOqLxKOoepDa1G4fh6LF-VNvJnMoWMSR_Ty5QdhR2xeU7XYxfX_0GNyNp1LE_VPKvwEwQViAL37X4jcTNB8VAwgKIun7RLS1450Qk6REJiSqLlwjFqD1-auGGY_dlhDr9NlhD_xLbvmmUtNLwx5QFiiNMACVzA">
+            </div>
+            <button
+                class="w-10 h-10 flex items-center justify-center text-on-surface-variant dark:text-outline-variant hover:opacity-80 transition-opacity active:scale-95 duration-200">
+                <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+            </button>
+        </div>
+    </header>
+    <!-- Main Canvas -->
+    <main class="pt-[96px] px-margin-mobile md:max-w-2xl md:mx-auto">
+        <div class="mb-lg">
+            <h2 class="font-headline-md text-headline-md mb-base">Lời mời vào nhóm</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant">Bạn có 3 lời mời đang chờ xử lý.</p>
+        </div>
+        <div class="flex flex-col gap-sm">
+            <!-- Invitation Card 1 -->
+            <article
+                class="bg-surface-container-lowest rounded-card p-sm soft-shadow flex flex-col gap-sm relative overflow-hidden">
+                <div class="flex items-start gap-sm">
+                    <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+                        <img alt="Group image" class="w-full h-full object-cover"
+                            data-alt="A vibrant group icon representing a running club, dynamic energetic photography, bright outdoor lighting, youthful lifestyle vibe."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQBCDhfNyIIJLb5hm742DQzkZpS82mf5qMA_04nGaKB_0S0N2_6pouachrXy4ODlXpOtaMd6eE3ksFO95K5qyApnRg1SHzRq9TDk5fXljz6xLSnhPZt7R6_DGX5EXbJMrGWgW7_FbanOhucte63bzRFPgJ-jP2QowyzWJAKNRDxiO3rL8pCd-iXd8tYSQE4xu4mMa7fA-psU3Utyj1ZRL1X3O_cHV9jqcYdp60bOOHvmHEJ6c2PcSmew">
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-label-md text-label-md text-on-surface mb-base">Morning Runners Club</h3>
+                        <p class="font-body-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">person</span>
+                            Được mời bởi <strong>Alex Nguyen</strong>
+                        </p>
+                        <p class="font-body-sm text-label-sm text-outline mt-1">42 thành viên</p>
+                    </div>
+                </div>
+                <div class="flex gap-xs mt-2">
+                    <button
+                        class="flex-1 bg-primary text-on-primary font-label-md text-label-md py-3 rounded-full hover:opacity-90 active:scale-95 transition-all">
+                        Chấp nhận
+                    </button>
+                    <button
+                        class="flex-1 bg-surface-container-high text-on-surface font-label-md text-label-md py-3 rounded-full hover:bg-surface-variant active:scale-95 transition-all">
+                        Từ chối
+                    </button>
+                </div>
+            </article>
+            <!-- Invitation Card 2 -->
+            <article
+                class="bg-surface-container-lowest rounded-card p-sm soft-shadow flex flex-col gap-sm relative overflow-hidden">
+                <div class="flex items-start gap-sm">
+                    <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+                        <img alt="Group image" class="w-full h-full object-cover"
+                            data-alt="A creative group icon for a design meetup, abstract colorful shapes, modern 3d render style, clean studio lighting."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuC_Ahko9OdVcSVWimkKWVI9FJEPnVi_CsvYnEH5AB3oOs0yvav_yKOmWj6q6JYXfFt6UUzlwwFHMOory-CJL8Axq8lz2At0YUfc1opTWVaVzN7YjkIPHOuGTf9k5BHGzd22p3v5PHZf2AKKEyDep-wvWrVty97MHjB2exHLVWhoTyJFv3osaTz3r6MCqdODqU9wGmvTq_W615N1ehukgtDyNRiO6nOe8OnL63Xtia8rWuXsuJNtMtu_0w">
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-label-md text-label-md text-on-surface mb-base">Creative Minds UX/UI</h3>
+                        <p class="font-body-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">person</span>
+                            Được mời bởi <strong>Sarah Tran</strong>
+                        </p>
+                        <p class="font-body-sm text-label-sm text-outline mt-1">128 thành viên</p>
+                    </div>
+                </div>
+                <div class="flex gap-xs mt-2">
+                    <button
+                        class="flex-1 bg-primary text-on-primary font-label-md text-label-md py-3 rounded-full hover:opacity-90 active:scale-95 transition-all">
+                        Chấp nhận
+                    </button>
+                    <button
+                        class="flex-1 bg-surface-container-high text-on-surface font-label-md text-label-md py-3 rounded-full hover:bg-surface-variant active:scale-95 transition-all">
+                        Từ chối
+                    </button>
+                </div>
+            </article>
+            <!-- Invitation Card 3 -->
+            <article
+                class="bg-surface-container-lowest rounded-card p-sm soft-shadow flex flex-col gap-sm relative overflow-hidden">
+                <div class="flex items-start gap-sm">
+                    <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+                        <img alt="Group image" class="w-full h-full object-cover"
+                            data-alt="A cozy group icon for a coffee lovers club, flat lay photography of latte art, warm inviting lighting, soft beige tones."
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGxDp7-Bn4m79N4P0f5HrAWuVJg7AW-8ZolXOnnYIwzijjdccsuTpHLXtICzcdBDQtSw5U_Pv3grDgOlKLHywF9K3S2bDWEwIbxBhSwP_ej8IZlaW9dY_1ngR_4hDRmWzWicYEZOGmEFsJxbxL_o3aMBj8g7_d2pZBIOrtn8xbVfLD4u8BcwHzVWAIYcO8eWSxyzc7Vs12gZT9O_a4LJl8IDJ7yRpJRRQoIWM74tZYJqZgb8pXsUx7Ww">
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="font-label-md text-label-md text-on-surface mb-base">Weekend Coffee Catchup</h3>
+                        <p class="font-body-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">person</span>
+                            Được mời bởi <strong>Minh Pham</strong>
+                        </p>
+                        <p class="font-body-sm text-label-sm text-outline mt-1">15 thành viên</p>
+                    </div>
+                </div>
+                <div class="flex gap-xs mt-2">
+                    <button
+                        class="flex-1 bg-primary text-on-primary font-label-md text-label-md py-3 rounded-full hover:opacity-90 active:scale-95 transition-all">
+                        Chấp nhận
+                    </button>
+                    <button
+                        class="flex-1 bg-surface-container-high text-on-surface font-label-md text-label-md py-3 rounded-full hover:bg-surface-variant active:scale-95 transition-all">
+                        Từ chối
+                    </button>
+                </div>
+            </article>
+        </div>
+    </main>
+    <!-- BottomNavBar -->
+    <nav
+        class="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-surface/80 dark:bg-surface-container/80 backdrop-blur-xl shadow-[0_-4px_20px_rgba(124,58,237,0.04)] shadow-lg rounded-t-xl z-50">
+        <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed active:scale-90 transition-transform duration-200"
+            href="#">
+            <span class="material-symbols-outlined mb-1" data-icon="home">home</span>
+            <span class="font-label-sm text-label-sm">Home</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed font-bold bg-primary-container/10 rounded-xl px-3 py-1 active:scale-90 transition-transform duration-200"
+            href="#">
+            <span class="material-symbols-outlined mb-1" data-icon="group" data-weight="fill"
+                style="font-variation-settings: 'FILL' 1;">group</span>
+            <span class="font-label-sm text-label-sm">Groups</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed active:scale-90 transition-transform duration-200"
+            href="#">
+            <span class="material-symbols-outlined mb-1" data-icon="chat_bubble">chat_bubble</span>
+            <span class="font-label-sm text-label-sm">Chat</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed active:scale-90 transition-transform duration-200"
+            href="#">
+            <span class="material-symbols-outlined mb-1" data-icon="calendar_today">calendar_today</span>
+            <span class="font-label-sm text-label-sm">Calendar</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant hover:text-primary dark:hover:text-primary-fixed active:scale-90 transition-transform duration-200"
+            href="#">
+            <span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+            <span class="font-label-sm text-label-sm">Profile</span>
+        </a>
+    </nav>
+    <script>
+        // Simple micro-interaction for buttons
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function () {
+                this.classList.add('opacity-50');
+                setTimeout(() => this.classList.remove('opacity-50'), 150);
+            });
+        });
+    </script>
+</body>
+
+</html>

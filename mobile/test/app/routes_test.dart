@@ -16,8 +16,8 @@ import 'package:mobile/features/profile/presentation/screens/public_user_profile
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 23 registered production routes', () {
-      expect(AppRoutes.routes.length, 23);
+    test('contains exactly 28 registered production routes', () {
+      expect(AppRoutes.routes.length, 28);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -43,6 +43,11 @@ void main() {
         AppRoutes.groupPermissions,
         AppRoutes.groupAdmins,
         AppRoutes.transferOwnership,
+        AppRoutes.groupInvitations,
+        AppRoutes.joinGroupByCode,
+        AppRoutes.groupInviteLinks,
+        AppRoutes.groupJoinRequests,
+        AppRoutes.groupBans,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -66,7 +71,12 @@ void main() {
                   entry.key == AppRoutes.memberManagement ||
                   entry.key == AppRoutes.groupPermissions ||
                   entry.key == AppRoutes.groupAdmins ||
-                  entry.key == AppRoutes.transferOwnership
+                  entry.key == AppRoutes.transferOwnership ||
+                  entry.key == AppRoutes.groupInvitations ||
+                  entry.key == AppRoutes.joinGroupByCode ||
+                  entry.key == AppRoutes.groupInviteLinks ||
+                  entry.key == AppRoutes.groupJoinRequests ||
+                  entry.key == AppRoutes.groupBans
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',

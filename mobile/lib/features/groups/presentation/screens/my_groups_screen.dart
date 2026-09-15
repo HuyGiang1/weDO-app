@@ -9,11 +9,16 @@ class MyGroupsScreen extends StatefulWidget {
   final GroupsController controller;
   final VoidCallback onCreate;
   final ValueChanged<String> onOpenGroup;
+  final VoidCallback? onJoinByCode;
+  final VoidCallback? onInvitations;
+
   const MyGroupsScreen({
     super.key,
     required this.controller,
     required this.onCreate,
     required this.onOpenGroup,
+    this.onJoinByCode,
+    this.onInvitations,
   });
   @override
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
@@ -85,7 +90,30 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  if (widget.onJoinByCode != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onJoinByCode,
+                        icon: const Icon(Icons.vpn_key),
+                        label: const Text('Join by Code'),
+                      ),
+                    ),
+                  if (widget.onJoinByCode != null && widget.onInvitations != null)
+                    const SizedBox(width: 12),
+                  if (widget.onInvitations != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onInvitations,
+                        icon: const Icon(Icons.mail),
+                        label: const Text('Invitations'),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
             ];
             if (state.phase == GroupsPhase.empty) {
               content.add(_GroupsEmpty(onCreate: widget.onCreate));

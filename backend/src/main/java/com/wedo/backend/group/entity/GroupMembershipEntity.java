@@ -66,6 +66,7 @@ public class GroupMembershipEntity {
     }
     public void endAsLeft(Instant now) { end(GroupMembershipStatus.LEFT, now); }
     public void endAsKicked(Instant now) { end(GroupMembershipStatus.KICKED, now); }
+    public void endAsBanned(Instant now) { end(GroupMembershipStatus.BANNED, now); }
     private void requireActiveRole(GroupRole expected) {
         if (status != GroupMembershipStatus.ACTIVE || role != expected) throw new IllegalStateException("Invalid group role transition");
     }

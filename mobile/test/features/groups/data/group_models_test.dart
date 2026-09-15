@@ -164,4 +164,68 @@ void main() {
       'newOwnerUserId': 'new-owner',
     });
   });
+
+  test('M6 invitation, invite link, join request, and ban models decode properly', () {
+    final inv = GroupInvitationResponse.fromJson({
+      'id': 'inv-1',
+      'groupId': 'grp-1',
+      'inviterUserId': 'user-1',
+      'inviteeUserId': 'user-2',
+      'status': 'PENDING',
+      'createdAt': '2026-03-01T00:00:00Z',
+      'respondedAt': null,
+    });
+    expect(inv.id, 'inv-1');
+    expect(inv.status, GroupInvitationStatus.pending);
+
+    final link = InviteLinkResponse.fromJson({
+      'id': 'link-1',
+      'groupId': 'grp-1',
+      'inviteCode': 'CODE1234',
+      'creatorUserId': 'user-1',
+      'expiresAt': null,
+      'maxUses': 10,
+      'usesCount': 2,
+      'isRevoked': false,
+      'createdAt': '2026-03-01T00:00:00Z',
+    });
+    expect(link.inviteCode, 'CODE1234');
+    expect(link.maxUses, 10);
+    expect(link.usesCount, 2);
+
+    final summary = GroupInviteSummaryResponse.fromJson({
+      'groupId': 'grp-1',
+      'groupName': 'Awesome Group',
+      'groupAvatarStorageKey': null,
+      'groupDescription': 'Cool community',
+      'joinPolicy': 'AUTO_JOIN',
+      'activeMemberCount': 42,
+    });
+    expect(summary.groupName, 'Awesome Group');
+    expect(summary.joinPolicy, GroupJoinPolicy.autoJoin);
+    expect(summary.activeMemberCount, 42);
+
+    final req = JoinRequestResponse.fromJson({
+      'id': 'req-1',
+      'groupId': 'grp-1',
+      'requesterUserId': 'user-3',
+      'status': 'PENDING',
+      'reviewedByUserId': null,
+      'createdAt': '2026-03-01T00:00:00Z',
+      'reviewedAt': null,
+    });
+    expect(req.requesterUserId, 'user-3');
+    expect(req.status, GroupJoinRequestStatus.pending);
+
+    final ban = GroupBanResponse.fromJson({
+      'id': 'ban-1',
+      'groupId': 'grp-1',
+      'bannedUserId': 'user-4',
+      'bannedByUserId': 'user-1',
+      'reason': 'Trolling',
+      'createdAt': '2026-03-01T00:00:00Z',
+    });
+    expect(ban.bannedUserId, 'user-4');
+    expect(ban.reason, 'Trolling');
+  });
 }

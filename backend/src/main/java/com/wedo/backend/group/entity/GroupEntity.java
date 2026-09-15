@@ -76,4 +76,28 @@ public class GroupEntity {
         this.updatedAt = now;
         return true;
     }
+
+    public void archive(Instant now) {
+        if (this.status != GroupStatus.ACTIVE) {
+            throw new IllegalStateException("Group is not active");
+        }
+        this.status = GroupStatus.ARCHIVED;
+        this.updatedAt = now;
+    }
+
+    public void restore(Instant now) {
+        if (this.status != GroupStatus.ARCHIVED) {
+            throw new IllegalStateException("Group is not archived");
+        }
+        this.status = GroupStatus.ACTIVE;
+        this.updatedAt = now;
+    }
+
+    public void delete(Instant now) {
+        if (this.status == GroupStatus.DELETED) {
+            throw new IllegalStateException("Group is already deleted");
+        }
+        this.status = GroupStatus.DELETED;
+        this.updatedAt = now;
+    }
 }

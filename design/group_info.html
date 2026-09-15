@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Group Info - WeDo</title>
+    <!-- Material Symbols -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com" rel="preconnect">
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Tailwind Config -->
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f2f4f6",
+                        "primary-container": "#7c3aed",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "primary-fixed-dim": "#d2bbff",
+                        "on-tertiary-container": "#ffe0cd",
+                        "surface-container": "#eceef0",
+                        "surface-variant": "#e0e3e5",
+                        "on-surface": "#191c1e",
+                        "on-primary-container": "#ede0ff",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-surface-variant": "#4a4455",
+                        "on-error": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "secondary": "#006b5f",
+                        "background": "#f7f9fb",
+                        "surface-tint": "#732ee4",
+                        "surface": "#f7f9fb",
+                        "outline": "#7b7487",
+                        "tertiary-fixed": "#ffdcc6",
+                        "primary": "#630ed4",
+                        "primary-fixed": "#eaddff",
+                        "on-background": "#191c1e",
+                        "error-container": "#ffdad6",
+                        "surface-bright": "#f7f9fb",
+                        "secondary-fixed": "#62fae3",
+                        "on-secondary-container": "#007165",
+                        "inverse-primary": "#d2bbff",
+                        "tertiary-container": "#a15100",
+                        "inverse-surface": "#2d3133",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed-variant": "#005047",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-dim": "#d8dadc",
+                        "secondary-fixed-dim": "#3cddc7",
+                        "outline-variant": "#ccc3d8",
+                        "on-secondary-fixed": "#00201c",
+                        "tertiary": "#7d3d00",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface-container-high": "#e6e8ea",
+                        "on-tertiary-fixed": "#301400",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "on-primary-fixed": "#25005a",
+                        "secondary-container": "#62fae3"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xs": "8px",
+                        "md": "24px",
+                        "lg": "32px",
+                        "xl": "48px",
+                        "gutter-mobile": "12px",
+                        "margin-mobile": "20px",
+                        "base": "4px",
+                        "sm": "16px"
+                    },
+                    "fontFamily": {
+                        "label-md": [
+                            "Inter"
+                        ],
+                        "headline-lg-mobile": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "body-lg": [
+                            "Inter"
+                        ],
+                        "headline-md": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "headline-lg": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "display": [
+                            "Plus Jakarta Sans"
+                        ],
+                        "body-md": [
+                            "Inter"
+                        ],
+                        "label-sm": [
+                            "Inter"
+                        ]
+                    },
+                    "fontSize": {
+                        "label-md": [
+                            "14px",
+                            {
+                                "lineHeight": "20px",
+                                "fontWeight": "600"
+                            }
+                        ],
+                        "headline-lg-mobile": [
+                            "28px",
+                            {
+                                "lineHeight": "34px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "body-lg": [
+                            "18px",
+                            {
+                                "lineHeight": "28px",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "headline-md": [
+                            "24px",
+                            {
+                                "lineHeight": "32px",
+                                "fontWeight": "600"
+                            }
+                        ],
+                        "headline-lg": [
+                            "32px",
+                            {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "700"
+                            }
+                        ],
+                        "display": [
+                            "40px",
+                            {
+                                "lineHeight": "48px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "800"
+                            }
+                        ],
+                        "body-md": [
+                            "16px",
+                            {
+                                "lineHeight": "24px",
+                                "fontWeight": "400"
+                            }
+                        ],
+                        "label-sm": [
+                            "12px",
+                            {
+                                "lineHeight": "16px",
+                                "fontWeight": "500"
+                            }
+                        ]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Ambient Glow & Shadow overrides */
+        .ambient-shadow {
+            box-shadow: 0 4px 20px 0 rgba(124, 58, 237, 0.04);
+        }
+
+        .btn-pressed:active {
+            transform: scale(0.98);
+            box-shadow: none;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-on-background font-body-md antialiased pb-[80px]">
+    <!-- TopAppBar (from JSON) -->
+    <header
+        class="w-full top-0 sticky bg-background/80 backdrop-blur-md z-40 flex items-center justify-between px-margin-mobile py-sm">
+        <button aria-label="Back"
+            class="text-primary dark:text-primary-fixed-dim hover:opacity-80 transition-opacity active:scale-95 transition-transform duration-200 p-2 -ml-2 rounded-full">
+            <span class="material-symbols-outlined" style="font-size: 24px;">arrow_back</span>
+        </button>
+        <h1 class="font-headline-md text-headline-md-mobile dark:text-on-background absolute left-1/2 -translate-x-1/2">
+            Group Info</h1>
+        <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 bg-surface-container">
+            <!-- Empty div to balance flex-between since no trailing avatar requested for this specific screen context, though it's in the JSON type. Using a placeholder or hiding. Let's hide it for symmetry with back button -->
+            <div class="w-full h-full"></div>
+        </div>
+    </header>
+    <!-- Main Content Canvas -->
+    <main class="px-margin-mobile pt-md flex flex-col gap-lg">
+        <!-- Header Profile Section -->
+        <section class="flex flex-col items-center text-center mt-md">
+            <div class="relative w-32 h-32 rounded-full overflow-hidden shadow-lg ambient-shadow mb-md">
+                <img alt="Group Avatar" class="w-full h-full object-cover"
+                    src="https://lh3.googleusercontent.com/aida/AEtjO1UANrYETEyx_ADJx9v8P3xUYaVAk1-IVc09azHLPtcMtDgrFCfRsNLVq5TVhrdjVu8ojWyxluaR5cQGkgTV6Esubkzz-vN2zFPMnoiLo0ymd4aJbkhWzOt7U2kw6RjxqmME44pWVlVnsjSMtZIqTKF3zUVg0FYi3dmYQMVgz0fnJrfpzzn51ayzBaoSn0GmDu0Z_1cmLJ_ScnRqMTtMrgCV6J5I-TAtRt6-4PDC8h3LR-j2KODj4L_Y15QB">
+            </div>
+            <h2 class="font-headline-lg-mobile text-headline-lg-mobile text-on-background mb-xs">Weekend Hikers 🏔️</h2>
+            <p class="font-body-md text-body-md text-on-surface-variant max-w-sm">Exploring local trails and enjoying
+                nature every Saturday morning. Everyone is welcome to join our outdoor adventures!</p>
+        </section>
+        <!-- Stats / Metadata Bento Row -->
+        <section class="grid grid-cols-2 gap-sm">
+            <div
+                class="bg-surface-container-lowest rounded-xl p-md ambient-shadow flex flex-col items-center justify-center">
+                <span class="material-symbols-outlined text-primary mb-xs" data-icon="groups"
+                    style="font-variation-settings: 'FILL' 1; font-size: 28px;">groups</span>
+                <span class="font-headline-md text-headline-md text-on-background">42</span>
+                <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Members</span>
+            </div>
+            <div
+                class="bg-surface-container-lowest rounded-xl p-md ambient-shadow flex flex-col items-center justify-center">
+                <span class="material-symbols-outlined text-secondary mb-xs" data-icon="event"
+                    style="font-variation-settings: 'FILL' 1; font-size: 28px;">event</span>
+                <span class="font-headline-md text-headline-md text-on-background">Est. '23</span>
+                <span
+                    class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Created</span>
+            </div>
+        </section>
+        <!-- Owner Card -->
+        <section class="bg-surface-container-lowest rounded-xl p-sm ambient-shadow flex items-center justify-between">
+            <div class="flex items-center gap-sm">
+                <div
+                    class="w-12 h-12 rounded-full bg-surface-container overflow-hidden border-2 border-surface-container-lowest">
+                    <img class="w-full h-full object-cover"
+                        data-alt="A portrait photograph of a young adult, casual and friendly, serving as an avatar. The image has a vibrant, premium lifestyle aesthetic with soft natural lighting, set against a blurred outdoor background. The overall tone is energetic, joyful, and modern."
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsmJ8PgCaTS_EYan0AasihiKj2TofTIvf17zvbHHL2HvKKosM6tahuYVQWHjBV-TBR52c0lnEaoQvs0n3udXEBCAor_VKhGuIMU7G37DZY4F-e-fvIYnq09bMdLW5udHdtUANYAGISuhG3W98rnVsBdD6NybN3Y6z3xQjsrxMVuELRBlokjeMoFkeewNx_rpyqFrZeRFdP-ufhBHrApdBYf_4zlTcdZzNZnecw0xFCSVzZsq9-SVgy3g">
+                </div>
+                <div>
+                    <p class="font-label-md text-label-md text-on-background">Alex Rivera</p>
+                    <p class="font-label-sm text-label-sm text-on-surface-variant">Group Admin</p>
+                </div>
+            </div>
+            <button
+                class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary btn-pressed transition-transform">
+                <span class="material-symbols-outlined" data-icon="mail">mail</span>
+            </button>
+        </section>
+        <!-- Action Links -->
+        <section class="bg-surface-container-lowest rounded-xl ambient-shadow overflow-hidden flex flex-col">
+            <button
+                class="flex items-center justify-between p-md hover:bg-surface-container/50 active:bg-surface-container transition-colors text-left border-b border-surface-variant/20">
+                <div class="flex items-center gap-sm text-on-background">
+                    <span class="material-symbols-outlined text-primary" data-icon="person_add">person_add</span>
+                    <span class="font-label-md text-label-md">Invite Friends</span>
+                </div>
+                <span class="material-symbols-outlined text-on-surface-variant"
+                    data-icon="chevron_right">chevron_right</span>
+            </button>
+            <button
+                class="flex items-center justify-between p-md hover:bg-surface-container/50 active:bg-surface-container transition-colors text-left">
+                <div class="flex items-center gap-sm text-on-background">
+                    <span class="material-symbols-outlined text-on-surface-variant" data-icon="settings">settings</span>
+                    <span class="font-label-md text-label-md">Group Settings</span>
+                </div>
+                <span class="material-symbols-outlined text-on-surface-variant"
+                    data-icon="chevron_right">chevron_right</span>
+            </button>
+        </section>
+        <!-- Danger Zone -->
+        <section class="mt-xs">
+            <button
+                class="w-full py-md rounded-xl bg-error/10 text-error font-label-md text-label-md btn-pressed transition-transform hover:bg-error/20 flex items-center justify-center gap-xs">
+                <span class="material-symbols-outlined" data-icon="logout">logout</span>
+                Leave Group
+            </button>
+        </section>
+    </main>
+    <!-- BottomNavBar (from JSON) -->
+    <!-- Suppressed based on rules? "The Destination Rule: You are only permitted to render the BottomNavBar or SideNav if the current screen represents a top-level destination... Automatic Suppression: ... Task-Focused: Any sub-page featuring a "Close" or "Back" action..."
+    WAIT. The user prompt explicitly states: "BottomNavBar active on 'Groups'."
+    Following User explicit instruction > Rule when in direct conflict in prompt, OR applying the navigation anyway as requested. I will render it and set 'Groups' active. -->
+    <nav
+        class="fixed bottom-0 w-full z-50 flex justify-around items-center px-gutter-mobile py-xs bg-surface-container-lowest dark:bg-inverse-surface shadow-[0_-4px_20px_0_rgba(124,58,237,0.04)] shadow-lg rounded-t-xl md:hidden">
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-xs py-base hover:bg-surface-container dark:hover:bg-surface-variant/10 active:scale-90 transition-all duration-200 rounded-xl">
+            <span class="material-symbols-outlined" data-icon="home">home</span>
+            <span class="font-label-sm text-label-sm mt-1">Home</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center bg-primary-container/10 text-primary dark:text-primary-fixed-dim rounded-xl px-xs py-base hover:bg-surface-container dark:hover:bg-surface-variant/10 active:scale-90 transition-all duration-200">
+            <span class="material-symbols-outlined" data-icon="group" data-weight="fill"
+                style="font-variation-settings: 'FILL' 1;">group</span>
+            <span class="font-label-sm text-label-sm mt-1">Groups</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-xs py-base hover:bg-surface-container dark:hover:bg-surface-variant/10 active:scale-90 transition-all duration-200 rounded-xl">
+            <span class="material-symbols-outlined" data-icon="chat_bubble">chat_bubble</span>
+            <span class="font-label-sm text-label-sm mt-1">Chat</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-xs py-base hover:bg-surface-container dark:hover:bg-surface-variant/10 active:scale-90 transition-all duration-200 rounded-xl">
+            <span class="material-symbols-outlined" data-icon="calendar_today">calendar_today</span>
+            <span class="font-label-sm text-label-sm mt-1">Calendar</span>
+        </button>
+        <button
+            class="flex flex-col items-center justify-center text-on-surface-variant dark:text-outline-variant px-xs py-base hover:bg-surface-container dark:hover:bg-surface-variant/10 active:scale-90 transition-all duration-200 rounded-xl">
+            <span class="material-symbols-outlined" data-icon="person">person</span>
+            <span class="font-label-sm text-label-sm mt-1">Profile</span>
+        </button>
+    </nav>
+</body>
+
+</html>

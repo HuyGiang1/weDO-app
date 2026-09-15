@@ -219,7 +219,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                     widget.controller.demote(widget.groupId, widget.userId),
                 child: const Text('Remove admin'),
               ),
-            if (canKick)
+            if (canKick) ...[
               OutlinedButton(
                 onPressed: () async {
                   if (await widget.controller.kick(
@@ -231,6 +231,61 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                 },
                 child: const Text('Remove member'),
               ),
+              OutlinedButton(
+                onPressed: () async {
+                  final reasonController = TextEditingController();
+                  final confirmed = await showDialog<bool>(
+                    context: c,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Ban Member'),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Are you sure you want to ban ${target.displayName}?',
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: reasonController,
+                            decoration: const InputDecoration(
+                              labelText: 'Reason (optional)',
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('Ban'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    final reason = reasonController.text.trim();
+                    final ok = await widget.controller.ban(
+                      widget.groupId,
+                      widget.userId,
+                      reason: reason.isEmpty ? null : reason,
+                    );
+                    if (ok && c.mounted) {
+                      widget.onKicked();
+                    }
+                  }
+                },
+                child: const Text(
+                  'Ban member',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ],
             if (s.failure != null) Text(_failureText(s.failure)),
           ],
         );

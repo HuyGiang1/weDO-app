@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../../auth/data/auth_failure.dart';
+import '../../../../app/theme/app_spacing.dart';
+import '../widgets/profile_ui.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   final Future<void> Function({
@@ -121,19 +123,42 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppSpacing.md),
             children: [
-              TextFormField(
-                controller: _currentPasswordController,
-                obscureText: !_showCurrentPassword,
-                enabled: !_submitting,
-                validator: _validateCurrentPassword,
-                decoration: _passwordDecoration(
-                  label: 'Current password',
-                  visible: _showCurrentPassword,
-                  onToggle: () => setState(
-                    () => _showCurrentPassword = !_showCurrentPassword,
-                  ),
+              const Text(
+                'Ensure your account uses a long, random password to stay secure.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              ProfileSurface(
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _currentPasswordController,
+                      obscureText: !_showCurrentPassword,
+                      enabled: !_submitting,
+                      validator: _validateCurrentPassword,
+                      decoration: _passwordDecoration(
+                        label: 'Current password',
+                        visible: _showCurrentPassword,
+                        onToggle: () => setState(
+                          () => _showCurrentPassword = !_showCurrentPassword,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              ProfileSurface(
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Password requirements:'),
+                    SizedBox(height: 8),
+                    Text('• 8–72 characters'),
+                    Text('• No more than 72 UTF-8 bytes'),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
@@ -173,6 +198,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _submitting ? null : _submit,
+                style: profilePrimaryButtonStyle(),
                 child: _submitting
                     ? const SizedBox(
                         height: 20,

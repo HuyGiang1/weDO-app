@@ -12,4 +12,7 @@ class ProfileRepository {
 
   Future<CurrentUser> updateUsername(UpdateUsernameRequest request) =>
       api.updateUsername(request);
+
+  Future<PublicUserProfile> getPublicProfile(String userId) =>
+      api.getPublicProfile(userId);
 }

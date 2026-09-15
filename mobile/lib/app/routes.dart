@@ -17,6 +17,7 @@ import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
 import '../features/profile/presentation/screens/change_password_screen.dart';
 import '../features/profile/data/profile_models.dart';
+import '../features/profile/presentation/screens/public_user_profile_screen.dart';
 import '../features/privacy/data/privacy_models.dart';
 import '../features/privacy/presentation/screens/privacy_settings_screen.dart';
 import '../features/qr/data/personal_qr.dart';
@@ -103,6 +104,15 @@ class PersonalQrRouteArgs {
   const PersonalQrRouteArgs({required this.loadPersonalQr});
 }
 
+class PublicUserProfileRouteArgs {
+  final String userId;
+  final Future<PublicUserProfile> Function(String userId) loadPublicProfile;
+  const PublicUserProfileRouteArgs({
+    required this.userId,
+    required this.loadPublicProfile,
+  });
+}
+
 class GroupsRouteArgs {
   final GroupRepository repository;
   const GroupsRouteArgs({required this.repository});
@@ -150,6 +160,7 @@ abstract final class AppRoutes {
   static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
   static const String personalQr = '/profile/qr';
+  static const String publicUserProfile = '/users/profile';
   static const String groups = '/groups';
   static const String createGroup = '/groups/create';
   static const String groupInfo = '/groups/info';
@@ -390,6 +401,21 @@ abstract final class AppRoutes {
         );
       },
     ),
+    publicUserProfile: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! PublicUserProfileRouteArgs || args.userId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => PublicUserProfileScreen(
+            userId: args.userId,
+            loadPublicProfile: args.loadPublicProfile,
+          ),
+          settings: settings,
+        );
+      },
+    ),
     groups: AppRouteDefinition(
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
@@ -450,19 +476,21 @@ abstract final class AppRoutes {
             return GroupInfoScreen(
               groupId: args.groupId,
               controller: detail,
-              onEdit: () => Navigator.of(context)
-                  .pushNamed(editGroup, arguments: args)
-                  .whenComplete(() => detail.load(args.groupId)),
-              onMembers: () => Navigator.of(context)
-                  .pushNamed(groupMembers, arguments: args)
-                  .whenComplete(() => detail.load(args.groupId)),
-              onSettings: () => Navigator.of(context)
-                  .pushNamed(groupPermissions, arguments: args)
-                  .whenComplete(() => detail.load(args.groupId)),
-              onActivityLog: () => Navigator.of(context).pushNamed(
-                groupActivityLog,
-                arguments: args,
-              ),
+              onEdit: () =>
+                  Navigator.of(context)
+                      .pushNamed(editGroup, arguments: args)
+                      .whenComplete(() => detail.load(args.groupId)),
+              onMembers: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupMembers, arguments: args)
+                      .whenComplete(() => detail.load(args.groupId)),
+              onSettings: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupPermissions, arguments: args)
+                      .whenComplete(() => detail.load(args.groupId)),
+              onActivityLog: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupActivityLog, arguments: args),
               onLeave: () => Navigator.of(context).pop(true),
             );
           },
@@ -557,12 +585,14 @@ abstract final class AppRoutes {
             return GroupPermissionsScreen(
               groupId: a.groupId,
               controller: permissions,
-              onAdmins: () => Navigator.of(context)
-                  .pushNamed(groupAdmins, arguments: a)
-                  .whenComplete(() => permissions.load(a.groupId)),
-              onTransfer: () => Navigator.of(context)
-                  .pushNamed(transferOwnership, arguments: a)
-                  .whenComplete(() => permissions.load(a.groupId)),
+              onAdmins: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupAdmins, arguments: a)
+                      .whenComplete(() => permissions.load(a.groupId)),
+              onTransfer: () =>
+                  Navigator.of(context)
+                      .pushNamed(transferOwnership, arguments: a)
+                      .whenComplete(() => permissions.load(a.groupId)),
             );
           },
           settings: settings,

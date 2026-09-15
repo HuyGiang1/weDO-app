@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../app/routes.dart';
@@ -8,6 +7,7 @@ import '../../../auth/data/models/auth_models.dart';
 import '../../data/profile_models.dart';
 import 'change_username_screen.dart';
 import 'edit_profile_screen.dart';
+import '../widgets/profile_ui.dart';
 
 /// Read-only self-profile screen backed by the authenticated `/api/v1/me` API.
 class ProfileScreen extends StatefulWidget {
@@ -16,7 +16,11 @@ class ProfileScreen extends StatefulWidget {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
-  final Future<void> Function({required String currentPassword, required String newPassword}) changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })
+  changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
 
   const ProfileScreen({
@@ -95,7 +99,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 });
               }
             },
-            onChangePassword: () => Navigator.of(context).pushNamed(AppRoutes.changePassword, arguments: ChangePasswordRouteArgs(changePassword: widget.changePassword, endSessionAfterPasswordChange: widget.endSessionAfterPasswordChange)),
+            onChangePassword: () => Navigator.of(context).pushNamed(
+              AppRoutes.changePassword,
+              arguments: ChangePasswordRouteArgs(
+                changePassword: widget.changePassword,
+                endSessionAfterPasswordChange:
+                    widget.endSessionAfterPasswordChange,
+              ),
+            ),
           );
         },
       ),
@@ -135,13 +146,7 @@ class _ProfileContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: CircleAvatar(
-                    radius: 44,
-                    backgroundColor: AppColors.backgroundGradientEnd,
-                    child: Text(initial, style: AppTextStyles.headline),
-                  ),
-                ),
+                Center(child: ProfileAvatar(label: initial)),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   title,
@@ -158,37 +163,61 @@ class _ProfileContent extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: AppSpacing.xl),
-                _ProfileField(label: 'Email', value: user.email),
-                _ProfileField(
-                  label: 'Email verification',
-                  value: user.emailVerified ? 'Verified' : 'Not verified',
-                ),
-                if (_hasText(user.phone))
-                  _ProfileField(label: 'Phone', value: user.phone!),
                 if (_hasText(user.bio))
-                  _ProfileField(label: 'Bio', value: user.bio!),
+                  ProfileSurface(
+                    child: Text(
+                      user.bio!,
+                      style: AppTextStyles.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.md),
                 const SizedBox(height: AppSpacing.sm),
                 ElevatedButton(
                   onPressed: onEdit,
+                  style: profilePrimaryButtonStyle(),
                   child: const Text('Edit Profile'),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: onChangeUsername,
-                  child: const Text('Change Username'),
+                ProfileActionRow(
+                  icon: Icons.badge_outlined,
+                  label: 'Change Username',
+                  onTap: onChangeUsername,
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(onPressed: onChangePassword, child: const Text('Change Password')),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: () => Navigator.of(context).pushNamed(AppRoutes.personalQr),
-                  child: const Text('My QR'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: () =>
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.lock_outline,
+                  label: 'Privacy Settings',
+                  onTap: () =>
                       Navigator.of(context).pushNamed(AppRoutes.privacy),
-                  child: const Text('Privacy Settings'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.password_outlined,
+                  label: 'Change Password',
+                  onTap: onChangePassword,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.qr_code_rounded,
+                  label: 'My QR',
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.personalQr),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                ProfileSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ProfileField(label: 'Email', value: user.email),
+                      _ProfileField(
+                        label: 'Email verification',
+                        value: user.emailVerified ? 'Verified' : 'Not verified',
+                      ),
+                      if (_hasText(user.phone))
+                        _ProfileField(label: 'Phone', value: user.phone!),
+                    ],
+                  ),
                 ),
               ],
             ),

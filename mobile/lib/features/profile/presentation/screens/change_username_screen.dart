@@ -4,6 +4,7 @@ import '../../../../app/theme/app_spacing.dart';
 import '../../../../core/network/api_exception.dart';
 import '../../../auth/data/models/auth_models.dart';
 import '../../data/profile_models.dart';
+import '../widgets/profile_ui.dart';
 
 class ChangeUsernameScreen extends StatefulWidget {
   final CurrentUser initialUser;
@@ -93,13 +94,45 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.md),
           children: [
-            TextFormField(
-              controller: _username,
-              enabled: !_submitting,
-              autocorrect: false,
-              enableSuggestions: false,
-              validator: _validateUsername,
-              decoration: const InputDecoration(labelText: 'Username'),
+            const Icon(Icons.badge_outlined, size: 44),
+            const SizedBox(height: AppSpacing.sm),
+            const Text(
+              'Choose a unique username to represent yourself on WeDo.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            ProfileSurface(
+              child: Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Current username'),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text('@${widget.initialUser.username ?? ''}'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    controller: _username,
+                    enabled: !_submitting,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    validator: _validateUsername,
+                    decoration: const InputDecoration(
+                      labelText: 'New username',
+                      prefixText: '@',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text(
+                    '3–30 characters: letters, numbers, and underscores.',
+                  ),
+                ],
+              ),
             ),
             if (_requestError != null) ...[
               const SizedBox(height: AppSpacing.md),
@@ -111,9 +144,10 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
             const SizedBox(height: AppSpacing.xl),
             ElevatedButton(
               onPressed: _submitting ? null : _submit,
+              style: profilePrimaryButtonStyle(),
               child: _submitting
                   ? const CircularProgressIndicator()
-                  : const Text('Save username'),
+                  : const Text('Update Username'),
             ),
           ],
         ),

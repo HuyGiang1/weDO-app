@@ -18,12 +18,17 @@ class WeDoApp extends StatelessWidget {
   updateProfile;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)?
   updateUsername;
-  final Future<void> Function({required String currentPassword, required String newPassword})? changePassword;
+  final Future<void> Function({
+    required String currentPassword,
+    required String newPassword,
+  })?
+  changePassword;
   final Future<bool> Function()? endSessionAfterPasswordChange;
   final Future<PrivacySettings> Function()? loadPrivacySettings;
   final Future<PrivacySettings> Function(UpdatePrivacySettingsRequest request)?
   updatePrivacySettings;
   final Future<PersonalQr> Function()? loadPersonalQr;
+  final Future<PublicUserProfile> Function(String userId)? loadPublicProfile;
 
   const WeDoApp({
     super.key,
@@ -37,6 +42,7 @@ class WeDoApp extends StatelessWidget {
     this.loadPrivacySettings,
     this.updatePrivacySettings,
     this.loadPersonalQr,
+    this.loadPublicProfile,
   });
 
   @override
@@ -57,7 +63,9 @@ class WeDoApp extends StatelessWidget {
         settings.name == AppRoutes.profile &&
                 loadCurrentUser != null &&
                 updateProfile != null &&
-                updateUsername != null && changePassword != null && endSessionAfterPasswordChange != null
+                updateUsername != null &&
+                changePassword != null &&
+                endSessionAfterPasswordChange != null
             ? RouteSettings(
                 name: settings.name,
                 arguments: ProfileRouteArgs(
@@ -79,7 +87,19 @@ class WeDoApp extends StatelessWidget {
                 ),
               )
             : settings.name == AppRoutes.personalQr && loadPersonalQr != null
-            ? RouteSettings(name: settings.name, arguments: PersonalQrRouteArgs(loadPersonalQr: loadPersonalQr!))
+            ? RouteSettings(
+                name: settings.name,
+                arguments: PersonalQrRouteArgs(loadPersonalQr: loadPersonalQr!),
+              )
+            : settings.name == AppRoutes.publicUserProfile &&
+                  loadPublicProfile != null
+            ? RouteSettings(
+                name: settings.name,
+                arguments: PublicUserProfileRouteArgs(
+                  userId: (settings.arguments as String?) ?? '',
+                  loadPublicProfile: loadPublicProfile!,
+                ),
+              )
             : settings,
         authStatus: authSessionController.status,
         coordinator: authFlowCoordinator,

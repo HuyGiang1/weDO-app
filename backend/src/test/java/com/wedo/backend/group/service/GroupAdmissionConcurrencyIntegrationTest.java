@@ -174,9 +174,8 @@ class GroupAdmissionConcurrencyIntegrationTest extends AbstractPostgresIntegrati
     private UUID createUser() {
         UUID id = UUID.randomUUID();
         userRepository.save(new UserEntity(
-                id, "u_" + id.toString().substring(0, 8), "user_" + id.toString().substring(0, 8) + "@wedo.test",
-                "Password123!", "User " + id.toString().substring(0, 4), null, null, null, null,
-                UserStatus.ACTIVE, true, NOW, null, NOW, NOW
+                id, "user_" + id.toString().substring(0, 8) + "@wedo.test", "u_" + id.toString().substring(0, 8),
+                "User " + id.toString().substring(0, 4), UserStatus.ACTIVE, NOW, NOW
         ));
         return id;
     }

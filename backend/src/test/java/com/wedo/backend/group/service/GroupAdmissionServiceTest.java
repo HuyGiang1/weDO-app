@@ -216,11 +216,11 @@ class GroupAdmissionServiceTest {
         String code = "valid-code-123";
 
         GroupInviteLinkEntity link = new GroupInviteLinkEntity(UUID.randomUUID(), groupId, code, UUID.randomUUID(), 10, 2, null, false, NOW);
-        when(groupInviteLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        when(groupInviteLinkRepository.findIdentityByCode(code)).thenReturn(Optional.of(identity(link)));
 
         GroupEntity group = new GroupEntity(groupId, "Test Group", "Desc", null, GroupStatus.ACTIVE, UUID.randomUUID(), NOW, NOW);
-        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findByIdForUpdate(link.getId())).thenReturn(Optional.of(link));
         when(groupBanRepository.existsByGroupIdAndUserIdAndUnbannedAtIsNull(groupId, callerId)).thenReturn(false);
         when(groupMembershipRepository.findFirstByGroupIdAndUserIdAndStatus(groupId, callerId, GroupMembershipStatus.ACTIVE)).thenReturn(Optional.empty());
         when(groupMembershipRepository.countByGroupIdAndStatus(groupId, GroupMembershipStatus.ACTIVE)).thenReturn(10L);
@@ -241,10 +241,11 @@ class GroupAdmissionServiceTest {
         String code = "valid-code-approval";
 
         GroupInviteLinkEntity link = new GroupInviteLinkEntity(UUID.randomUUID(), groupId, code, UUID.randomUUID(), null, 0, null, false, NOW);
-        when(groupInviteLinkRepository.findByCode(code)).thenReturn(Optional.of(link));
+        when(groupInviteLinkRepository.findIdentityByCode(code)).thenReturn(Optional.of(identity(link)));
 
         GroupEntity group = new GroupEntity(groupId, "Approval Group", "Desc", null, GroupStatus.ACTIVE, UUID.randomUUID(), NOW, NOW);
-        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findByIdForUpdate(link.getId())).thenReturn(Optional.of(link));
         when(groupBanRepository.existsByGroupIdAndUserIdAndUnbannedAtIsNull(groupId, callerId)).thenReturn(false);
         when(groupMembershipRepository.findFirstByGroupIdAndUserIdAndStatus(groupId, callerId, GroupMembershipStatus.ACTIVE)).thenReturn(Optional.empty());
 
@@ -281,5 +282,12 @@ class GroupAdmissionServiceTest {
         assertEquals(GroupJoinRequestStatus.APPROVED, request.getStatus());
         assertEquals(callerId, request.getRespondedBy());
         verify(groupMembershipRepository).save(any());
+    }
+
+    private GroupInviteLinkRepository.InviteLinkIdentity identity(GroupInviteLinkEntity link) {
+        return new GroupInviteLinkRepository.InviteLinkIdentity() {
+            @Override public UUID getId() { return link.getId(); }
+            @Override public UUID getGroupId() { return link.getGroupId(); }
+        };
     }
 }

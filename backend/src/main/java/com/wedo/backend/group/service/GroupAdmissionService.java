@@ -313,10 +313,15 @@ public class GroupAdmissionService {
 
     @Transactional
     public void revokeInviteLink(UUID linkId, UUID callerUserId) {
-        GroupInviteLinkEntity link = groupInviteLinkRepository.findById(linkId)
+        GroupInviteLinkRepository.InviteLinkIdentity identity = groupInviteLinkRepository.findIdentityById(linkId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
-
-        groupPermissionService.requireAdminOrOwner(link.getGroupId(), callerUserId);
+        UUID groupId = identity.getGroupId();
+        groupRepository.findByIdForUpdate(groupId)
+                .filter(group -> group.getStatus() != GroupStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        groupPermissionService.requireAdminOrOwner(groupId, callerUserId);
+        GroupInviteLinkEntity link = groupInviteLinkRepository.findByIdForUpdate(linkId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
         link.revoke();
     }
 
@@ -358,27 +363,22 @@ public class GroupAdmissionService {
         userService.requireActiveUser(callerUserId);
         Instant now = clock.instant();
 
-        GroupInviteLinkEntity link = groupInviteLinkRepository.findByCode(inviteCode)
+        GroupInviteLinkRepository.InviteLinkIdentity identity = groupInviteLinkRepository.findIdentityByCode(inviteCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
-
-        if (link.isRevoked()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
-        }
-        if (link.isExpired(now)) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
-        }
-        if (link.isLimitReached()) {
-            throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
-        }
-
-        UUID groupId = link.getGroupId();
-        GroupEntity group = groupRepository.findById(groupId)
+        UUID groupId = identity.getGroupId();
+        GroupEntity group = groupRepository.findByIdForUpdate(groupId)
                 .filter(g -> g.getStatus() != GroupStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
 
         if (group.getStatus() == GroupStatus.ARCHIVED) {
             throw new BusinessException(ErrorCode.GROUP_ARCHIVED);
         }
+        GroupInviteLinkEntity link = groupInviteLinkRepository.findByIdForUpdate(identity.getId())
+                .filter(candidate -> candidate.getGroupId().equals(groupId) && candidate.getCode().equals(inviteCode))
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVITE_LINK_NOT_FOUND));
+        if (link.isRevoked()) throw new BusinessException(ErrorCode.INVITE_LINK_REVOKED);
+        if (link.isExpired(now)) throw new BusinessException(ErrorCode.INVITE_LINK_EXPIRED);
+        if (link.isLimitReached()) throw new BusinessException(ErrorCode.INVITE_LINK_LIMIT_REACHED);
 
         if (groupBanRepository.existsByGroupIdAndUserIdAndUnbannedAtIsNull(groupId, callerUserId)) {
             throw new BusinessException(ErrorCode.USER_BANNED_FROM_GROUP);

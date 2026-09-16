@@ -55,7 +55,8 @@ class ChangePasswordControllerTest extends AbstractPostgresIntegrationTest {
         credentialRepository.saveAndFlush(before);
         String currentDeviceToken = createActiveRefreshSession(userId);
         createActiveRefreshSession(userId);
-        RefreshSessionEntity alreadyRevoked = createSession(userId, Instant.now().minus(1, ChronoUnit.HOURS));
+        Instant alreadyRevokedAt = Instant.now().minus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
+        RefreshSessionEntity alreadyRevoked = createSession(userId, alreadyRevokedAt);
         String oldHash = before.getPasswordHash();
         Instant oldPasswordChangedAt = before.getPasswordChangedAt();
         Instant oldUpdatedAt = before.getUpdatedAt();
@@ -80,7 +81,7 @@ class ChangePasswordControllerTest extends AbstractPostgresIntegrationTest {
                 .filter(session -> !session.getId().equals(alreadyRevoked.getId()))
                 .allMatch(session -> session.getRevokedAt() != null)).isTrue();
         assertThat(refreshSessionRepository.findById(alreadyRevoked.getId()).orElseThrow().getRevokedAt())
-                .isEqualTo(alreadyRevoked.getRevokedAt().truncatedTo(ChronoUnit.MICROS));
+                .isEqualTo(alreadyRevokedAt);
         assertThatThrownBy(() -> authService.refreshToken(new RefreshTokenRequest(currentDeviceToken)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(exception -> assertThat(((BusinessException) exception).errorCode())

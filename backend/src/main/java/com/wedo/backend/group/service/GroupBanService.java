@@ -14,6 +14,7 @@ import com.wedo.backend.group.entity.GroupMembershipEntity;
 import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.event.GroupMembershipEndedEvent;
 import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupBanRepository;
 import com.wedo.backend.group.repository.GroupInvitationRepository;
@@ -27,6 +28,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -47,6 +49,7 @@ public class GroupBanService {
     private final UserService userService;
     private final GroupPermissionService groupPermissionService;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     public GroupBanService(
             GroupRepository groupRepository,
@@ -58,7 +61,7 @@ public class GroupBanService {
             UserRepository userRepository,
             UserService userService,
             GroupPermissionService groupPermissionService,
-            Clock clock
+            Clock clock, ApplicationEventPublisher eventPublisher
     ) {
         this.groupRepository = groupRepository;
         this.groupMembershipRepository = groupMembershipRepository;
@@ -70,6 +73,7 @@ public class GroupBanService {
         this.userService = userService;
         this.groupPermissionService = groupPermissionService;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -115,6 +119,7 @@ public class GroupBanService {
                 throw new BusinessException(ErrorCode.CANNOT_BAN_ADMIN);
             }
             target.endAsBanned(now);
+            eventPublisher.publishEvent(new GroupMembershipEndedEvent(target.getId(), groupId, targetUserId, target.getRole(), GroupMembershipStatus.BANNED, now));
         }
 
         groupBanRepository.save(new GroupBanEntity(

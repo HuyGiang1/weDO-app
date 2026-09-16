@@ -51,6 +51,7 @@ public class GroupMembershipEntity {
         this.endedAt = endedAt;
     }
 
+    public UUID getId() { return id; }
     public UUID getGroupId() { return groupId; }
     public UUID getUserId() { return userId; }
     public GroupRole getRole() { return role; }

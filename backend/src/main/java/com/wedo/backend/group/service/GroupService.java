@@ -17,6 +17,7 @@ import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupSettingsEntity;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.event.GroupMembershipEndedEvent;
 import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
@@ -30,6 +31,7 @@ import org.springframework.data.domain.Sort;
 import com.wedo.backend.user.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -45,6 +47,7 @@ public class GroupService {
     private final UserService userService;
     private final GroupPermissionService groupPermissionService;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     public GroupService(
             GroupRepository groupRepository,
@@ -53,7 +56,7 @@ public class GroupService {
             GroupActivityLogRepository groupActivityLogRepository,
             UserService userService,
             GroupPermissionService groupPermissionService,
-            Clock clock
+            Clock clock, ApplicationEventPublisher eventPublisher
     ) {
         this.groupRepository = groupRepository;
         this.groupSettingsRepository = groupSettingsRepository;
@@ -62,6 +65,7 @@ public class GroupService {
         this.userService = userService;
         this.groupPermissionService = groupPermissionService;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -224,6 +228,7 @@ public class GroupService {
         if (!allowed) throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
         Instant now = clock.instant();
         target.endAsKicked(now);
+        eventPublisher.publishEvent(new GroupMembershipEndedEvent(target.getId(), groupId, targetUserId, target.getRole(), GroupMembershipStatus.KICKED, now));
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_MEMBER_KICKED, targetUserId, now));
     }
 
@@ -233,6 +238,7 @@ public class GroupService {
         if (caller.getRole() == GroupRole.OWNER) throw new BusinessException(ErrorCode.TRANSFER_OWNERSHIP_REQUIRED);
         Instant now = clock.instant();
         caller.endAsLeft(now);
+        eventPublisher.publishEvent(new GroupMembershipEndedEvent(caller.getId(), groupId, callerUserId, caller.getRole(), GroupMembershipStatus.LEFT, now));
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_MEMBER_LEFT, callerUserId, now));
     }
 

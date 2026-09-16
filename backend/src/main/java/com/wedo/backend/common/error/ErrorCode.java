@@ -61,6 +61,13 @@ public enum ErrorCode {
     CANNOT_BAN_ADMIN(HttpStatus.FORBIDDEN, "Admins cannot ban other admins."),
     USER_ALREADY_BANNED(HttpStatus.CONFLICT, "User is already banned from this group."),
     USER_NOT_BANNED(HttpStatus.NOT_FOUND, "User is not banned from this group."),
+    ACTIVITY_NOT_FOUND(HttpStatus.NOT_FOUND, "Activity was not found."),
+    ACTIVITY_CLOSED(HttpStatus.CONFLICT, "Activity is closed."),
+    ACTIVITY_ALREADY_STARTED(HttpStatus.CONFLICT, "Activity has already started."),
+    ACTIVITY_ALREADY_COMPLETED(HttpStatus.CONFLICT, "Activity has already completed."),
+    INVALID_ACTIVITY_TIME(HttpStatus.BAD_REQUEST, "Activity time or timezone is invalid."),
+    ACTIVITY_CAPACITY_INVALID(HttpStatus.BAD_REQUEST, "Activity capacity is invalid."),
+    RSVP_LOCKED(HttpStatus.CONFLICT, "RSVP is locked."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

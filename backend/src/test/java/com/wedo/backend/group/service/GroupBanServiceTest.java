@@ -12,6 +12,7 @@ import com.wedo.backend.group.entity.GroupMembershipEntity;
 import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.event.GroupMembershipEndedEvent;
 import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupBanRepository;
 import com.wedo.backend.group.repository.GroupInvitationRepository;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -53,6 +55,7 @@ class GroupBanServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private UserService userService;
     @Mock private GroupPermissionService groupPermissionService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private GroupBanService banService;
 
@@ -68,7 +71,8 @@ class GroupBanServiceTest {
                 userRepository,
                 userService,
                 groupPermissionService,
-                clock
+                clock,
+                eventPublisher
         );
     }
 
@@ -107,6 +111,11 @@ class GroupBanServiceTest {
         assertEquals("Spam", banCaptor.getValue().getReason());
         assertTrue(banCaptor.getValue().isActive());
         verify(groupActivityLogRepository).save(any());
+        ArgumentCaptor<GroupMembershipEndedEvent> eventCaptor = ArgumentCaptor.forClass(GroupMembershipEndedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertEquals(groupId, eventCaptor.getValue().groupId());
+        assertEquals(targetId, eventCaptor.getValue().userId());
+        assertEquals(GroupMembershipStatus.BANNED, eventCaptor.getValue().terminalStatus());
     }
 
     @Test
@@ -177,5 +186,6 @@ class GroupBanServiceTest {
         assertFalse(ban.isActive());
         assertEquals(NOW, ban.getUnbannedAt());
         verify(groupActivityLogRepository).save(any());
+        verifyNoInteractions(eventPublisher);
     }
 }

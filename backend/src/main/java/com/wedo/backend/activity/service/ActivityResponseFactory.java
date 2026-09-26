@@ -55,7 +55,7 @@ public class ActivityResponseFactory {
     public ActivityStatus effectiveStatus(ActivityEntity activity, Instant now) {
         if (activity.getStatus() == ActivityStatus.CANCELLED || activity.getStatus() == ActivityStatus.COMPLETED) return activity.getStatus();
         if (activity.getEndAt() != null && !now.isBefore(activity.getEndAt())) return ActivityStatus.COMPLETED;
-        if (activity.getStatus() == ActivityStatus.CONFIRMED && !now.isBefore(activity.getStartAt())) return ActivityStatus.IN_PROGRESS;
+        if (activity.getStatus() == ActivityStatus.CONFIRMED && activity.getStartAt() != null && !now.isBefore(activity.getStartAt())) return ActivityStatus.IN_PROGRESS;
         return activity.getStatus();
     }
 

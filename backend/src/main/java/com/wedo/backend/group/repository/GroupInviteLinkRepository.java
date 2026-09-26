@@ -4,6 +4,7 @@ import com.wedo.backend.group.entity.GroupInviteLinkEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
 import java.util.List;
@@ -29,4 +30,7 @@ public interface GroupInviteLinkRepository extends JpaRepository<GroupInviteLink
     List<GroupInviteLinkEntity> findByGroupIdOrderByCreatedAtDesc(UUID groupId);
 
     Optional<GroupInviteLinkEntity> findByIdAndGroupId(UUID id, UUID groupId);
+
+    @Query("select l from GroupInviteLinkEntity l where l.groupId = :groupId and l.expiresAt is null and l.maxUses is null and l.isRevoked = false order by l.createdAt asc")
+    List<GroupInviteLinkEntity> findActiveDefaultLinks(@Param("groupId") UUID groupId);
 }

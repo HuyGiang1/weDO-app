@@ -4,10 +4,13 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/l10n/app_strings.dart';
+import 'package:mobile/core/models/paged_response.dart';
 import 'package:mobile/features/groups/application/create_group_controller.dart';
 import 'package:mobile/features/groups/application/group_detail_controller.dart';
 import 'package:mobile/features/groups/application/groups_controller.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
+import 'package:mobile/features/groups/data/group_failure.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
 import 'package:mobile/features/groups/presentation/screens/group_info_screen.dart';
@@ -78,9 +81,41 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Chua co nhom nao'), findsOneWidget);
-    await tester.tap(find.text('Tao nhom').last);
+    expect(find.text('Chưa có nhóm nào'), findsOneWidget);
+    await tester.tap(find.text('Tạo nhóm').last);
     expect(creates, 1);
+  });
+
+  testWidgets('Groups loading recovers from a network failure when retried', (
+    tester,
+  ) async {
+    final repository = _RecoveringGroupsRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MyGroupsScreen(
+          controller: GroupsController(repository),
+          onCreate: () {},
+          onOpenGroup: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('Đang tải nhóm...'), findsOneWidget);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Không thể kết nối mạng. Vui lòng kiểm tra lại.'),
+      findsOneWidget,
+    );
+    expect(find.text('Thử lại'), findsOneWidget);
+    expect(find.text('Thu lai'), findsNothing);
+
+    await tester.tap(find.text('Thử lại'));
+    await tester.pumpAndSettle();
+
+    expect(repository.calls, 2);
+    expect(find.text('Group recovered'), findsOneWidget);
+    expect(find.text('Thử lại'), findsNothing);
   });
 
   testWidgets('Group Info renders fetched member count and bottom navigation', (
@@ -110,13 +145,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
     expect(find.text('Groups'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
-    expect(find.text('Leave Group'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
+    expect(find.text('Rời nhóm'), findsOneWidget);
   });
 
-  testWidgets('Group Info shows Leave for non-owner callers', (
-    tester,
-  ) async {
+  testWidgets('Group Info shows Leave for non-owner callers', (tester) async {
     final controller = GroupDetailController(
       _repository(
         _Adapter({
@@ -139,8 +172,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
-    expect(find.text('Leave Group'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
+    expect(find.text('Rời nhóm'), findsOneWidget);
   });
 
   testWidgets('Create Group validates the required name before submission', (
@@ -154,9 +187,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('Tao nhom'));
+    await tester.tap(find.text(AppStrings.createGroup));
     await tester.pump();
-    expect(find.text('Ten nhom la bat buoc'), findsOneWidget);
+    expect(find.text(AppStrings.groupNameRequired), findsOneWidget);
   });
 
   testWidgets('Create Group avatar action reports unavailable upload', (
@@ -172,7 +205,7 @@ void main() {
     );
     await tester.tap(find.byIcon(Icons.add_a_photo));
     await tester.pump();
-    expect(find.text('Tai anh nhom hien chua kha dung.'), findsOneWidget);
+    expect(find.text(AppStrings.groupImageUnavailable), findsOneWidget);
   });
 
   testWidgets(
@@ -196,11 +229,37 @@ void main() {
         ),
       );
       await tester.enterText(find.byType(TextFormField).first, 'New group');
-      await tester.tap(find.text('Tao nhom'));
+      await tester.tap(find.text(AppStrings.createGroup));
       await tester.pumpAndSettle();
       expect(created?.id, 'g');
     },
   );
+}
+
+class _RecoveringGroupsRepository extends GroupRepository {
+  _RecoveringGroupsRepository() : super(api: GroupApi(Dio()));
+
+  int calls = 0;
+
+  @override
+  Future<PagedResponse<GroupSummary>> listGroups({
+    int page = 0,
+    int size = 30,
+    GroupStatus status = GroupStatus.active,
+  }) async {
+    calls++;
+    if (calls == 1) {
+      throw const GroupException(GroupFailure(GroupFailureType.network));
+    }
+    return PagedResponse(
+      items: [GroupSummary.fromJson(_summary('recovered'))],
+      page: 0,
+      size: 30,
+      totalElements: 1,
+      totalPages: 1,
+      hasNext: false,
+    );
+  }
 }
 
 GroupRepository _repository(_Adapter adapter) {

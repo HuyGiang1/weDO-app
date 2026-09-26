@@ -13,6 +13,8 @@ import com.wedo.backend.group.entity.GroupMembershipStatus;
 import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupSettingsEntity;
 import com.wedo.backend.group.entity.GroupStatus;
+import com.wedo.backend.group.entity.GroupActivityAction;
+import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.group.service.ReadableGroupAccess;
@@ -36,8 +38,9 @@ class ActivityServiceTest {
     private final GroupSettingsRepository settings=mock(GroupSettingsRepository.class);
     private final ActivityWaitlistSequenceRepository sequences=mock(ActivityWaitlistSequenceRepository.class);
     private final ActivityResponseFactory responses=mock(ActivityResponseFactory.class);
+    private final GroupActivityLogRepository groupActivityLogs=mock(GroupActivityLogRepository.class);
     private final Instant now=Instant.parse("2026-09-15T10:00:00Z");
-    private final ActivityService service=new ActivityService(activities,histories,changes,permissions,settings,sequences,responses,Clock.fixed(now, ZoneOffset.UTC));
+    private final ActivityService service=new ActivityService(activities,histories,changes,permissions,settings,sequences,responses,groupActivityLogs,Clock.fixed(now, ZoneOffset.UTC));
 
     @Test void createFoundation_startsPlanning_mapsMaxParticipantsAndPersistsInitialHistory() {
         UUID groupId=UUID.randomUUID(); UUID creatorId=UUID.randomUUID();
@@ -56,7 +59,31 @@ class ActivityServiceTest {
         verify(histories).save(argThat(history -> history.getFromStatus()==null && history.getToStatus()==ActivityStatus.PLANNING));
     }
 
+    @Test void createFoundation_unscheduled_startsPlanning_logsActivityCreated() {
+        UUID groupId=UUID.randomUUID(); UUID creatorId=UUID.randomUUID();
+        when(permissions.requireMutableMembership(groupId,creatorId)).thenReturn(access(groupId,creatorId,GroupRole.OWNER,GroupStatus.ACTIVE));
+        ActivityEntity saved=entity(ActivityStatus.PLANNING, null, null, null);
+        when(activities.save(any())).thenReturn(saved);
+        when(activities.findById(saved.getId())).thenReturn(Optional.of(saved));
+        when(histories.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(responses.detail(any(), eq(creatorId), any())).thenAnswer(invocation -> ActivityMapper.toDetail(invocation.getArgument(0)));
+        CreateActivityRequest unscheduledReq = new CreateActivityRequest("Chơi cầu lông", null, null, null, null, null, null);
+        ActivityDetailResponse result=service.createFoundation(groupId,creatorId,unscheduledReq);
+        ArgumentCaptor<ActivityEntity> captured=ArgumentCaptor.forClass(ActivityEntity.class);
+        verify(activities).save(captured.capture());
+        assertEquals(ActivityStatus.PLANNING,captured.getValue().getStatus());
+        assertNull(captured.getValue().getStartAt());
+        assertNull(captured.getValue().getEndAt());
+        assertNull(captured.getValue().getTimezone());
+        verify(groupActivityLogs).save(argThat(log -> log.getGroupId().equals(groupId) && log.getAction() == GroupActivityAction.ACTIVITY_CREATED));
+    }
+
     @Test void validation_rejectsInvalidTimezoneAndTimeOrder() {
+        assertDoesNotThrow(() -> service.validateTimeAndTimezone(null, null, null));
+        BusinessException invalidCombo1 = assertThrows(BusinessException.class, () -> service.validateTimeAndTimezone(null, now, null));
+        assertEquals(ErrorCode.INVALID_ACTIVITY_TIME, invalidCombo1.errorCode());
+        BusinessException invalidCombo2 = assertThrows(BusinessException.class, () -> service.validateTimeAndTimezone(null, null, "Asia/Ho_Chi_Minh"));
+        assertEquals(ErrorCode.INVALID_ACTIVITY_TIME, invalidCombo2.errorCode());
         BusinessException timezone=assertThrows(BusinessException.class, () -> service.validateTimeAndTimezone(now,null,"Not/AZone"));
         assertEquals(ErrorCode.INVALID_ACTIVITY_TIME,timezone.errorCode());
         BusinessException order=assertThrows(BusinessException.class, () -> service.validateTimeAndTimezone(now,now,"UTC"));
@@ -64,6 +91,7 @@ class ActivityServiceTest {
     }
 
     @Test void derivedLifecycle_isPlanningBeforeStart_inProgressAtStart_completedAtEnd_andKeepsCancelled() {
+        assertEquals(ActivityStatus.PLANNING,service.derivedStatus(entity(ActivityStatus.PLANNING,null,null,null),now));
         assertEquals(ActivityStatus.PLANNING,service.derivedStatus(entity(ActivityStatus.PLANNING,now.plusSeconds(1),null,null),now));
         assertEquals(ActivityStatus.IN_PROGRESS,service.derivedStatus(entity(ActivityStatus.CONFIRMED,now,null,null),now));
         assertEquals(ActivityStatus.COMPLETED,service.derivedStatus(entity(ActivityStatus.CONFIRMED,now.minusSeconds(10),now,null),now));

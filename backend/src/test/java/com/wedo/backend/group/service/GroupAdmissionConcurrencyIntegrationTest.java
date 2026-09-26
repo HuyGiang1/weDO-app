@@ -317,6 +317,38 @@ class GroupAdmissionConcurrencyIntegrationTest extends AbstractPostgresIntegrati
         return id;
     }
 
+    @Test
+    void concurrentEnsureDefaultInviteLink_createsExactlyOneDefaultLink() throws Exception {
+        UUID ownerId = createUser();
+        UUID groupId = createGroup(ownerId);
+        int threadCount = 5;
+        ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch ready = new CountDownLatch(threadCount);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<InviteLinkResponse>> futures = new ArrayList<>();
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return admissionService.ensureDefaultInviteLink(groupId, ownerId);
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            List<InviteLinkResponse> responses = new ArrayList<>();
+            for (Future<InviteLinkResponse> future : futures) {
+                responses.add(future.get(30, TimeUnit.SECONDS));
+            }
+            String firstCode = responses.getFirst().code();
+            assertTrue(responses.stream().allMatch(r -> firstCode.equals(r.code())), "All responses must return the same default link");
+            List<GroupInviteLinkEntity> linksInDb = groupInviteLinkRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
+            assertEquals(1, linksInDb.size(), "Exactly one default link must be created in DB");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     private void addMembership(UUID groupId, UUID userId, GroupRole role, GroupMembershipStatus status) {
         groupMembershipRepository.save(new GroupMembershipEntity(
                 UUID.randomUUID(), groupId, userId, role, status, NOW, null

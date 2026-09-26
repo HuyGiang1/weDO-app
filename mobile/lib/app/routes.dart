@@ -35,6 +35,10 @@ import '../features/groups/application/group_management_controllers.dart';
 import '../features/groups/presentation/screens/group_management_screens.dart';
 import '../features/groups/application/group_admission_controllers.dart';
 import '../features/groups/presentation/screens/group_admission_screens.dart';
+import '../features/activity/data/activity_api.dart';
+import '../features/activity/data/activity_repository.dart';
+import '../features/activity/application/activity_controllers.dart';
+import '../features/activity/presentation/screens/activity_runtime_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -136,6 +140,21 @@ class GroupMemberRouteArgs {
   });
 }
 
+class ActivitiesRouteArgs {
+  final ActivityRepository repository;
+  final String groupId;
+  const ActivitiesRouteArgs({required this.repository, required this.groupId});
+}
+
+class ActivityDetailRouteArgs {
+  final ActivityRepository repository;
+  final String activityId;
+  const ActivityDetailRouteArgs({
+    required this.repository,
+    required this.activityId,
+  });
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
@@ -178,6 +197,8 @@ abstract final class AppRoutes {
   static const String groupInviteLinks = '/groups/invite-links';
   static const String groupJoinRequests = '/groups/join-requests';
   static const String groupBans = '/groups/bans';
+  static const String activities = '/groups/activities';
+  static const String activityDetail = '/activities/detail';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -444,12 +465,14 @@ abstract final class AppRoutes {
                     ),
                   )
                   .whenComplete(groupsController.refresh),
-              onJoinByCode: () => Navigator.of(context)
-                  .pushNamed(joinGroupByCode, arguments: args)
-                  .whenComplete(groupsController.refresh),
-              onInvitations: () => Navigator.of(context)
-                  .pushNamed(groupInvitations, arguments: args)
-                  .whenComplete(groupsController.refresh),
+              onJoinByCode: () =>
+                  Navigator.of(context)
+                      .pushNamed(joinGroupByCode, arguments: args)
+                      .whenComplete(groupsController.refresh),
+              onInvitations: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupInvitations, arguments: args)
+                      .whenComplete(groupsController.refresh),
             );
           },
           settings: settings,
@@ -504,10 +527,21 @@ abstract final class AppRoutes {
               onActivityLog: () =>
                   Navigator.of(context)
                       .pushNamed(groupActivityLog, arguments: args),
-              onInviteLinks: () => Navigator.of(context)
-                  .pushNamed(groupInviteLinks, arguments: args),
-              onJoinRequests: () => Navigator.of(context)
-                  .pushNamed(groupJoinRequests, arguments: args),
+              onActivities: () => Navigator.of(context).pushNamed(
+                activities,
+                arguments: ActivitiesRouteArgs(
+                  repository: ActivityRepository(
+                    api: ActivityApi(args.repository.api.dio),
+                  ),
+                  groupId: args.groupId,
+                ),
+              ),
+              onInviteLinks: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupInviteLinks, arguments: args),
+              onJoinRequests: () =>
+                  Navigator.of(context)
+                      .pushNamed(groupJoinRequests, arguments: args),
               onBans: () =>
                   Navigator.of(context).pushNamed(groupBans, arguments: args),
               onArchive: () async {
@@ -575,6 +609,43 @@ abstract final class AppRoutes {
             controller: GroupActivityLogController(args.repository),
           ),
           settings: settings,
+        );
+      },
+    ),
+    activities: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ActivitiesRouteArgs || args.groupId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => ActivityListRuntimeScreen(
+            groupId: args.groupId,
+            controller: ActivityListController(args.repository),
+            onOpen: (activityId) => Navigator.of(context).pushNamed(
+              activityDetail,
+              arguments: ActivityDetailRouteArgs(
+                repository: args.repository,
+                activityId: activityId,
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+    activityDetail: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ActivityDetailRouteArgs || args.activityId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => ActivityDetailRuntimeScreen(
+            activityId: args.activityId,
+            controller: ActivityDetailController(args.repository),
+          ),
         );
       },
     ),

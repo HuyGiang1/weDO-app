@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/app_strings.dart';
 import '../../application/create_group_controller.dart';
 import '../../data/models/group_models.dart';
 
@@ -42,21 +43,22 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(centerTitle: true, title: const Text('Tao nhom moi')),
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text(AppStrings.createGroupTitle),
+      ),
       body: Form(
         key: formKey,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
           children: [
-            const Center(
-              child: Text('Bat dau khong gian rieng cho hoi ban cua ban.'),
-            ),
+            const Center(child: Text(AppStrings.createGroupDescription)),
             const SizedBox(height: 24),
             Center(
               child: InkWell(
                 onTap: () => ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Tai anh nhom hien chua kha dung.'),
+                    content: Text(AppStrings.groupImageUnavailable),
                   ),
                 ),
                 child: const CircleAvatar(
@@ -69,15 +71,20 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             TextFormField(
               controller: name,
               maxLength: 100,
-              decoration: const InputDecoration(labelText: 'Ten nhom *'),
-              validator: (v) =>
-                  v == null || v.trim().isEmpty ? 'Ten nhom la bat buoc' : null,
+              decoration: const InputDecoration(
+                labelText: AppStrings.groupNameLabel,
+              ),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? AppStrings.groupNameRequired
+                  : null,
             ),
             TextFormField(
               controller: description,
               maxLength: 500,
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Mo ta (Tuy chon)'),
+              decoration: const InputDecoration(
+                labelText: AppStrings.groupDescriptionOptional,
+              ),
             ),
           ],
         ),
@@ -89,7 +96,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             valueListenable: widget.controller,
             builder: (context, state, child) => ElevatedButton(
               onPressed: state.submitting ? null : submit,
-              child: Text(state.submitting ? 'Dang tao...' : 'Tao nhom'),
+              child: Text(
+                state.submitting
+                    ? AppStrings.creatingGroup
+                    : AppStrings.createGroup,
+              ),
             ),
           ),
         ),

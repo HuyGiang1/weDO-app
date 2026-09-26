@@ -124,11 +124,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     }
   }
 
-  Future<void> _handlePickAvatar() async {
-    if (_isSubmitting || widget.onPickAvatar == null) return;
-    await widget.onPickAvatar!();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -186,18 +181,16 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
                                 const Text(
-                                  'Add a photo and some details to help friends find you.',
+                                  'Add your details to finish creating your profile.',
                                   style: AppTextStyles.bodyMedium,
                                   textAlign: TextAlign.center,
                                 ),
-                                const SizedBox(height: AppSpacing.xl),
-                                _AvatarPicker(
-                                  onPressed:
-                                      _isSubmitting ||
-                                          widget.onPickAvatar == null
-                                      ? null
-                                      : _handlePickAvatar,
+                                const SizedBox(height: AppSpacing.lg),
+                                _ReadOnlyUsernameCard(
+                                  username: widget.username,
                                 ),
+                                const SizedBox(height: AppSpacing.lg),
+                                const _AvatarPlaceholder(),
                                 const SizedBox(height: AppSpacing.xl),
                                 _ProfileField(
                                   label: 'Display Name',
@@ -283,62 +276,143 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-class _AvatarPicker extends StatelessWidget {
-  final VoidCallback? onPressed;
+class _ReadOnlyUsernameCard extends StatelessWidget {
+  final String username;
 
-  const _AvatarPicker({this.onPressed});
+  const _ReadOnlyUsernameCard({required this.username});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: 12.0,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.inputBackground,
+        borderRadius: BorderRadius.circular(12.0),
+        border: Border.all(
+          color: AppColors.surfaceContainerLowest,
+          width: 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32.0,
+            height: 32.0,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.alternate_email_rounded,
+              size: 18.0,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12.0),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'USERNAME',
+                  style: TextStyle(
+                    fontSize: 10.0,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurfaceVariant,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  username,
+                  style: const TextStyle(
+                    fontSize: 15.0,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8.0,
+              vertical: 4.0,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16806A).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6.0),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 14.0,
+                  color: Color(0xFF16806A),
+                ),
+                SizedBox(width: 4.0),
+                Text(
+                  'Set',
+                  style: TextStyle(
+                    fontSize: 11.0,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF16806A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvatarPlaceholder extends StatelessWidget {
+  const _AvatarPlaceholder();
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Semantics(
-        button: true,
-        label: 'Add profile photo',
-        child: SizedBox(
-          width: 128.0,
-          height: 128.0,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Material(
-                color: const Color(0xFFE6E8EA),
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: onPressed,
-                  child: const Center(
-                    child: Icon(
-                      Icons.add_a_photo_outlined,
-                      size: 36.0,
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 96.0,
+            height: 96.0,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE6E8EA),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryShadow.withValues(alpha: 0.06),
+                  blurRadius: 16.0,
+                  offset: const Offset(0, 4),
                 ),
+              ],
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.person_outline_rounded,
+                size: 48.0,
+                color: AppColors.onSurfaceVariant,
               ),
-              Positioned(
-                right: -2.0,
-                bottom: -2.0,
-                child: Container(
-                  width: 36.0,
-                  height: 36.0,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.surface, width: 2.0),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: AppColors.primaryShadow,
-                        blurRadius: 8.0,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.add, color: AppColors.onPrimary),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'Photo can be added later in settings',
+            style: TextStyle(
+              fontSize: 12.0,
+              color: AppColors.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

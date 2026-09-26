@@ -1,13 +1,20 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, deprecated_member_use
 
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../../core/l10n/app_strings.dart';
+import '../../data/group_failure.dart';
 import '../../application/group_management_controllers.dart';
 import '../../data/models/group_models.dart';
 import '../widgets/group_widgets.dart';
 
-String _failureText(Object? failure) =>
-    failure == null ? '' : 'Unable to complete this group action.';
+String _failureText(Object? failure) {
+  if (failure == null) return '';
+  if (failure is GroupFailure) return failure.toVietnameseMessage();
+  return AppStrings.groupActionFailed;
+}
 
 class EditGroupScreen extends StatefulWidget {
   final String groupId;
@@ -26,6 +33,10 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
   final _name = TextEditingController();
   final _description = TextEditingController();
   bool _seeded = false;
+  Uint8List? _previewBytes;
+  String? _avatarStorageKey;
+  bool _isUploadingAvatar = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,9 +50,66 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
     super.dispose();
   }
 
+  Future<void> _pickAndUploadAvatar(bool isArchived) async {
+    if (isArchived || _isUploadingAvatar) return;
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _previewBytes = bytes;
+        _isUploadingAvatar = true;
+      });
+
+      final ext = picked.name.split('.').last.toLowerCase();
+      final contentType = switch (ext) {
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        _ => 'image/jpeg',
+      };
+
+      final storageKey = await widget.controller.uploadAvatar(
+        bytes: bytes,
+        filename: picked.name.isEmpty ? 'avatar.jpg' : picked.name,
+        contentType: contentType,
+      );
+
+      if (!mounted) return;
+
+      if (storageKey != null) {
+        setState(() {
+          _avatarStorageKey = storageKey;
+          _isUploadingAvatar = false;
+        });
+      } else {
+        setState(() {
+          _isUploadingAvatar = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không thể tải ảnh lên. Vui lòng thử lại.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isUploadingAvatar = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không thể tải ảnh lên. Vui lòng thử lại.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Edit Group')),
+    appBar: AppBar(title: const Text('Sửa thông tin nhóm')),
     body: ValueListenableBuilder<GroupAsyncState<GroupDetail>>(
       valueListenable: widget.controller,
       builder: (context, state, _) {
@@ -50,45 +118,132 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
           _seeded = true;
           _name.text = group.name;
           _description.text = group.description ?? '';
+          _avatarStorageKey = group.avatarStorageKey;
         }
         if (state.loading && group == null)
           return const Center(child: CircularProgressIndicator());
+
+        final isArchived = group?.status == GroupStatus.archived;
+
         return Form(
           key: _form,
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              Center(
-                child: InkWell(
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Group avatar upload is not available.'),
-                    ),
+              if (isArchived)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    border: Border.all(color: Colors.amber.shade300),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: GroupAvatar(
-                    name: _name.text.isEmpty ? '?' : _name.text,
-                    radius: 56,
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber.shade900),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          AppStrings.groupArchivedCannotMutate,
+                          style: TextStyle(
+                            color: Colors.black87,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      'Ảnh nhóm',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(56),
+                          onTap: (isArchived || _isUploadingAvatar)
+                              ? null
+                              : () => _pickAndUploadAvatar(isArchived),
+                          child: GroupAvatar(
+                            name: _name.text.isEmpty ? '?' : _name.text,
+                            radius: 56,
+                            avatarStorageKey: _avatarStorageKey,
+                            imageBytes: _previewBytes,
+                          ),
+                        ),
+                        if (_isUploadingAvatar)
+                          Container(
+                            width: 112,
+                            height: 112,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withValues(alpha: 0.4),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_isUploadingAvatar)
+                      const Text(
+                        'Đang tải ảnh...',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: isArchived ? null : () => _pickAndUploadAvatar(isArchived),
+                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                        label: Text(
+                          (_avatarStorageKey != null || _previewBytes != null) ? 'Đổi ảnh' : 'Chọn ảnh',
+                        ),
+                      ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _name,
                 maxLength: 100,
-                decoration: const InputDecoration(labelText: 'Group name'),
+                enabled: !isArchived,
+                decoration: const InputDecoration(labelText: 'Tên nhóm'),
                 validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Group name is required'
+                    ? 'Tên nhóm không được để trống'
                     : null,
               ),
               TextFormField(
                 controller: _description,
                 maxLength: 500,
                 maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Description'),
+                enabled: !isArchived,
+                decoration: const InputDecoration(labelText: 'Mô tả nhóm'),
               ),
-              if (state.failure != null) Text(_failureText(state.failure)),
+              if (state.failure != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    _failureText(state.failure),
+                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                  ),
+                ),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: state.loading
+                onPressed: (state.loading || isArchived || _isUploadingAvatar)
                     ? null
                     : () async {
                         if (!_form.currentState!.validate()) return;
@@ -97,12 +252,13 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                           UpdateGroupRequest(
                             name: _name.text.trim(),
                             description: _description.text.trim(),
+                            avatarStorageKey: _avatarStorageKey,
                           ),
                         );
                         if (r != null && context.mounted)
                           Navigator.of(context).pop(r);
                       },
-                child: const Text('Save changes'),
+                child: const Text('Lưu thay đổi'),
               ),
             ],
           ),
@@ -318,7 +474,7 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('Group Permissions')),
+    appBar: AppBar(title: const Text('Cài đặt quyền nhóm')),
     body: ValueListenableBuilder<GroupAsyncState<GroupPermissionsData>>(
       valueListenable: widget.controller,
       builder: (c, s, _) {
@@ -326,98 +482,177 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
         if (s.loading && d == null)
           return const Center(child: CircularProgressIndicator());
         if (d == null) return Center(child: Text(_failureText(s.failure)));
-        final owner = d.group.callerRole == GroupRole.owner;
+
+        final isOwner = d.group.callerRole == GroupRole.owner;
+        final isActive = d.group.status == GroupStatus.active;
+        final canMutate = isOwner && isActive;
         final x = d.settings;
+
         Future<void> save(UpdateGroupSettingsRequest q) async {
           await widget.controller.save(widget.groupId, q);
         }
 
         return ListView(
           children: [
+            if (!isActive)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  border: Border.all(color: Colors.amber.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.amber.shade900),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        AppStrings.groupArchivedCannotMutate,
+                        style: TextStyle(
+                          color: Colors.black87,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (!isOwner)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline, color: Colors.blue.shade800),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        AppStrings.groupOnlyOwnerCanChangeSettings,
+                        style: TextStyle(
+                          color: Colors.black87,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             SwitchListTile(
               value: x.memberModifyInfoAllowed,
-              onChanged: owner
+              onChanged: canMutate
                   ? (v) => save(
                       UpdateGroupSettingsRequest(memberModifyInfoAllowed: v),
                     )
                   : null,
-              title: const Text('Members can edit group info'),
+              title: const Text('Thành viên có thể sửa thông tin nhóm'),
             ),
             SwitchListTile(
               value: x.memberCreateActivityAllowed,
-              onChanged: owner
+              onChanged: canMutate
                   ? (v) => save(
                       UpdateGroupSettingsRequest(
                         memberCreateActivityAllowed: v,
                       ),
                     )
                   : null,
-              title: const Text('Members can create activities'),
+              title: const Text('Thành viên có thể tạo hoạt động'),
             ),
             SwitchListTile(
               value: x.memberPinMessageAllowed,
-              onChanged: owner
+              onChanged: canMutate
                   ? (v) => save(
                       UpdateGroupSettingsRequest(memberPinMessageAllowed: v),
                     )
                   : null,
-              title: const Text('Members can pin messages'),
+              title: const Text('Thành viên có thể ghim tin nhắn'),
             ),
-            DropdownButtonFormField<GroupJoinPolicy>(
-              value: x.joinPolicy,
-              onChanged: owner
-                  ? (v) {
-                      if (v != null)
-                        save(UpdateGroupSettingsRequest(joinPolicy: v));
-                    }
-                  : null,
-              items: GroupJoinPolicy.values
-                  .map(
-                    (v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(
-                        v == GroupJoinPolicy.autoJoin
-                            ? 'Auto join'
-                            : 'Approval required',
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: DropdownButtonFormField<GroupJoinPolicy>(
+                value: x.joinPolicy,
+                onChanged: canMutate
+                    ? (v) {
+                        if (v != null)
+                          save(UpdateGroupSettingsRequest(joinPolicy: v));
+                      }
+                    : null,
+                items: GroupJoinPolicy.values
+                    .map(
+                      (v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(
+                          v == GroupJoinPolicy.autoJoin
+                              ? 'Tự do tham gia'
+                              : 'Cần xét duyệt',
+                        ),
                       ),
-                    ),
-                  )
-                  .toList(),
-              decoration: const InputDecoration(labelText: 'Join policy'),
+                    )
+                    .toList(),
+                decoration: const InputDecoration(labelText: 'Hình thức tham gia nhóm'),
+              ),
             ),
-            DropdownButtonFormField<ChatHistoryPolicy>(
-              value: x.chatHistoryPolicy,
-              onChanged: owner
-                  ? (v) {
-                      if (v != null)
-                        save(UpdateGroupSettingsRequest(chatHistoryPolicy: v));
-                    }
-                  : null,
-              items: ChatHistoryPolicy.values
-                  .map(
-                    (v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(
-                        v == ChatHistoryPolicy.fullHistory
-                            ? 'Full history'
-                            : 'From join time',
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: DropdownButtonFormField<ChatHistoryPolicy>(
+                value: x.chatHistoryPolicy,
+                onChanged: canMutate
+                    ? (v) {
+                        if (v != null)
+                          save(UpdateGroupSettingsRequest(chatHistoryPolicy: v));
+                      }
+                    : null,
+                items: ChatHistoryPolicy.values
+                    .map(
+                      (v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(
+                          v == ChatHistoryPolicy.fullHistory
+                              ? 'Toàn bộ lịch sử'
+                              : 'Từ khi tham gia',
+                        ),
                       ),
-                    ),
-                  )
-                  .toList(),
-              decoration: const InputDecoration(labelText: 'Chat history'),
+                    )
+                    .toList(),
+                decoration: const InputDecoration(labelText: 'Lịch sử trò chuyện'),
+              ),
             ),
             ListTile(
-              title: const Text('Manage admins'),
+              title: const Text('Quản lý quản trị viên'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: widget.onAdmins,
+              onTap: isActive ? widget.onAdmins : null,
             ),
             ListTile(
-              title: const Text('Transfer ownership'),
+              title: const Text('Chuyển quyền trưởng nhóm'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: owner ? widget.onTransfer : null,
+              onTap: canMutate ? widget.onTransfer : null,
             ),
-            if (s.failure != null) Text(_failureText(s.failure)),
+            if (s.failure != null)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border.all(color: Colors.red.shade200),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _failureText(s.failure),
+                  style: TextStyle(
+                    color: Colors.red.shade900,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
           ],
         );
       },

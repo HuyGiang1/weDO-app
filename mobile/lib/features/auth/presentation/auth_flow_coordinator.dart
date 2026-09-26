@@ -11,6 +11,7 @@ import 'screens/create_username_screen.dart';
 class AuthFlowCoordinator {
   final AuthRepository _repository;
   final AuthSessionController? sessionController;
+  final void Function(BuildContext context)? onAuthenticated;
   String? _registeredUserId;
   String? _profileCompletionToken;
   String? _selectedUsername;
@@ -19,6 +20,7 @@ class AuthFlowCoordinator {
   AuthFlowCoordinator(
     this._repository, {
     this.sessionController,
+    this.onAuthenticated,
   });
 
   Future<void> login(
@@ -35,7 +37,13 @@ class AuthFlowCoordinator {
       if (result is AuthenticatedSession) {
         _clearOnboardingState();
         sessionController?.markAuthenticated();
-        if (context.mounted) _show(context, 'Signed in successfully.');
+        if (context.mounted) {
+          if (onAuthenticated != null) {
+            onAuthenticated!(context);
+          } else {
+            _show(context, 'Signed in successfully.');
+          }
+        }
         return;
       }
       if (result is ProfileCompletionRequired) {
@@ -208,7 +216,10 @@ class AuthFlowCoordinator {
       }
       _clearOnboardingState();
       if (context.mounted) {
-        Navigator.of(context).pushNamed('/login');
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/login',
+          (route) => route.settings.name == '/' || route.isFirst,
+        );
       }
     } on AuthException catch (error) {
       if (context.mounted) {

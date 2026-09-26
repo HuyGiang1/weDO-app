@@ -1,0 +1,24 @@
+@startuml
+hide methods
+skinparam classAttributeIconSize 0
+class UserEntity { id: UUID\nusername: String\ndisplayName: String\navatarStorageKey: String? }
+class FriendshipEntity { id: UUID\nuserId: UUID\nfriendId: UUID\nstatus: FriendshipStatus }
+class GroupEntity { id: UUID\nname: String\nstatus: GroupStatus\navatarStorageKey: String? }
+class GroupMembershipEntity { id: UUID\nrole: GroupRole\nstatus: GroupMembershipStatus }
+class GroupInviteLinkEntity { id: UUID\ncode: String\nisRevoked: boolean }
+class GroupBanEntity { id: UUID\nuserId: UUID }
+class GroupActivityLogEntity { id: UUID\nactorUserId: UUID\naction: GroupActivityAction }
+class ActivityEntity { id: UUID\nstatus: ActivityStatus\nstartAt: Instant?\nendAt: Instant?\ntimezone: String?\ncapacity: Integer? }
+class ActivityParticipantEntity { id: UUID\nrsvpStatus: ActivityRsvpStatus\nwaitlistSequence: Long? }
+class ActivityWaitlistSequenceEntity { activityId: UUID\ncurrentSequence: Long }
+UserEntity "1" -- "0..*" GroupMembershipEntity
+GroupEntity "1" -- "0..*" GroupMembershipEntity
+GroupEntity "1" -- "0..*" GroupInviteLinkEntity
+GroupEntity "1" -- "0..*" GroupBanEntity
+GroupEntity "1" -- "0..*" GroupActivityLogEntity
+GroupEntity "1" -- "0..*" ActivityEntity
+ActivityEntity "1" -- "0..*" ActivityParticipantEntity
+UserEntity "1" -- "0..*" ActivityParticipantEntity
+ActivityEntity "1" -- "1" ActivityWaitlistSequenceEntity
+UserEntity "1" -- "0..*" FriendshipEntity
+@enduml

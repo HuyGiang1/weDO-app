@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/l10n/app_strings.dart';
+import '../../../../core/utils/date_time_formatter.dart';
+import '../../data/group_failure.dart';
 import '../../application/group_admission_controllers.dart';
 import '../../application/group_management_controllers.dart';
 import '../../data/models/group_models.dart';
 import '../widgets/group_widgets.dart';
 
-String _failureText(Object? failure) =>
-    failure == null ? '' : 'Unable to complete this action. Please try again.';
+String _failureText(Object? failure) {
+  if (failure == null) return '';
+  if (failure is GroupFailure) return failure.toVietnameseMessage();
+  return AppStrings.groupActionFailed;
+}
 
 class MyGroupInvitationsScreen extends StatefulWidget {
   final GroupInvitationsController controller;
@@ -485,10 +491,36 @@ class GroupInviteLinksScreen extends StatefulWidget {
 }
 
 class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
+  InviteLinkResponse? _defaultLink;
+  bool _loadingDefault = true;
+
   @override
   void initState() {
     super.initState();
-    widget.controller.load(widget.groupId);
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _loadingDefault = true);
+    final def = await widget.controller.getDefault(widget.groupId);
+    if (mounted) {
+      setState(() {
+        _defaultLink = def;
+        _loadingDefault = false;
+      });
+    }
+    await widget.controller.load(widget.groupId);
+  }
+
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   void _showCreateDialog() {
@@ -496,7 +528,7 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Create Invite Link'),
+        title: const Text(AppStrings.createCustomInviteLink),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -504,8 +536,8 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
               controller: maxUsesController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Max Uses (optional)',
-                hintText: 'Leave empty for unlimited',
+                labelText: 'Số lượt tham gia tối đa (tùy chọn)',
+                hintText: 'Để trống nếu không giới hạn',
               ),
             ),
           ],
@@ -513,7 +545,7 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: const Text(AppStrings.cancel),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -523,8 +555,9 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
                 widget.groupId,
                 CreateInviteLinkRequest(maxUses: max),
               );
+              await _loadData();
             },
-            child: const Text('Create'),
+            child: const Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -544,7 +577,7 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
         ),
         centerTitle: true,
         title: const Text(
-          'Invite Links',
+          AppStrings.groupInviteLinkTitle,
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -552,85 +585,71 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
             letterSpacing: -0.3,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: AppColors.primary),
-            onPressed: _showCreateDialog,
-          ),
-        ],
       ),
       body: ValueListenableBuilder<GroupAsyncState<List<InviteLinkResponse>>>(
         valueListenable: widget.controller,
         builder: (context, state, _) {
-          if (state.loading && state.data == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
           final items = state.data ?? const [];
-          return ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            children: [
-              if (items.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: const BoxDecoration(
-                            color: AppColors.surfaceContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.link_off,
-                            size: 36,
-                            color: AppColors.outline,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No invite links yet',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.onSurface,
-                          ),
-                        ),
-                      ],
+          // Filter other custom links (exclude the current default link from advanced list if identical)
+          final customLinks = items.where((link) => link.id != _defaultLink?.id).toList();
+
+          return RefreshIndicator(
+            onRefresh: _loadData,
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              children: [
+                if (state.failure != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _failureText(state.failure),
+                      style: const TextStyle(color: AppColors.error),
                     ),
                   ),
-                )
-              else
-                ...items.map((link) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 20),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x0A630ED4),
-                          blurRadius: 20,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Card Header
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Column(
+
+                // Primary Default Invite Link Card
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0A630ED4),
+                        blurRadius: 20,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.link_rounded,
+                              color: AppColors.primary,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
+                              children: [
                                 Text(
-                                  'Squad Access',
+                                  AppStrings.groupInviteLinkTitle,
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w700,
@@ -639,7 +658,7 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
                                 ),
                                 SizedBox(height: 2),
                                 Text(
-                                  'General invitation link for group members.',
+                                  AppStrings.groupInviteLinkSubtitle,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: AppColors.onSurfaceVariant,
@@ -647,293 +666,284 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
                                 ),
                               ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: link.isRevoked
-                                    ? AppColors.surfaceContainerHigh
-                                    : AppColors.primaryContainer.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                link.isRevoked ? 'Revoked' : 'Active',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: link.isRevoked
-                                      ? AppColors.outline
-                                      : AppColors.primary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      if (_loadingDefault)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
                                 ),
-                              ),
+                                SizedBox(width: 12),
+                                Text('Đang tải liên kết mời...'),
+                              ],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                          ),
+                        )
+                      else if (_defaultLink != null) ...[
                         // Link display box
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
                             color: AppColors.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.5)),
                           ),
                           child: Row(
                             children: [
                               Expanded(
                                 child: Text(
-                                  'wedo.app/inv/${link.inviteCode.toLowerCase()}',
+                                  'https://wedo.app/inv/${_defaultLink!.inviteCode.toLowerCase()}',
                                   style: const TextStyle(
                                     fontSize: 14,
-                                    color: AppColors.onSurface,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.primary,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              InkWell(
-                                onTap: () {
-                                  Clipboard.setData(
-                                    ClipboardData(
-                                      text: 'https://wedo.app/inv/${link.inviteCode.toLowerCase()}',
-                                    ),
-                                  );
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Đã sao chép liên kết vào clipboard!'),
-                                    ),
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(999),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.content_copy,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // Code display box
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.qr_code_scanner,
-                                size: 22,
-                                color: AppColors.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                link.inviteCode.toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 2.0,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.1),
-                                  shape: const StadiumBorder(),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                ),
-                                onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: link.inviteCode));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Đã sao chép mã mời!'),
-                                    ),
-                                  );
-                                },
-                                child: const Text(
-                                  'Share Code',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                  ),
+                              IconButton(
+                                icon: const Icon(Icons.copy_rounded, size: 20, color: AppColors.primary),
+                                tooltip: AppStrings.copy,
+                                onPressed: () => _copyToClipboard(
+                                  'https://wedo.app/inv/${_defaultLink!.inviteCode.toLowerCase()}',
+                                  AppStrings.copied,
                                 ),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Divider(height: 1, color: AppColors.surfaceContainerHigh),
-                        const SizedBox(height: 12),
-                        // Metadata Grid
+                        // Prominent Action Buttons
                         Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                    'Expires',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.outline,
-                                    ),
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'Never',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.onSurface,
-                                    ),
-                                  ),
-                                ],
+                                ),
+                                icon: const Icon(Icons.copy_rounded, size: 18),
+                                label: const Text(
+                                  AppStrings.copyInviteLink,
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                onPressed: () => _copyToClipboard(
+                                  'https://wedo.app/inv/${_defaultLink!.inviteCode.toLowerCase()}',
+                                  AppStrings.copied,
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 12),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Usage',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.outline,
-                                    ),
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(color: AppColors.primary),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text.rich(
-                                    TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${link.usesCount}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: ' / ${link.maxUses ?? '∞'} uses',
-                                        ),
-                                      ],
-                                    ),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.onSurface,
-                                    ),
-                                  ),
-                                ],
+                                ),
+                                icon: const Icon(Icons.share_rounded, size: 18),
+                                label: const Text(
+                                  AppStrings.shareInviteLink,
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                onPressed: () => _copyToClipboard(
+                                  'https://wedo.app/inv/${_defaultLink!.inviteCode.toLowerCase()}',
+                                  'Đã sao chép liên kết để chia sẻ!',
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        if (!link.isRevoked) ...[
-                          const SizedBox(height: 16),
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.error,
-                              side: const BorderSide(color: AppColors.error),
-                              shape: const StadiumBorder(),
-                              minimumSize: const Size.fromHeight(44),
-                            ),
-                            icon: const Icon(Icons.delete_forever, size: 20),
-                            label: const Text(
-                              'Revoke Link',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            onPressed: () => widget.controller.revoke(
-                              widget.groupId,
-                              link.id,
-                            ),
+                      ] else ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            AppStrings.noActiveInviteLink,
+                            style: TextStyle(color: AppColors.onSurfaceVariant),
                           ),
-                        ],
+                        ),
+                        ElevatedButton(
+                          onPressed: _loadData,
+                          child: const Text(AppStrings.retry),
+                        ),
                       ],
-                    ),
-                  );
-                }),
-              // "Create New Prompt" Card
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: AppColors.outlineVariant,
-                    style: BorderStyle.solid,
+                    ],
                   ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x0A630ED4),
-                      blurRadius: 20,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
                 ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryContainer.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
+
+                const SizedBox(height: 24),
+
+                // Progressive Disclosure: Advanced Multi-Link Management
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0A630ED4),
+                        blurRadius: 16,
+                        offset: Offset(0, 2),
                       ),
-                      child: const Icon(
-                        Icons.add_link,
-                        size: 32,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Need another link?',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Create specific links with custom expiration dates and usage limits for different groups.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.surfaceContainer,
-                        foregroundColor: AppColors.onSurface,
-                        elevation: 0,
-                        shape: const StadiumBorder(),
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                      onPressed: _showCreateDialog,
-                      child: const Text(
-                        'Create New Link',
+                    ],
+                  ),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.tune_rounded, color: AppColors.onSurfaceVariant),
+                      title: const Text(
+                        AppStrings.advancedInviteLinks,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
+                          color: AppColors.onSurface,
                         ),
                       ),
+                      subtitle: const Text(
+                        'Tùy chỉnh thời hạn hoặc số lượt tham gia',
+                        style: TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      children: [
+                        const Divider(height: 1, color: AppColors.surfaceContainerHigh),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Các liên kết khác',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text(AppStrings.createCustomInviteLink),
+                              onPressed: _showCreateDialog,
+                            ),
+                          ],
+                        ),
+                        if (customLinks.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(
+                              child: Text(
+                                'Chưa có liên kết tùy chỉnh nào.',
+                                style: TextStyle(color: AppColors.onSurfaceVariant, fontSize: 13),
+                              ),
+                            ),
+                          )
+                        else
+                          ...customLinks.map((link) {
+                            final isExpired = link.isExpired;
+                            final isRevoked = link.isRevoked;
+                            final isActive = !isExpired && !isRevoked;
+
+                            return Container(
+                              margin: const EdgeInsets.only(top: 12),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppColors.outlineVariant.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        link.inviteCode.toUpperCase(),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 15,
+                                          letterSpacing: 1.2,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? AppColors.primaryContainer.withValues(alpha: 0.2)
+                                              : AppColors.surfaceContainerHigh,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          isActive
+                                              ? 'Hoạt động'
+                                              : (isRevoked ? 'Đã thu hồi' : 'Hết hạn'),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: isActive ? AppColors.primary : AppColors.outline,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Lượt dùng: ${link.usesCount} / ${link.maxUses ?? 'Không giới hạn'}',
+                                    style: const TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+                                  ),
+                                  if (link.expiresAt != null)
+                                    Text(
+                                      'Hết hạn: ${AppDateTimeFormatter.formatDateTime(link.expiresAt!)}',
+                                      style: const TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+                                    ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton.icon(
+                                        icon: const Icon(Icons.copy, size: 14),
+                                        label: const Text('Sao chép'),
+                                        onPressed: () => _copyToClipboard(
+                                          'https://wedo.app/inv/${link.inviteCode.toLowerCase()}',
+                                          AppStrings.copied,
+                                        ),
+                                      ),
+                                      if (isActive) ...[
+                                        const SizedBox(width: 8),
+                                        TextButton(
+                                          style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                                          onPressed: () async {
+                                            await widget.controller.revoke(widget.groupId, link.id);
+                                            await _loadData();
+                                          },
+                                          child: const Text('Thu hồi'),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),

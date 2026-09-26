@@ -141,7 +141,7 @@ public class GroupService {
 
     @Transactional
     public GroupDetailResponse updateGroup(UUID groupId, UUID callerUserId, UpdateGroupRequest request) {
-        ReadableGroupAccess access = groupPermissionService.requireAdminOrOwner(groupId, callerUserId);
+        ReadableGroupAccess access = groupPermissionService.requireCanModifyGroupInfo(groupId, callerUserId);
         GroupEntity group = access.group();
         String name = request.name() == null ? group.getName() : requireNonBlankName(request.name());
         String description = request.description() == null ? group.getDescription() : clearIfBlank(request.description());

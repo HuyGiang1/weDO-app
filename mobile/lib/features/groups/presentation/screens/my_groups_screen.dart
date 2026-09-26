@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/l10n/app_strings.dart';
 import '../../application/groups_controller.dart';
 import '../../data/models/group_models.dart';
 import '../widgets/group_widgets.dart';
@@ -40,14 +41,39 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
           valueListenable: widget.controller,
           builder: (context, state, child) {
             if (state.phase == GroupsPhase.loading) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(AppStrings.groupsLoading),
+                  ],
+                ),
+              );
             }
             if (state.phase == GroupsPhase.error) {
               return Center(
-                child: OutlinedButton.icon(
-                  onPressed: widget.controller.refresh,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Thu lai'),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 40),
+                      const SizedBox(height: 12),
+                      Text(
+                        state.failure?.toVietnameseMessage() ??
+                            AppStrings.groupsLoadFailed,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: widget.controller.refresh,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text(AppStrings.retry),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }
@@ -70,23 +96,21 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                         ),
                         SizedBox(height: 20),
                         Text(
-                          'Nhom cua toi',
+                          AppStrings.myGroups,
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         SizedBox(height: 4),
-                        Text(
-                          'Nhung khong gian ban dang cung moi nguoi ket noi.',
-                        ),
+                        Text(AppStrings.myGroupsSubtitle),
                       ],
                     ),
                   ),
                   ElevatedButton.icon(
                     onPressed: widget.onCreate,
                     icon: const Icon(Icons.add),
-                    label: const Text('Tao nhom'),
+                    label: const Text(AppStrings.createGroup),
                   ),
                 ],
               ),
@@ -98,17 +122,18 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                       child: OutlinedButton.icon(
                         onPressed: widget.onJoinByCode,
                         icon: const Icon(Icons.vpn_key),
-                        label: const Text('Join by Code'),
+                        label: const Text(AppStrings.joinByCode),
                       ),
                     ),
-                  if (widget.onJoinByCode != null && widget.onInvitations != null)
+                  if (widget.onJoinByCode != null &&
+                      widget.onInvitations != null)
                     const SizedBox(width: 12),
                   if (widget.onInvitations != null)
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: widget.onInvitations,
                         icon: const Icon(Icons.mail),
-                        label: const Text('Invitations'),
+                        label: const Text(AppStrings.invitations),
                       ),
                     ),
                 ],
@@ -150,7 +175,10 @@ class _GroupCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     child: ListTile(
       onTap: onTap,
-      leading: GroupAvatar(name: group.name),
+      leading: GroupAvatar(
+        name: group.name,
+        avatarStorageKey: group.avatarStorageKey,
+      ),
       title: Row(
         children: [
           Expanded(child: Text(group.name)),
@@ -171,11 +199,11 @@ class _GroupsEmpty extends StatelessWidget {
     child: Column(
       children: [
         const Icon(Icons.groups_3, size: 56, color: AppColors.primary),
-        const Text('Chua co nhom nao'),
+        const Text(AppStrings.noGroups),
         ElevatedButton.icon(
           onPressed: onCreate,
           icon: const Icon(Icons.add),
-          label: const Text('Tao nhom'),
+          label: const Text(AppStrings.createGroup),
         ),
       ],
     ),

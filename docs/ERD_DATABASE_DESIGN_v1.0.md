@@ -99,6 +99,16 @@ Important:
 - activity_status_history
 - activity_change_logs
 
+### M7 activity persistence and V12 schedule rule
+`activities.start_at`, `activities.end_at`, and `activities.timezone` are nullable in PostgreSQL after `V12__unscheduled_activities.sql`.
+
+- Unscheduled row: all three fields are `NULL`.
+- Scheduled row: `start_at` and `timezone` are non-null; `end_at` is optional and, when present, must be later than `start_at`.
+- `activity_participants` records each member's server-assigned participation status and optional FIFO `waitlist_sequence`; `activity_waitlist_sequences` provides the per-activity monotonic sequence.
+- `activity_status_history` and `activity_change_logs` retain lifecycle and confirmed-schedule changes.
+- `group_activity_logs` records group-visible Activity lifecycle audit actions.
+- Group avatar storage is a nullable `groups.avatar_storage_key`; its binary remains outside PostgreSQL.
+
 ## 7. Poll
 - polls
 - poll_options
@@ -195,6 +205,7 @@ V7__finance.sql
 V8__group_fund.sql
 V9__notifications_reminders.sql
 V10__cross_module_indexes.sql
+V12__unscheduled_activities.sql
 ```
 
 Rules:

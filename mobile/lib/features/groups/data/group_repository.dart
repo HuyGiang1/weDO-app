@@ -37,6 +37,11 @@ class GroupRepository {
       _guard(() => api.getMember(id, u));
   Future<GroupDetail> updateGroup(String id, UpdateGroupRequest q) =>
       _guard(() => api.updateGroup(id, q));
+  Future<String> uploadGroupAvatar({
+    required List<int> bytes,
+    required String filename,
+    required String contentType,
+  }) => _guard(() => api.uploadAvatar(bytes: bytes, filename: filename, contentType: contentType));
   Future<GroupSettings> getSettings(String id) =>
       _guard(() => api.getSettings(id));
   Future<GroupSettings> updateSettings(
@@ -76,6 +81,9 @@ class GroupRepository {
       _guard(() => api.cancelInvitation(id));
 
   // M6: Invite Links
+  Future<InviteLinkResponse> getDefaultInviteLink(String groupId) =>
+      _guard(() => api.getDefaultInviteLink(groupId));
+
   Future<InviteLinkResponse> createInviteLink(
     String groupId,
     CreateInviteLinkRequest q,

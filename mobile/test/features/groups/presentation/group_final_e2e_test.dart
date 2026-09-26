@@ -41,7 +41,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(_switch(tester, 0).onChanged, isNotNull);
 
-    await tester.tap(find.text('Transfer ownership'));
+    await tester.tap(find.text('Chuyển quyền trưởng nhóm'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('member'));
     await tester.pumpAndSettle();
@@ -50,10 +50,10 @@ void main() {
     expect(repo.transferUserId, 'member');
     expect(repo.detail.ownerUserId, 'member');
     expect(repo.detail.callerRole, GroupRole.admin);
-    expect(find.text('Transfer Ownership'), findsNothing);
+    expect(find.text('Chuyển quyền trưởng nhóm'), findsOneWidget);
     expect(_switch(tester, 0).onChanged, isNull);
     expect(
-      tester.widget<ListTile>(find.widgetWithText(ListTile, 'Transfer ownership')).onTap,
+      tester.widget<ListTile>(find.widgetWithText(ListTile, 'Chuyển quyền trưởng nhóm')).onTap,
       isNull,
     );
   });
@@ -67,12 +67,12 @@ void main() {
 
     await tester.tap(find.text('Group G'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
-    await tester.tap(find.text('Leave Group'));
+    await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
+    await tester.tap(find.text('Rời nhóm'));
     await tester.pumpAndSettle();
 
     expect(repo.leaveGroupId, 'group-id');
-    expect(find.text('Group Info'), findsNothing);
+    expect(find.text('Thông tin nhóm'), findsNothing);
     expect(repo.listLoadCount, greaterThanOrEqualTo(2));
     expect(find.text('Group G'), findsNothing);
   });
@@ -97,15 +97,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(find.text('Leave Group'), 300);
-    await tester.tap(find.text('Leave Group'));
+    await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
+    await tester.tap(find.text('Rời nhóm'));
     await tester.pumpAndSettle();
 
     expect(repo.leaveGroupId, 'group-id');
     expect(left, isFalse);
-    expect(find.text('Group Info'), findsOneWidget);
+    expect(find.text('Thông tin nhóm'), findsOneWidget);
     expect(
-      find.text('Transfer ownership before leaving this group.'),
+      find.text('Vui lòng chuyển quyền trưởng nhóm trước khi rời nhóm.'),
       findsOneWidget,
     );
     expect(find.byType(GroupInfoScreen), findsOneWidget);

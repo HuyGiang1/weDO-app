@@ -21,9 +21,9 @@ public class ActivityEntity {
     @Column(nullable = false, length = 200) private String title;
     @Column private String description;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private ActivityStatus status;
-    @Column(name = "start_at", nullable = false) private Instant startAt;
+    @Column(name = "start_at") private Instant startAt;
     @Column(name = "end_at") private Instant endAt;
-    @Column(nullable = false, length = 50) private String timezone;
+    @Column(length = 50) private String timezone;
     @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb") private ActivityLocation location;
     @Column(name = "capacity") private Integer capacity;
     @Column(name = "created_at", nullable = false) private Instant createdAt;

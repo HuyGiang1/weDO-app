@@ -34,6 +34,25 @@ class EditGroupController extends ValueNotifier<GroupAsyncState<GroupDetail>> {
       return null;
     }
   }
+
+  Future<String?> uploadAvatar({
+    required List<int> bytes,
+    required String filename,
+    required String contentType,
+  }) async {
+    try {
+      return await repository.uploadGroupAvatar(
+        bytes: bytes,
+        filename: filename,
+        contentType: contentType,
+      );
+    } on GroupException catch (e) {
+      value = GroupAsyncState(data: value.data, failure: e.failure);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class GroupMembersController

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/utils/date_time_formatter.dart';
 import '../../application/group_activity_log_controller.dart';
 import '../../data/models/group_models.dart';
 
@@ -27,9 +28,9 @@ class _GroupActivityLogScreenState extends State<GroupActivityLogScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       centerTitle: true,
-      title: const Text('Activity Log'),
+      title: const Text('Nhật ký hoạt động'),
       leading: IconButton(
-        tooltip: 'Back',
+        tooltip: 'Quay lại',
         icon: const Icon(Icons.arrow_back),
         onPressed: () => Navigator.of(context).maybePop(),
       ),
@@ -43,12 +44,12 @@ class _GroupActivityLogScreenState extends State<GroupActivityLogScreen> {
             child: OutlinedButton.icon(
               onPressed: () => widget.controller.load(widget.groupId),
               icon: const Icon(Icons.refresh),
-              label: const Text('Try again'),
+              label: const Text('Thử lại'),
             ),
           );
         }
         if (state.activities.isEmpty) {
-          return const Center(child: Text('No activity yet'));
+          return const Center(child: Text('Chưa có hoạt động nào'));
         }
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
@@ -57,7 +58,7 @@ class _GroupActivityLogScreenState extends State<GroupActivityLogScreen> {
             if (state.failure != null)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
-                child: Text('Unable to load more activity.'),
+                child: Text('Không thể tải thêm hoạt động.'),
               ),
             if (state.hasNext)
               Padding(
@@ -72,7 +73,7 @@ class _GroupActivityLogScreenState extends State<GroupActivityLogScreen> {
                           width: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Load more'),
+                      : const Text('Tải thêm'),
                 ),
               ),
           ],
@@ -163,36 +164,22 @@ class ActivityVisual {
 }
 
 ActivityVisual activityVisual(String action) => switch (action) {
-  'GROUP_CREATED' => const ActivityVisual(Icons.group_add, AppColors.primary, 'Group created'),
-  'GROUP_UPDATED' => const ActivityVisual(Icons.edit, AppColors.primary, 'Group information updated'),
-  'GROUP_SETTINGS_UPDATED' => const ActivityVisual(Icons.tune, Color(0xFF006B5F), 'Group settings updated'),
-  'GROUP_ADMIN_PROMOTED' => const ActivityVisual(Icons.admin_panel_settings, AppColors.primary, 'A member was promoted to Admin'),
-  'GROUP_ADMIN_DEMOTED' => const ActivityVisual(Icons.person_outline, Color(0xFF006B5F), 'An Admin was changed to Member'),
-  'GROUP_MEMBER_KICKED' => const ActivityVisual(Icons.person_remove, Color(0xFF7D3D00), 'A member was removed from the group'),
-  'GROUP_MEMBER_LEFT' => const ActivityVisual(Icons.logout, Color(0xFF7D3D00), 'A member left the group'),
-  'GROUP_OWNERSHIP_TRANSFERRED' => const ActivityVisual(Icons.swap_horiz, AppColors.primary, 'Group ownership was transferred'),
-  _ => const ActivityVisual(Icons.info_outline, Color(0xFF4A4455), 'Group activity updated'),
+  'GROUP_CREATED' => const ActivityVisual(Icons.group_add, AppColors.primary, 'Nhóm được tạo'),
+  'GROUP_UPDATED' => const ActivityVisual(Icons.edit, AppColors.primary, 'Thông tin nhóm đã được cập nhật'),
+  'GROUP_SETTINGS_UPDATED' => const ActivityVisual(Icons.tune, Color(0xFF006B5F), 'Cài đặt nhóm đã được cập nhật'),
+  'GROUP_ADMIN_PROMOTED' => const ActivityVisual(Icons.admin_panel_settings, AppColors.primary, 'Một thành viên đã được nâng làm Quản trị viên'),
+  'GROUP_ADMIN_DEMOTED' => const ActivityVisual(Icons.person_outline, Color(0xFF006B5F), 'Một Quản trị viên đã chuyển thành Thành viên'),
+  'GROUP_MEMBER_KICKED' => const ActivityVisual(Icons.person_remove, Color(0xFF7D3D00), 'Một thành viên đã bị xóa khỏi nhóm'),
+  'GROUP_MEMBER_LEFT' => const ActivityVisual(Icons.logout, Color(0xFF7D3D00), 'Một thành viên đã rời nhóm'),
+  'GROUP_OWNERSHIP_TRANSFERRED' => const ActivityVisual(Icons.swap_horiz, AppColors.primary, 'Quyền sở hữu nhóm đã được chuyển giao'),
+  'ACTIVITY_CREATED' => const ActivityVisual(Icons.add_circle_outline, AppColors.primary, 'Hoạt động mới đã được tạo'),
+  'ACTIVITY_CONFIRMED' => const ActivityVisual(Icons.check_circle_outline, Color(0xFF006B5F), 'Hoạt động đã được xác nhận'),
+  'ACTIVITY_UPDATED' => const ActivityVisual(Icons.edit_calendar, AppColors.primary, 'Hoạt động đã được cập nhật'),
+  'ACTIVITY_CANCELLED' => const ActivityVisual(Icons.cancel_outlined, Color(0xFFBA1A1A), 'Hoạt động đã bị hủy'),
+  'ACTIVITY_COMPLETED' => const ActivityVisual(Icons.done_all, Color(0xFF006B5F), 'Hoạt động đã hoàn thành'),
+  _ => const ActivityVisual(Icons.info_outline, Color(0xFF4A4455), 'Hoạt động nhóm được cập nhật'),
 };
 
 String formatActivityTimestamp(DateTime value, {DateTime? now}) {
-  final current = (now ?? DateTime.now()).toLocal();
-  final time = value.toLocal();
-  final difference = current.difference(time);
-  if (difference.inMinutes < 1) return 'Just now';
-  if (difference.inHours < 24 && current.day == time.day) {
-    return '${difference.inHours} ${difference.inHours == 1 ? 'hour' : 'hours'} ago';
-  }
-  final clock = _clock(time);
-  if (difference.inDays == 1 ||
-      (current.day - time.day == 1 && current.month == time.month && current.year == time.year)) {
-    return 'Yesterday at $clock';
-  }
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return '${months[time.month - 1]} ${time.day}, ${time.year}';
-}
-
-String _clock(DateTime value) {
-  final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
-  final minute = value.minute.toString().padLeft(2, '0');
-  return '$hour:$minute ${value.hour >= 12 ? 'PM' : 'AM'}';
+  return AppDateTimeFormatter.formatRelativeTime(value, clockNow: now);
 }

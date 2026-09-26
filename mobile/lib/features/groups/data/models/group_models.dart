@@ -346,6 +346,10 @@ class InviteLinkResponse {
     required this.createdAt,
   });
 
+  bool get isExpired => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+  bool get isExhausted => maxUses != null && usesCount >= maxUses!;
+  bool get isValid => !isRevoked && !isExpired && !isExhausted;
+
   factory InviteLinkResponse.fromJson(Map<String, dynamic> j) =>
       InviteLinkResponse(
         id: _s(j, 'id'),

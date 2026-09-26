@@ -40,9 +40,9 @@ void main() {
 
   group('CompleteProfileScreen Widget Tests', () {
     testWidgets(
-      'renders Stitch content, local logo, avatar picker, and no Skip',
+      'renders Stitch content, local logo, read-only username, avatar placeholder, and no Skip',
       (tester) async {
-        await tester.pumpWidget(buildSubject());
+        await tester.pumpWidget(buildSubject(username: 'alex_vibes'));
 
         expect(find.byType(Image), findsOneWidget);
         expect(
@@ -52,15 +52,18 @@ void main() {
         );
         expect(find.text("Let's set up your profile"), findsOneWidget);
         expect(
-          find.text('Add a photo and some details to help friends find you.'),
+          find.text('Add your details to finish creating your profile.'),
           findsOneWidget,
         );
+        expect(find.text('alex_vibes'), findsOneWidget);
+        expect(find.text('USERNAME'), findsOneWidget);
+        expect(find.text('Photo can be added later in settings'), findsOneWidget);
         expect(find.text('Display Name'), findsOneWidget);
         expect(find.text('Bio'), findsOneWidget);
         expect(find.text('Optional'), findsOneWidget);
         expect(find.text('Continue'), findsOneWidget);
         expect(find.text('Powered by WeDo'), findsOneWidget);
-        expect(find.bySemanticsLabel('Add profile photo'), findsOneWidget);
+        expect(find.bySemanticsLabel('Add profile photo'), findsNothing);
         expect(find.text('Skip'), findsNothing);
       },
     );
@@ -156,22 +159,26 @@ void main() {
     });
 
     testWidgets(
-      'avatar picker invokes callback and null callback shows no selection',
+      'avatar area displays honest placeholder with helper text and no fake button affordance',
       (tester) async {
-        var pickerCalls = 0;
-        await tester.pumpWidget(
-          buildSubject(onPickAvatar: () async => pickerCalls++),
-        );
-        final picker = find.bySemanticsLabel('Add profile photo');
-        await tester.ensureVisible(picker);
-        await tester.tap(picker);
-        await tester.pump();
-        expect(pickerCalls, equals(1));
-
         await tester.pumpWidget(buildSubject());
-        expect(find.byType(Image), findsOneWidget);
+        expect(
+          find.text('Photo can be added later in settings'),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.person_outline_rounded), findsOneWidget);
+        expect(find.bySemanticsLabel('Add profile photo'), findsNothing);
       },
     );
+
+    testWidgets('visibly displays selected username in read-only form', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildSubject(username: 'cool_selected_user'));
+      expect(find.text('cool_selected_user'), findsOneWidget);
+      expect(find.text('USERNAME'), findsOneWidget);
+      expect(find.text('Set'), findsOneWidget);
+    });
 
     testWidgets('does not fake completion when onContinue is null', (
       tester,

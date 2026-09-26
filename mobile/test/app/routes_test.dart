@@ -11,13 +11,22 @@ import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
 import 'package:mobile/core/models/paged_response.dart';
+import 'package:mobile/features/activity/data/activity_api.dart';
+import 'package:mobile/features/activity/data/activity_repository.dart';
+import 'package:mobile/app/app.dart';
+import 'package:mobile/core/network/access_token_holder.dart';
+import 'package:mobile/core/storage/secure_key_value_store.dart';
+import 'package:mobile/core/storage/secure_storage_service.dart';
+import 'package:mobile/features/auth/data/auth_api.dart';
+import 'package:mobile/features/auth/data/auth_repository.dart';
+import 'package:mobile/features/groups/presentation/screens/my_groups_screen.dart';
 import 'package:mobile/features/profile/data/profile_models.dart';
 import 'package:mobile/features/profile/presentation/screens/public_user_profile_screen.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 28 registered production routes', () {
-      expect(AppRoutes.routes.length, 28);
+    test('contains exactly 30 registered production routes', () {
+      expect(AppRoutes.routes.length, 30);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -48,6 +57,8 @@ void main() {
         AppRoutes.groupInviteLinks,
         AppRoutes.groupJoinRequests,
         AppRoutes.groupBans,
+        AppRoutes.activities,
+        AppRoutes.activityDetail,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -76,7 +87,9 @@ void main() {
                   entry.key == AppRoutes.joinGroupByCode ||
                   entry.key == AppRoutes.groupInviteLinks ||
                   entry.key == AppRoutes.groupJoinRequests ||
-                  entry.key == AppRoutes.groupBans
+                  entry.key == AppRoutes.groupBans ||
+                  entry.key == AppRoutes.activities ||
+                  entry.key == AppRoutes.activityDetail
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -790,6 +803,211 @@ void main() {
       }
     });
   });
+
+  group('Protected M7 Activity Routes', () {
+    final activityRepo = ActivityRepository(api: ActivityApi(Dio()));
+
+    test('activities and activityDetail are denied for unauthenticated users', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          RouteSettings(
+            name: AppRoutes.activities,
+            arguments: ActivitiesRouteArgs(repository: activityRepo, groupId: 'g1'),
+          ),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+
+      expect(
+        AppRoutes.onGenerateRoute(
+          RouteSettings(
+            name: AppRoutes.activityDetail,
+            arguments: ActivityDetailRouteArgs(repository: activityRepo, activityId: 'a1'),
+          ),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+    });
+
+    test('activities fails closed for missing, wrong, or blank arguments', () {
+      for (final bad in [
+        null,
+        'wrong',
+        ActivitiesRouteArgs(repository: activityRepo, groupId: ''),
+        ActivitiesRouteArgs(repository: activityRepo, groupId: '   '),
+      ]) {
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(name: AppRoutes.activities, arguments: bad),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+      }
+    });
+
+    test('activityDetail fails closed for missing, wrong, or blank arguments', () {
+      for (final bad in [
+        null,
+        'wrong',
+        ActivityDetailRouteArgs(repository: activityRepo, activityId: ''),
+        ActivityDetailRouteArgs(repository: activityRepo, activityId: '   '),
+      ]) {
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(name: AppRoutes.activityDetail, arguments: bad),
+            authStatus: AuthSessionStatus.authenticated,
+          ),
+          isNull,
+        );
+      }
+    });
+
+    test('valid typed arguments generate authenticated MaterialPageRoute', () {
+      final actRoute = AppRoutes.onGenerateRoute(
+        RouteSettings(
+          name: AppRoutes.activities,
+          arguments: ActivitiesRouteArgs(repository: activityRepo, groupId: 'grp-exact-1'),
+        ),
+        authStatus: AuthSessionStatus.authenticated,
+      );
+      expect(actRoute, isNotNull);
+      expect(actRoute, isA<MaterialPageRoute<void>>());
+
+      final detailRoute = AppRoutes.onGenerateRoute(
+        RouteSettings(
+          name: AppRoutes.activityDetail,
+          arguments: ActivityDetailRouteArgs(repository: activityRepo, activityId: 'act-exact-1'),
+        ),
+        authStatus: AuthSessionStatus.authenticated,
+      );
+      expect(detailRoute, isNotNull);
+      expect(detailRoute, isA<MaterialPageRoute<void>>());
+    });
+  });
+
+  group('Authenticated Navigation to Groups Runtime (M7 Bridge)', () {
+    test('unauthenticated users cannot directly enter protected Groups', () {
+      expect(
+        AppRoutes.onGenerateRoute(
+          const RouteSettings(name: AppRoutes.groups),
+          authStatus: AuthSessionStatus.unauthenticated,
+        ),
+        isNull,
+      );
+      expect(
+        AppRoutes.onGenerateRoute(
+          const RouteSettings(name: AppRoutes.groups),
+          authStatus: AuthSessionStatus.restoring,
+        ),
+        isNull,
+      );
+    });
+
+    testWidgets(
+      'successful login replaces auth stack and enters Groups with real GroupsRouteArgs and Back cannot return',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final groupRepo = _RouteGroupRepository();
+        final store = _TestMemoryStore();
+        final holder = AccessTokenHolder();
+        final authRepo = AuthRepository(
+          api: _TestAuthApi(),
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        );
+        final sessionController = AuthSessionController(
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+          repository: authRepo,
+        );
+
+        final coordinator = AuthFlowCoordinator(
+          authRepo,
+          sessionController: sessionController,
+          onAuthenticated: (context) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              AppRoutes.groups,
+              (route) => false,
+              arguments: GroupsRouteArgs(repository: groupRepo),
+            );
+          },
+        );
+
+        await tester.pumpWidget(
+          WeDoApp(
+            authFlowCoordinator: coordinator,
+            authSessionController: sessionController,
+            groupRepository: groupRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Starts on WelcomeScreen
+        final welcomeLogin = find.widgetWithText(OutlinedButton, 'Login');
+        expect(welcomeLogin, findsOneWidget);
+        await tester.ensureVisible(welcomeLogin);
+        await tester.tap(welcomeLogin);
+        await tester.pumpAndSettle();
+
+        // Now on LoginScreen
+        expect(find.text('Welcome Back'), findsOneWidget);
+        await tester.enterText(find.byType(TextField).at(0), 'user@wedo.social');
+        await tester.enterText(find.byType(TextField).at(1), 'ValidPass123!');
+        await tester.pump();
+
+        // Tap Login
+        final loginButton = find.widgetWithText(ElevatedButton, 'Login');
+        await tester.ensureVisible(loginButton);
+        await tester.tap(loginButton);
+        await tester.pumpAndSettle();
+
+        // Successful login transitions cleanly to MyGroupsScreen
+        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        expect(groupRepo.calls, contains('list-groups'));
+
+        // Back cannot return to Login/Register onboarding screens
+        final nav = tester.state<NavigatorState>(find.byType(Navigator));
+        expect(nav.canPop(), isFalse);
+      },
+    );
+
+    testWidgets(
+      'app startup with persisted authenticated session lands directly on Groups',
+      (tester) async {
+        final groupRepo = _RouteGroupRepository();
+        final store = _TestMemoryStore();
+        final holder = AccessTokenHolder();
+        final authRepo = AuthRepository(
+          api: _TestAuthApi(),
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        );
+        final sessionController = AuthSessionController(
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+          repository: authRepo,
+        )..markAuthenticated();
+
+        await tester.pumpWidget(
+          WeDoApp(
+            authSessionController: sessionController,
+            groupRepository: groupRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        expect(find.text('Welcome Back'), findsNothing);
+      },
+    );
+  });
 }
 
 class _RouteGroupRepository extends GroupRepository {
@@ -842,6 +1060,61 @@ class _RouteGroupRepository extends GroupRepository {
       totalPages: 0,
       hasNext: false,
     );
+  }
+
+  @override
+  Future<PagedResponse<GroupSummary>> listGroups({
+    int page = 0,
+    int size = 30,
+    GroupStatus? status,
+  }) async {
+    calls.add('list-groups');
+    return const PagedResponse(
+      items: [],
+      page: 0,
+      size: 30,
+      totalElements: 0,
+      totalPages: 0,
+      hasNext: false,
+    );
+  }
+}
+
+class _TestAuthApi extends AuthApi {
+  _TestAuthApi() : super(Dio(), refreshDio: Dio());
+
+  @override
+  Future<LoginResult> login({
+    required String email,
+    required String password,
+    String? deviceName,
+  }) async {
+    return AuthenticatedSession(
+      userId: 'test-user-id',
+      status: 'ACTIVE',
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: DateTime(2026),
+      user: const UserSummary(
+        id: 'test-user-id',
+        email: 'user@wedo.social',
+        username: 'test_user',
+        displayName: 'Test User',
+      ),
+    );
+  }
+}
+
+class _TestMemoryStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<void> delete(String k) async => values.remove(k);
+  @override
+  Future<String?> read(String k) async => values[k];
+  @override
+  Future<void> write({required String key, required String value}) async {
+    values[key] = value;
   }
 }
 

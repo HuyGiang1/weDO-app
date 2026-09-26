@@ -20,15 +20,18 @@ public class GroupPermissionService {
     private final UserService userService;
     private final GroupMembershipRepository groupMembershipRepository;
     private final GroupRepository groupRepository;
+    private final com.wedo.backend.group.repository.GroupSettingsRepository groupSettingsRepository;
 
     public GroupPermissionService(
             UserService userService,
             GroupMembershipRepository groupMembershipRepository,
-            GroupRepository groupRepository
+            GroupRepository groupRepository,
+            com.wedo.backend.group.repository.GroupSettingsRepository groupSettingsRepository
     ) {
         this.userService = userService;
         this.groupMembershipRepository = groupMembershipRepository;
         this.groupRepository = groupRepository;
+        this.groupSettingsRepository = groupSettingsRepository;
     }
 
     public ReadableGroupAccess requireReadableMembership(UUID groupId, UUID callerUserId) {
@@ -56,6 +59,20 @@ public class GroupPermissionService {
             throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
         }
         return access;
+    }
+
+    public ReadableGroupAccess requireCanModifyGroupInfo(UUID groupId, UUID callerUserId) {
+        ReadableGroupAccess access = requireMutableMembership(groupId, callerUserId);
+        GroupRole role = access.membership().getRole();
+        if (role == GroupRole.OWNER || role == GroupRole.ADMIN) {
+            return access;
+        }
+        var settings = groupSettingsRepository.findById(groupId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        if (settings.isMemberModifyInfoAllowed()) {
+            return access;
+        }
+        throw new BusinessException(ErrorCode.INSUFFICIENT_GROUP_PERMISSION);
     }
 
     public ReadableGroupAccess requireOwner(UUID groupId, UUID callerUserId) {

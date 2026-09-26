@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
+import '../../../../core/l10n/app_strings.dart';
 import '../../application/group_detail_controller.dart';
 import '../../data/group_failure.dart';
 import '../../data/models/group_models.dart';
@@ -10,6 +11,7 @@ class GroupInfoScreen extends StatefulWidget {
   final String groupId;
   final GroupDetailController controller;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
+  final VoidCallback? onActivities;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
 
@@ -22,6 +24,7 @@ class GroupInfoScreen extends StatefulWidget {
     required this.onSettings,
     required this.onActivityLog,
     required this.onLeave,
+    this.onActivities,
     this.onInviteLinks,
     this.onJoinRequests,
     this.onBans,
@@ -54,7 +57,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         ),
         centerTitle: true,
         title: const Text(
-          'Group Info',
+          'Thông tin nhóm',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -76,7 +79,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               child: OutlinedButton.icon(
                 onPressed: () => widget.controller.load(widget.groupId),
                 icon: const Icon(Icons.refresh),
-                label: const Text('Thu lai'),
+                label: const Text(AppStrings.retry),
               ),
             );
           }
@@ -87,6 +90,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onMembers: widget.onMembers,
             onSettings: widget.onSettings,
             onActivityLog: widget.onActivityLog,
+            onActivities: widget.onActivities,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
             onBans: widget.onBans,
@@ -111,6 +115,7 @@ class _GroupInfoContent extends StatelessWidget {
   final GroupDetail group;
   final int? memberCount;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
+  final VoidCallback? onActivities;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
   final bool leaveTransferRequired;
@@ -123,6 +128,7 @@ class _GroupInfoContent extends StatelessWidget {
     required this.onSettings,
     required this.onActivityLog,
     required this.onLeave,
+    this.onActivities,
     this.onInviteLinks,
     this.onJoinRequests,
     this.onBans,
@@ -155,7 +161,11 @@ class _GroupInfoContent extends StatelessWidget {
                 ),
               ],
             ),
-            child: GroupAvatar(name: group.name, radius: 64),
+            child: GroupAvatar(
+              name: group.name,
+              radius: 64,
+              avatarStorageKey: group.avatarStorageKey,
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -182,6 +192,32 @@ class _GroupInfoContent extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 24),
+        if (group.status == GroupStatus.archived)
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              border: Border.all(color: Colors.amber.shade300),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.archive_outlined, color: Colors.amber.shade900),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    AppStrings.groupArchivedBanner,
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (leaveTransferRequired)
           Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -191,8 +227,11 @@ class _GroupInfoContent extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Text(
-              'Transfer ownership before leaving this group.',
-              style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w500),
+              'Vui lòng chuyển quyền trưởng nhóm trước khi rời nhóm.',
+              style: TextStyle(
+                color: AppColors.error,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         // Stats / Bento Row
@@ -203,7 +242,7 @@ class _GroupInfoContent extends StatelessWidget {
                 icon: Icons.groups,
                 iconColor: AppColors.primary,
                 value: memberCount?.toString() ?? '—',
-                label: 'MEMBERS',
+                label: 'THÀNH VIÊN',
               ),
             ),
             const SizedBox(width: 12),
@@ -212,7 +251,7 @@ class _GroupInfoContent extends StatelessWidget {
                 icon: Icons.event,
                 iconColor: AppColors.secondary,
                 value: "Est. '${group.createdAt.year % 100}",
-                label: 'CREATED',
+                label: 'NGÀY TẠO',
               ),
             ),
           ],
@@ -236,7 +275,9 @@ class _GroupInfoContent extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: AppColors.primaryContainer.withValues(alpha: 0.1),
+                backgroundColor: AppColors.primaryContainer.withValues(
+                  alpha: 0.1,
+                ),
                 child: const Icon(Icons.person, color: AppColors.primary),
               ),
               const SizedBox(width: 12),
@@ -300,7 +341,7 @@ class _GroupInfoContent extends StatelessWidget {
                   _ActionTile(
                     icon: Icons.link,
                     iconColor: AppColors.primary,
-                    title: 'Invite Links',
+                    title: 'Liên kết mời',
                     onTap: onInviteLinks!,
                   ),
                   const Divider(height: 1),
@@ -309,7 +350,7 @@ class _GroupInfoContent extends StatelessWidget {
                   _ActionTile(
                     icon: Icons.person_add,
                     iconColor: AppColors.primary,
-                    title: 'Join Requests',
+                    title: 'Yêu cầu tham gia',
                     onTap: onJoinRequests!,
                   ),
                   const Divider(height: 1),
@@ -318,7 +359,7 @@ class _GroupInfoContent extends StatelessWidget {
                   _ActionTile(
                     icon: Icons.block,
                     iconColor: AppColors.outline,
-                    title: 'Banned Users',
+                    title: 'Danh sách chặn',
                     onTap: onBans!,
                   ),
                   const Divider(height: 1),
@@ -327,47 +368,112 @@ class _GroupInfoContent extends StatelessWidget {
               _ActionTile(
                 icon: Icons.edit_outlined,
                 iconColor: AppColors.onSurfaceVariant,
-                title: 'Edit Group',
+                title: 'Sửa thông tin nhóm',
                 onTap: onEdit,
               ),
               const Divider(height: 1),
               _ActionTile(
                 icon: Icons.groups_outlined,
                 iconColor: AppColors.onSurfaceVariant,
-                title: 'Group Members',
+                title: 'Thành viên nhóm',
                 onTap: onMembers,
               ),
               const Divider(height: 1),
               _ActionTile(
                 icon: Icons.settings_outlined,
                 iconColor: AppColors.onSurfaceVariant,
-                title: 'Group Settings',
+                title: 'Cài đặt nhóm',
                 onTap: onSettings,
               ),
               const Divider(height: 1),
+              if (onActivities != null) ...[
+                _ActionTile(
+                  icon: Icons.event_outlined,
+                  iconColor: AppColors.onSurfaceVariant,
+                  title: 'Hoạt động',
+                  onTap: onActivities!,
+                ),
+                const Divider(height: 1),
+              ],
               _ActionTile(
                 icon: Icons.history,
                 iconColor: AppColors.onSurfaceVariant,
-                title: 'Activity Log',
+                title: 'Nhật ký nhóm',
                 onTap: onActivityLog,
               ),
               if (isOwner) ...[
-                if (group.status == GroupStatus.active && onArchive != null) ...[
+                if (group.status == GroupStatus.active &&
+                    onArchive != null) ...[
                   const Divider(height: 1),
                   _ActionTile(
                     icon: Icons.archive_outlined,
                     iconColor: Colors.amber.shade700,
-                    title: 'Archive Group',
-                    onTap: onArchive!,
+                    title: AppStrings.archiveGroup,
+                    onTap: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text(
+                            AppStrings.archiveGroupConfirmTitle,
+                          ),
+                          content: const Text(
+                            AppStrings.archiveGroupConfirmMessage,
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text(AppStrings.cancel),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.amber.shade800,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text(AppStrings.archiveGroup),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok == true) onArchive!();
+                    },
                   ),
                 ],
-                if (group.status == GroupStatus.archived && onRestore != null) ...[
+                if (group.status == GroupStatus.archived &&
+                    onRestore != null) ...[
                   const Divider(height: 1),
                   _ActionTile(
                     icon: Icons.unarchive_outlined,
                     iconColor: Colors.green.shade700,
-                    title: 'Restore Group',
-                    onTap: onRestore!,
+                    title: AppStrings.restoreGroup,
+                    onTap: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text(
+                            AppStrings.restoreGroupConfirmTitle,
+                          ),
+                          content: const Text(
+                            AppStrings.restoreGroupConfirmMessage,
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text(AppStrings.cancel),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text(AppStrings.restoreGroup),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok == true) onRestore!();
+                    },
                   ),
                 ],
                 if (onDelete != null) ...[
@@ -375,7 +481,7 @@ class _GroupInfoContent extends StatelessWidget {
                   _ActionTile(
                     icon: Icons.delete_forever,
                     iconColor: AppColors.error,
-                    title: 'Delete Group',
+                    title: 'Xóa nhóm',
                     titleColor: AppColors.error,
                     onTap: onDelete!,
                   ),
@@ -403,7 +509,7 @@ class _GroupInfoContent extends StatelessWidget {
               Icon(Icons.logout, size: 20),
               SizedBox(width: 8),
               Text(
-                'Leave Group',
+                'Rời nhóm',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ],

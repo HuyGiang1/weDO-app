@@ -41,7 +41,7 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('Activity Log'), findsOneWidget);
+    expect(find.text('Nhật ký hoạt động'), findsOneWidget);
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
     expect(find.byType(BottomNavigationBar), findsNothing);
     for (final text in _messages) {
@@ -57,30 +57,32 @@ void main() {
       groupId: 'group-id', controller: GroupActivityLogController(_ActivityRepo(empty: true)),
     )));
     await tester.pumpAndSettle();
-    expect(find.text('No activity yet'), findsOneWidget);
+    expect(find.text('Chưa có hoạt động nào'), findsOneWidget);
     await tester.pumpWidget(MaterialApp(home: GroupActivityLogScreen(
       key: const ValueKey('error'),
       groupId: 'group-id', controller: GroupActivityLogController(_ActivityRepo(fail: true)),
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Thử lại'), findsOneWidget);
   });
 
   test('timestamp formatter is deterministic for recent, yesterday, and older entries', () {
     final now = DateTime(2026, 10, 25, 18, 30);
-    expect(formatActivityTimestamp(now.subtract(const Duration(hours: 2)), now: now), '2 hours ago');
-    expect(formatActivityTimestamp(DateTime(2026, 10, 24, 16, 30), now: now), 'Yesterday at 4:30 PM');
-    expect(formatActivityTimestamp(DateTime(2023, 10, 24), now: now), 'Oct 24, 2023');
+    expect(formatActivityTimestamp(now.subtract(const Duration(hours: 2)), now: now), '2 giờ trước');
+    expect(formatActivityTimestamp(DateTime(2026, 10, 24, 16, 30), now: now), '1 ngày trước');
+    expect(formatActivityTimestamp(DateTime(2023, 10, 24), now: now), '24-10-2023');
   });
 }
 
 const _actions = [
   'GROUP_CREATED', 'GROUP_UPDATED', 'GROUP_SETTINGS_UPDATED', 'GROUP_ADMIN_PROMOTED',
   'GROUP_ADMIN_DEMOTED', 'GROUP_MEMBER_KICKED', 'GROUP_MEMBER_LEFT', 'GROUP_OWNERSHIP_TRANSFERRED',
+  'ACTIVITY_CREATED', 'ACTIVITY_CONFIRMED', 'ACTIVITY_UPDATED', 'ACTIVITY_CANCELLED', 'ACTIVITY_COMPLETED',
 ];
 const _messages = [
-  'Group created', 'Group information updated', 'Group settings updated', 'A member was promoted to Admin',
-  'An Admin was changed to Member', 'A member was removed from the group', 'A member left the group', 'Group ownership was transferred',
+  'Nhóm được tạo', 'Thông tin nhóm đã được cập nhật', 'Cài đặt nhóm đã được cập nhật', 'Một thành viên đã được nâng làm Quản trị viên',
+  'Một Quản trị viên đã chuyển thành Thành viên', 'Một thành viên đã bị xóa khỏi nhóm', 'Một thành viên đã rời nhóm', 'Quyền sở hữu nhóm đã được chuyển giao',
+  'Hoạt động mới đã được tạo', 'Hoạt động đã được xác nhận', 'Hoạt động đã được cập nhật', 'Hoạt động đã bị hủy', 'Hoạt động đã hoàn thành',
 ];
 
 GroupActivityLog _activity(String action, {String id = 'one'}) => GroupActivityLog(

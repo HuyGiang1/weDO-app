@@ -12,8 +12,12 @@ import 'features/auth/data/auth_api.dart';
 import 'features/auth/data/auth_failure.dart';
 import 'features/auth/data/auth_repository.dart';
 import 'features/auth/presentation/auth_flow_coordinator.dart';
+import 'app/routes.dart';
 import 'features/profile/data/profile_api.dart';
 import 'features/profile/data/profile_repository.dart';
+import 'features/groups/data/group_api.dart';
+import 'features/groups/data/group_repository.dart';
+import 'features/groups/presentation/widgets/group_widgets.dart';
 import 'features/privacy/data/privacy_api.dart';
 import 'features/privacy/data/privacy_repository.dart';
 import 'features/qr/data/personal_qr_api.dart';
@@ -23,6 +27,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final apiConfig = ApiConfig();
+  GroupAvatar.defaultBaseUrl = apiConfig.baseUrl;
   final holder = AccessTokenHolder();
   final storage = SecureStorageService();
   final dio = DioClient(apiConfig: apiConfig);
@@ -33,6 +38,7 @@ void main() async {
     accessTokenHolder: holder,
   );
   final profileRepository = ProfileRepository(api: ProfileApi(dio.dio));
+  final groupRepository = GroupRepository(api: GroupApi(dio.dio));
   final privacyRepository = PrivacyRepository(api: PrivacyApi(dio.dio));
   final personalQrRepository = PersonalQrRepository(api: PersonalQrApi(dio.dio));
   final sessionController = AuthSessionController(
@@ -68,13 +74,23 @@ void main() async {
 
   await sessionController.restoreSession();
 
+  void handleAuthenticated(BuildContext context) {
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      AppRoutes.groups,
+      (route) => false,
+      arguments: GroupsRouteArgs(repository: groupRepository),
+    );
+  }
+
   runApp(
     WeDoApp(
       authFlowCoordinator: AuthFlowCoordinator(
         repository,
         sessionController: sessionController,
+        onAuthenticated: handleAuthenticated,
       ),
       authSessionController: sessionController,
+      groupRepository: groupRepository,
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
       updateUsername: profileRepository.updateUsername,

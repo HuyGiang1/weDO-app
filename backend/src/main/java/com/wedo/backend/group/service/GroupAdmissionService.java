@@ -303,6 +303,34 @@ public class GroupAdmissionService {
         return InviteLinkResponse.from(link);
     }
 
+    @Transactional
+    public InviteLinkResponse ensureDefaultInviteLink(UUID groupId, UUID callerUserId) {
+        groupPermissionService.requireAdminOrOwner(groupId, callerUserId);
+        groupRepository.findByIdForUpdate(groupId)
+                .filter(group -> group.getStatus() != GroupStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+
+        List<GroupInviteLinkEntity> activeDefaults = groupInviteLinkRepository.findActiveDefaultLinks(groupId);
+        if (!activeDefaults.isEmpty()) {
+            return InviteLinkResponse.from(activeDefaults.getFirst());
+        }
+
+        Instant now = clock.instant();
+        String code = generateSecureInviteCode();
+        GroupInviteLinkEntity defaultLink = groupInviteLinkRepository.save(new GroupInviteLinkEntity(
+                UUID.randomUUID(),
+                groupId,
+                code,
+                callerUserId,
+                null,
+                0,
+                null,
+                false,
+                now
+        ));
+        return InviteLinkResponse.from(defaultLink);
+    }
+
     @Transactional(readOnly = true)
     public List<InviteLinkResponse> getInviteLinks(UUID groupId, UUID callerUserId) {
         groupPermissionService.requireAdminOrOwner(groupId, callerUserId);

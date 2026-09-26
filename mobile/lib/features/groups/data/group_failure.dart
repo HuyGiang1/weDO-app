@@ -76,6 +76,36 @@ class GroupFailure {
     };
     return GroupFailure(t, fieldErrors: e.fieldErrors);
   }
+
+  String toVietnameseMessage() {
+    return switch (type) {
+      GroupFailureType.archived =>
+        'Nhóm đã được lưu trữ và không thể chỉnh sửa.',
+      GroupFailureType.insufficientPermission =>
+        'Bạn không có quyền thực hiện thao tác này trong nhóm.',
+      GroupFailureType.groupNotFound =>
+        'Không tìm thấy nhóm.',
+      GroupFailureType.groupDeleted =>
+        'Nhóm này đã bị xóa.',
+      GroupFailureType.memberNotFound =>
+        'Không tìm thấy thành viên trong nhóm.',
+      GroupFailureType.groupMemberLimitReached =>
+        'Nhóm đã đạt số lượng thành viên tối đa.',
+      GroupFailureType.userBannedFromGroup =>
+        'Bạn đã bị chặn khỏi nhóm này.',
+      GroupFailureType.inviteLinkExpired =>
+        'Liên kết mời đã hết hạn.',
+      GroupFailureType.inviteLinkRevoked =>
+        'Liên kết mời đã bị thu hồi.',
+      GroupFailureType.inviteLinkLimitReached =>
+        'Liên kết mời đã hết lượt sử dụng.',
+      GroupFailureType.network =>
+        'Không thể kết nối mạng. Vui lòng kiểm tra lại.',
+      GroupFailureType.unauthorized =>
+        'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+      _ => 'Thao tác không thành công. Vui lòng thử lại.',
+    };
+  }
 }
 
 class GroupException implements Exception {

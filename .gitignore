@@ -14,6 +14,10 @@
 # Backend
 backend/target/
 *.log
+.local-media/
+backend/.local-media/
+.dev-runtime/
+.dev-logs/
 
 # Flutter
 mobile/.dart_tool/

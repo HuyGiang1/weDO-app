@@ -6,6 +6,7 @@ import '../features/auth/application/auth_session_controller.dart';
 import '../features/auth/presentation/auth_flow_coordinator.dart';
 import '../features/auth/data/models/auth_models.dart';
 import '../features/profile/data/profile_models.dart';
+import '../features/groups/data/group_repository.dart';
 import '../features/privacy/data/privacy_models.dart';
 import '../features/qr/data/personal_qr.dart';
 
@@ -13,6 +14,7 @@ import '../features/qr/data/personal_qr.dart';
 class WeDoApp extends StatelessWidget {
   final AuthFlowCoordinator? authFlowCoordinator;
   final AuthSessionController authSessionController;
+  final GroupRepository? groupRepository;
   final Future<CurrentUser> Function()? loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)?
   updateProfile;
@@ -34,6 +36,7 @@ class WeDoApp extends StatelessWidget {
     super.key,
     this.authFlowCoordinator,
     required this.authSessionController,
+    this.groupRepository,
     this.loadCurrentUser,
     this.updateProfile,
     this.updateUsername,
@@ -58,9 +61,19 @@ class WeDoApp extends StatelessWidget {
           primary: AppColors.primary,
         ),
       ),
-      initialRoute: AppRoutes.welcome,
+      initialRoute:
+          authSessionController.isAuthenticated && groupRepository != null
+              ? AppRoutes.groups
+              : AppRoutes.welcome,
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
-        settings.name == AppRoutes.profile &&
+        settings.name == AppRoutes.groups &&
+                groupRepository != null &&
+                settings.arguments == null
+            ? RouteSettings(
+                name: settings.name,
+                arguments: GroupsRouteArgs(repository: groupRepository!),
+              )
+            : settings.name == AppRoutes.profile &&
                 loadCurrentUser != null &&
                 updateProfile != null &&
                 updateUsername != null &&

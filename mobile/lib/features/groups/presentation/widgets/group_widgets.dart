@@ -3,24 +3,92 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../data/models/group_models.dart';
 
+import 'dart:typed_data';
+
 class GroupAvatar extends StatelessWidget {
   final String name;
   final double radius;
-  const GroupAvatar({super.key, required this.name, this.radius = 28});
+  final String? avatarStorageKey;
+  final String? avatarUrl;
+  final Uint8List? imageBytes;
+  final String? baseUrl;
 
-  @override
-  Widget build(BuildContext context) => CircleAvatar(
-    radius: radius,
-    backgroundColor: const Color(0xFFEDE9FE),
-    child: Text(
-      name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase(),
-      style: TextStyle(
-        fontSize: radius * .75,
-        fontWeight: FontWeight.w700,
-        color: AppColors.primary,
-      ),
+  static String? defaultBaseUrl;
+
+  const GroupAvatar({
+    super.key,
+    required this.name,
+    this.radius = 28,
+    this.avatarStorageKey,
+    this.avatarUrl,
+    this.imageBytes,
+    this.baseUrl,
+  });
+
+  String? get resolvedUrl {
+    if (avatarUrl != null && avatarUrl!.isNotEmpty) return avatarUrl;
+    if (avatarStorageKey == null || avatarStorageKey!.trim().isEmpty) return null;
+    final key = avatarStorageKey!.trim();
+    if (key.startsWith('http://') || key.startsWith('https://')) return key;
+    final base = baseUrl ?? defaultBaseUrl ?? const String.fromEnvironment('WEDO_API_BASE_URL', defaultValue: 'http://localhost:8080');
+    final cleanBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final cleanKey = key.startsWith('/') ? key.substring(1) : key;
+    if (cleanKey.startsWith('api/v1/media/')) {
+      return '$cleanBase/$cleanKey';
+    }
+    return '$cleanBase/api/v1/media/$cleanKey';
+  }
+
+  Widget _buildFallback() => Text(
+    name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase(),
+    style: TextStyle(
+      fontSize: radius * .75,
+      fontWeight: FontWeight.w700,
+      color: AppColors.primary,
     ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageBytes != null && imageBytes!.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFFEDE9FE),
+        child: ClipOval(
+          child: Image.memory(
+            imageBytes!,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => _buildFallback(),
+          ),
+        ),
+      );
+    }
+
+    final url = resolvedUrl;
+    if (url != null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFFEDE9FE),
+        child: ClipOval(
+          child: Image.network(
+            url,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => _buildFallback(),
+          ),
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: const Color(0xFFEDE9FE),
+      child: _buildFallback(),
+    );
+  }
 }
 
 class GroupRoleBadge extends StatelessWidget {

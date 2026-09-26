@@ -58,6 +58,15 @@ class InviteLinksController
     }
   }
 
+  Future<InviteLinkResponse?> getDefault(String groupId) async {
+    try {
+      return await repository.getDefaultInviteLink(groupId);
+    } on GroupException catch (e) {
+      value = GroupAsyncState(data: value.data, failure: e.failure);
+      return null;
+    }
+  }
+
   Future<InviteLinkResponse?> create(
     String groupId,
     CreateInviteLinkRequest request,

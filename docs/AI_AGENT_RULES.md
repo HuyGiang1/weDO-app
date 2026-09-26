@@ -44,6 +44,8 @@ Applies to any work touching:
 * Authentication & Authorization
 * Security & Token infrastructure (JWT, Refresh Tokens, Passwords, Salt/Pepper)
 * Database schema & Flyway migrations
+
+When a milestone changes the database schema or core domain model, update the canonical database documentation/ERD and class-diagram source in the same milestone before closeout.
 * Concurrency, Threading, Mutexes & Database Row Locking
 * Transaction boundaries (`@Transactional`)
 * Session lifecycle & State restoration
@@ -124,6 +126,7 @@ WAIT FOR COMMIT APPROVAL
   * Production code, identifiers, classes, methods, variables: **English**.
   * Code comments: **English**.
   * Commit messages: **English**.
+  * All user-facing Vietnamese text must use full Vietnamese diacritics. Never intentionally strip accents from visible UI copy; this applies to labels, buttons, loading states, errors, dialogs, and empty states. API enums, JSON fields, database identifiers, routes, class names, and variable names remain unchanged.
   * Technical explanations and reports to the project owner: **Vietnamese** is preferred when practical.
   * Never introduce Vietnamese identifiers into production code.
 * **Educational Purpose:**

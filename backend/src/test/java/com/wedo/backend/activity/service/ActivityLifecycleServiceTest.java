@@ -11,6 +11,7 @@ import com.wedo.backend.activity.repository.*;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.group.entity.*;
+import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.group.service.ReadableGroupAccess;
 import java.time.*;
@@ -25,9 +26,10 @@ class ActivityLifecycleServiceTest {
     private final GroupPermissionService permissions = mock(GroupPermissionService.class);
     private final ActivityRsvpService rsvps = mock(ActivityRsvpService.class);
     private final ActivityResponseFactory responses = mock(ActivityResponseFactory.class);
+    private final GroupActivityLogRepository groupActivityLogs = mock(GroupActivityLogRepository.class);
     private final Instant now = Instant.parse("2026-09-15T10:00:00Z");
     private final ActivityLifecycleService service = new ActivityLifecycleService(activities, participants, histories, changes,
-            permissions, rsvps, responses, Clock.fixed(now, ZoneOffset.UTC));
+            permissions, rsvps, responses, groupActivityLogs, Clock.fixed(now, ZoneOffset.UTC));
 
     @Test void confirm_planningTransitionsAndOtherLifecycleStatesAreRejected() {
         UUID actor = UUID.randomUUID();
@@ -62,6 +64,24 @@ class ActivityLifecycleServiceTest {
         assertEquals(ErrorCode.ACTIVITY_ALREADY_STARTED, failure(() -> service.complete(withEnd.getId(), actor)).errorCode());
         ActivityEntity planning = activity(ActivityStatus.PLANNING, null, 8); arrangeAuthorized(planning, actor, GroupRole.OWNER);
         assertEquals(ErrorCode.ACTIVITY_CLOSED, failure(() -> service.complete(planning.getId(), actor)).errorCode());
+    }
+
+    @Test void unscheduledActivity_lifecycleTransitionsAndLogs() {
+        UUID actor = UUID.randomUUID();
+        // Unscheduled activity: startAt is null, endAt is null
+        ActivityEntity unscheduled = new ActivityEntity(UUID.randomUUID(), UUID.randomUUID(), actor, "title", "desc",
+                ActivityStatus.PLANNING, null, null, null, null, null, now, now);
+        arrangeAuthorized(unscheduled, actor, GroupRole.OWNER);
+
+        // Confirm unscheduled activity
+        service.confirm(unscheduled.getId(), actor);
+        assertEquals(ActivityStatus.CONFIRMED, unscheduled.getStatus());
+        verify(groupActivityLogs).save(argThat(log -> log.getAction() == GroupActivityAction.ACTIVITY_CONFIRMED));
+
+        // Complete unscheduled activity (endAt is null, so completion is allowed directly without waiting for endAt)
+        service.complete(unscheduled.getId(), actor);
+        assertEquals(ActivityStatus.COMPLETED, unscheduled.getStatus());
+        verify(groupActivityLogs).save(argThat(log -> log.getAction() == GroupActivityAction.ACTIVITY_COMPLETED));
     }
 
     @Test void actorMatrixAllowsCreatorOwnerAdminButNotUnrelatedMember() {

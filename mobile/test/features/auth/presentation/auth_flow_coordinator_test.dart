@@ -501,6 +501,124 @@ void main() {
     },
   );
   testWidgets(
+    'AuthenticatedSession clears onboarding transient state, marks session authenticated, and invokes onAuthenticated exactly once',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final sessionController = AuthSessionController(
+        storage: SecureStorageService(store: store),
+        accessTokenHolder: holder,
+        repository: AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      var authenticatedInvocations = 0;
+      BuildContext? invokedContext;
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+        sessionController: sessionController,
+        onAuthenticated: (ctx) {
+          authenticatedInvocations++;
+          invokedContext = ctx;
+        },
+      );
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (c) {
+                context = c;
+                return const SizedBox();
+              },
+            ),
+          ),
+          onGenerateRoute: (_) =>
+              MaterialPageRoute<void>(builder: (_) => const SizedBox()),
+        ),
+      );
+      await coordinator.register(context, 'user@wedo.social', 'rawPass');
+      await coordinator.verify(context, '123456');
+      expect(coordinator.hasProfileCompletionToken, isTrue);
+
+      await coordinator.login(context, 'user@wedo.social', 'rawPass');
+      await tester.pump();
+
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(sessionController.isAuthenticated, isTrue);
+      expect(authenticatedInvocations, 1);
+      expect(invokedContext, isNotNull);
+    },
+  );
+  testWidgets(
+    'completeProfile success follows nextStep LOGIN and strips onboarding stack',
+    (tester) async {
+      final api = FlowApi();
+      final store = Memory();
+      final holder = AccessTokenHolder();
+      final coordinator = AuthFlowCoordinator(
+        AuthRepository(
+          api: api,
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        ),
+      );
+      final navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          initialRoute: '/',
+          routes: {
+            '/': (_) => const SizedBox(),
+            '/register': (_) => const SizedBox(),
+            '/verify-email': (_) => const SizedBox(),
+            '/create-username': (_) => const SizedBox(),
+            '/complete-profile': (_) => const SizedBox(),
+            '/login': (_) => const SizedBox(),
+          },
+        ),
+      );
+      final nav = navKey.currentState!;
+      nav.pushNamed('/register');
+      await tester.pumpAndSettle();
+      nav.pushNamed('/verify-email');
+      await tester.pumpAndSettle();
+      nav.pushNamed('/create-username');
+      await tester.pumpAndSettle();
+      nav.pushNamed('/complete-profile');
+      await tester.pumpAndSettle();
+
+      final context = navKey.currentContext!;
+      await coordinator.register(context, 'u@w.s', 'pass');
+      await coordinator.verify(context, '123456');
+      await coordinator.selectUsername(context, 'valid_user');
+
+      await coordinator.completeProfile(
+        context,
+        const CompleteProfileData(
+          username: 'valid_user',
+          displayName: 'Valid User',
+          bio: null,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(coordinator.hasProfileCompletionToken, isFalse);
+      expect(nav.canPop(), isTrue);
+      nav.pop();
+      await tester.pumpAndSettle();
+      // After pop from login, we returned to / (welcome), not any onboarding route
+      expect(nav.canPop(), isFalse);
+    },
+  );
+  testWidgets(
     'incomplete-profile login without a prior session keeps onboarding credentials memory-only',
     (tester) async {
       final api = FlowApi()

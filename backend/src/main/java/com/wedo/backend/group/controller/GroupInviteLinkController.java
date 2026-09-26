@@ -49,6 +49,24 @@ public class GroupInviteLinkController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/api/v1/groups/{groupId}/invite-links/default")
+    public ResponseEntity<InviteLinkResponse> getDefaultInviteLink(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId
+    ) {
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, principal.userId());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/v1/groups/{groupId}/invite-links/default")
+    public ResponseEntity<InviteLinkResponse> ensureDefaultInviteLink(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId
+    ) {
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, principal.userId());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/api/v1/group-invite-links/{id}/revoke")
     public ResponseEntity<Void> revokeInviteLink(
             @AuthenticationPrincipal AuthenticatedUserPrincipal principal,

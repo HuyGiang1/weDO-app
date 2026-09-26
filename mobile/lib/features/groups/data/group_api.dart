@@ -177,6 +177,13 @@ class GroupApi {
   );
 
   // M6: Invite Links
+  Future<InviteLinkResponse> getDefaultInviteLink(String groupId) => _call(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/invite-links/default',
+    ),
+    InviteLinkResponse.fromJson,
+  );
+
   Future<InviteLinkResponse> createInviteLink(
     String groupId,
     CreateInviteLinkRequest q,
@@ -284,4 +291,27 @@ class GroupApi {
   Future<void> deleteGroup(String groupId) => _empty(
     () => dio.delete('/api/v1/groups/${Uri.encodeComponent(groupId)}'),
   );
+
+  Future<String> uploadAvatar({
+    required List<int> bytes,
+    required String filename,
+    required String contentType,
+  }) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: DioMediaType.parse(contentType),
+        ),
+      });
+      final res = await dio.post<Map<String, dynamic>>(
+        '/api/v1/media/avatar',
+        data: formData,
+      );
+      return res.data!['storageKey'] as String;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
 }

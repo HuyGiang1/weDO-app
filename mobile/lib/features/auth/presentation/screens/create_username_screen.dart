@@ -217,39 +217,50 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: AppSpacing.xl),
-                                  SizedBox(
-                                    height: AppSpacing.inputHeight,
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      minHeight: AppSpacing.inputHeight,
+                                    ),
                                     child: TextField(
                                       controller: _usernameController,
                                       focusNode: _usernameFocusNode,
                                       autocorrect: false,
                                       enableSuggestions: false,
                                       textInputAction: TextInputAction.done,
+                                      cursorColor: AppColors.primary,
                                       style: const TextStyle(
-                                        fontSize: 18.0,
-                                        fontWeight: FontWeight.w400,
+                                        fontSize: 16.0,
+                                        fontWeight: FontWeight.w500,
                                         color: AppColors.onSurface,
                                       ),
                                       decoration: InputDecoration(
+                                        isDense: true,
                                         hintText: 'username',
                                         hintStyle: const TextStyle(
-                                          fontSize: 18.0,
+                                          fontSize: 16.0,
                                           color: AppColors.onSurfaceVariant,
                                         ),
-                                        prefixIcon: const Center(
-                                          child: Text(
-                                            '@',
-                                            style: TextStyle(
-                                              fontSize: 18.0,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.onSurfaceVariant,
+                                        prefixIcon: const Padding(
+                                          padding: EdgeInsets.only(
+                                            left: 16.0,
+                                            right: 8.0,
+                                          ),
+                                          child: Center(
+                                            widthFactor: 1.0,
+                                            child: Text(
+                                              '@',
+                                              style: TextStyle(
+                                                fontSize: 18.0,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppColors.onSurfaceVariant,
+                                              ),
                                             ),
                                           ),
                                         ),
                                         prefixIconConstraints:
                                             const BoxConstraints(
-                                              minWidth: 48.0,
-                                              minHeight: AppSpacing.inputHeight,
+                                              minWidth: 40.0,
+                                              minHeight: 0,
                                             ),
                                         filled: true,
                                         fillColor: _isFocused
@@ -258,7 +269,7 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                         contentPadding:
                                             const EdgeInsets.symmetric(
                                               horizontal: 16.0,
-                                              vertical: 14.0,
+                                              vertical: 16.0,
                                             ),
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(

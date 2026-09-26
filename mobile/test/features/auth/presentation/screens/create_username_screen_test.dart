@@ -57,6 +57,16 @@ void main() {
       expect(find.text('Username is available'), findsNothing);
     });
 
+    testWidgets('typed username is visibly rendered in the input field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildSubject());
+      await enterUsername(tester, 'alex_vibes');
+      expect(find.text('alex_vibes'), findsOneWidget);
+      final textField = tester.widget<TextField>(usernameField());
+      expect(textField.controller?.text, equals('alex_vibes'));
+    });
+
     testWidgets(
       'enforces exact local username syntax without availability calls',
       (tester) async {

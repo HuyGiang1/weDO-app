@@ -284,6 +284,74 @@ class GroupAdmissionServiceTest {
         verify(groupMembershipRepository).save(any());
     }
 
+    @Test
+    void ensureDefaultInviteLink_createsNew_whenNoneExists() {
+        UUID groupId = UUID.randomUUID();
+        UUID callerId = UUID.randomUUID();
+        GroupEntity group = new GroupEntity(groupId, "Test", null, null, GroupStatus.ACTIVE, callerId, NOW, NOW);
+        when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findActiveDefaultLinks(groupId)).thenReturn(List.of());
+        when(groupInviteLinkRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, callerId);
+
+        assertNotNull(response);
+        assertNotNull(response.code());
+        assertNull(response.maxUses());
+        assertNull(response.expiresAt());
+        assertFalse(response.isRevoked());
+        verify(groupInviteLinkRepository).save(any(GroupInviteLinkEntity.class));
+    }
+
+    @Test
+    void ensureDefaultInviteLink_returnsExisting_whenOneAlreadyExists() {
+        UUID groupId = UUID.randomUUID();
+        UUID callerId = UUID.randomUUID();
+        GroupEntity group = new GroupEntity(groupId, "Test", null, null, GroupStatus.ACTIVE, callerId, NOW, NOW);
+        GroupInviteLinkEntity existing = new GroupInviteLinkEntity(UUID.randomUUID(), groupId, "existing-default-code", callerId, null, 0, null, false, NOW);
+        when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findActiveDefaultLinks(groupId)).thenReturn(List.of(existing));
+
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, callerId);
+
+        assertNotNull(response);
+        assertEquals("existing-default-code", response.code());
+        verify(groupInviteLinkRepository, never()).save(any());
+    }
+
+    @Test
+    void ensureDefaultInviteLink_createsNew_whenExistingIsRevoked() {
+        UUID groupId = UUID.randomUUID();
+        UUID callerId = UUID.randomUUID();
+        GroupEntity group = new GroupEntity(groupId, "Test", null, null, GroupStatus.ACTIVE, callerId, NOW, NOW);
+        when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findActiveDefaultLinks(groupId)).thenReturn(List.of());
+        when(groupInviteLinkRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, callerId);
+
+        assertNotNull(response);
+        assertNotNull(response.code());
+        assertFalse(response.isRevoked());
+        verify(groupInviteLinkRepository).save(any(GroupInviteLinkEntity.class));
+    }
+
+    @Test
+    void ensureDefaultInviteLink_doesNotDestroyCustomLinks() {
+        UUID groupId = UUID.randomUUID();
+        UUID callerId = UUID.randomUUID();
+        GroupEntity group = new GroupEntity(groupId, "Test", null, null, GroupStatus.ACTIVE, callerId, NOW, NOW);
+        when(groupRepository.findByIdForUpdate(groupId)).thenReturn(Optional.of(group));
+        when(groupInviteLinkRepository.findActiveDefaultLinks(groupId)).thenReturn(List.of());
+        when(groupInviteLinkRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        InviteLinkResponse response = admissionService.ensureDefaultInviteLink(groupId, callerId);
+
+        assertNotNull(response);
+        verify(groupInviteLinkRepository, never()).deleteAll(any());
+        verify(groupInviteLinkRepository, never()).delete(any());
+    }
+
     private GroupInviteLinkRepository.InviteLinkIdentity identity(GroupInviteLinkEntity link) {
         return new GroupInviteLinkRepository.InviteLinkIdentity() {
             @Override public UUID getId() { return link.getId(); }

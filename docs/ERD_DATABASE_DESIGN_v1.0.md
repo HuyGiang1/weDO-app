@@ -115,7 +115,16 @@ Important:
 - poll_votes
 - poll_vote_choices
 
-Anonymous poll stores internal user ID but API/UI hides voter identity.
+As-built M8 schema (V6): `polls` belongs to an Activity and stores creator,
+question, `poll_type`, option-addition setting, optional selection limit,
+vote/result visibility, open/closed state, `deadline_at`, and closure audit
+timestamps/actor. `poll_options` stores ordered text and disabled state;
+`poll_votes` stores one ballot per user/Poll; `poll_vote_choices` links each
+ballot to its selected options. V6 enforces the Poll/user and vote/option
+uniques and cascades Poll deletion through options, votes, and choices. The
+consumer M8 UI creates SINGLE-choice Polls; MULTIPLE-choice remains in the
+target/current schema for backend compatibility. Anonymous Polls retain the
+internal voter ID but do not expose identity through API/UI.
 
 ## 8. Task & Discussion
 - tasks
@@ -123,7 +132,20 @@ Anonymous poll stores internal user ID but API/UI hides voter identity.
 - task_status_history
 - activity_comments
 
-`activity_comments.parent_comment_id` nullable; one reply level enforced in service.
+As-built M8 schema (V6): `tasks` belongs to an Activity and stores creator,
+title/description, TODO/IN_PROGRESS/DONE status, and optional timestamp
+`due_at`. `task_assignees` links one or more users to a Task; the unique
+`(task_id, user_id)` constraint prevents duplicate assignments.
+`task_status_history` stores each transition, actor, and timestamp. Deleting a
+Task cascades to its assignees and status history. A passed `due_at` is not a
+status transition and does not auto-complete or delete a Task.
+
+`activity_comments` belongs to an Activity and stores a required author,
+content, edit/delete audit fields, and nullable `parent_comment_id` for one
+reply level (depth is enforced by the service). Deleting an Activity cascades
+to its comments; deleting a parent comment cascades to its replies. Comment
+author deletion is restricted; the moderator/deleter reference is set null.
+These are the existing V6 tables; M8 requires no new migration.
 
 ## 9. Calendar
 - user_activity_reminders

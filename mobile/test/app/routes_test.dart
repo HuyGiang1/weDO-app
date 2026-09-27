@@ -25,8 +25,8 @@ import 'package:mobile/features/profile/presentation/screens/public_user_profile
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 30 registered production routes', () {
-      expect(AppRoutes.routes.length, 30);
+    test('contains exactly 32 registered production routes', () {
+      expect(AppRoutes.routes.length, 32);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -59,6 +59,8 @@ void main() {
         AppRoutes.groupBans,
         AppRoutes.activities,
         AppRoutes.activityDetail,
+        AppRoutes.polls,
+        AppRoutes.tasks,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -89,7 +91,9 @@ void main() {
                   entry.key == AppRoutes.groupJoinRequests ||
                   entry.key == AppRoutes.groupBans ||
                   entry.key == AppRoutes.activities ||
-                  entry.key == AppRoutes.activityDetail
+                  entry.key == AppRoutes.activityDetail ||
+                  entry.key == AppRoutes.polls ||
+                  entry.key == AppRoutes.tasks
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',
@@ -807,29 +811,38 @@ void main() {
   group('Protected M7 Activity Routes', () {
     final activityRepo = ActivityRepository(api: ActivityApi(Dio()));
 
-    test('activities and activityDetail are denied for unauthenticated users', () {
-      expect(
-        AppRoutes.onGenerateRoute(
-          RouteSettings(
-            name: AppRoutes.activities,
-            arguments: ActivitiesRouteArgs(repository: activityRepo, groupId: 'g1'),
+    test(
+      'activities and activityDetail are denied for unauthenticated users',
+      () {
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(
+              name: AppRoutes.activities,
+              arguments: ActivitiesRouteArgs(
+                repository: activityRepo,
+                groupId: 'g1',
+              ),
+            ),
+            authStatus: AuthSessionStatus.unauthenticated,
           ),
-          authStatus: AuthSessionStatus.unauthenticated,
-        ),
-        isNull,
-      );
+          isNull,
+        );
 
-      expect(
-        AppRoutes.onGenerateRoute(
-          RouteSettings(
-            name: AppRoutes.activityDetail,
-            arguments: ActivityDetailRouteArgs(repository: activityRepo, activityId: 'a1'),
+        expect(
+          AppRoutes.onGenerateRoute(
+            RouteSettings(
+              name: AppRoutes.activityDetail,
+              arguments: ActivityDetailRouteArgs(
+                repository: activityRepo,
+                activityId: 'a1',
+              ),
+            ),
+            authStatus: AuthSessionStatus.unauthenticated,
           ),
-          authStatus: AuthSessionStatus.unauthenticated,
-        ),
-        isNull,
-      );
-    });
+          isNull,
+        );
+      },
+    );
 
     test('activities fails closed for missing, wrong, or blank arguments', () {
       for (final bad in [
@@ -848,28 +861,34 @@ void main() {
       }
     });
 
-    test('activityDetail fails closed for missing, wrong, or blank arguments', () {
-      for (final bad in [
-        null,
-        'wrong',
-        ActivityDetailRouteArgs(repository: activityRepo, activityId: ''),
-        ActivityDetailRouteArgs(repository: activityRepo, activityId: '   '),
-      ]) {
-        expect(
-          AppRoutes.onGenerateRoute(
-            RouteSettings(name: AppRoutes.activityDetail, arguments: bad),
-            authStatus: AuthSessionStatus.authenticated,
-          ),
-          isNull,
-        );
-      }
-    });
+    test(
+      'activityDetail fails closed for missing, wrong, or blank arguments',
+      () {
+        for (final bad in [
+          null,
+          'wrong',
+          ActivityDetailRouteArgs(repository: activityRepo, activityId: ''),
+          ActivityDetailRouteArgs(repository: activityRepo, activityId: '   '),
+        ]) {
+          expect(
+            AppRoutes.onGenerateRoute(
+              RouteSettings(name: AppRoutes.activityDetail, arguments: bad),
+              authStatus: AuthSessionStatus.authenticated,
+            ),
+            isNull,
+          );
+        }
+      },
+    );
 
     test('valid typed arguments generate authenticated MaterialPageRoute', () {
       final actRoute = AppRoutes.onGenerateRoute(
         RouteSettings(
           name: AppRoutes.activities,
-          arguments: ActivitiesRouteArgs(repository: activityRepo, groupId: 'grp-exact-1'),
+          arguments: ActivitiesRouteArgs(
+            repository: activityRepo,
+            groupId: 'grp-exact-1',
+          ),
         ),
         authStatus: AuthSessionStatus.authenticated,
       );
@@ -879,7 +898,10 @@ void main() {
       final detailRoute = AppRoutes.onGenerateRoute(
         RouteSettings(
           name: AppRoutes.activityDetail,
-          arguments: ActivityDetailRouteArgs(repository: activityRepo, activityId: 'act-exact-1'),
+          arguments: ActivityDetailRouteArgs(
+            repository: activityRepo,
+            activityId: 'act-exact-1',
+          ),
         ),
         authStatus: AuthSessionStatus.authenticated,
       );
@@ -958,7 +980,10 @@ void main() {
 
         // Now on LoginScreen
         expect(find.text('Welcome Back'), findsOneWidget);
-        await tester.enterText(find.byType(TextField).at(0), 'user@wedo.social');
+        await tester.enterText(
+          find.byType(TextField).at(0),
+          'user@wedo.social',
+        );
         await tester.enterText(find.byType(TextField).at(1), 'ValidPass123!');
         await tester.pump();
 

@@ -376,6 +376,11 @@ Tests:
 - task permission
 - reply depth
 
+Automated multi-account role/permission coverage is provided by
+`M8MultiAccountIntegrationTest`. Manual multi-account Samsung QA is deferred;
+the local QA accounts are available for that later verification. M9 is not
+started by this closeout.
+
 ## 12. M9 — Chat REST
 
 Features:

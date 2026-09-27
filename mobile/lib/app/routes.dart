@@ -39,6 +39,16 @@ import '../features/activity/data/activity_api.dart';
 import '../features/activity/data/activity_repository.dart';
 import '../features/activity/application/activity_controllers.dart';
 import '../features/activity/presentation/screens/activity_runtime_screens.dart';
+import '../features/groups/data/group_api.dart';
+import '../features/poll/data/poll_api.dart';
+import '../features/poll/data/poll_repository.dart';
+import '../features/poll/presentation/screens/poll_screens.dart';
+import '../features/task/data/task_api.dart';
+import '../features/task/data/task_repository.dart';
+import '../features/task/presentation/screens/task_screens.dart';
+import '../features/discussion/data/discussion_api.dart';
+import '../features/discussion/data/discussion_repository.dart';
+import '../features/discussion/presentation/widgets/activity_discussion_section.dart';
 
 export 'auth_route_guard.dart';
 
@@ -199,6 +209,8 @@ abstract final class AppRoutes {
   static const String groupBans = '/groups/bans';
   static const String activities = '/groups/activities';
   static const String activityDetail = '/activities/detail';
+  static const String polls = '/activities/polls';
+  static const String tasks = '/activities/tasks';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -642,9 +654,64 @@ abstract final class AppRoutes {
           return null;
         return MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => ActivityDetailRuntimeScreen(
+          builder: (context) => ActivityDetailRuntimeScreen(
             activityId: args.activityId,
             controller: ActivityDetailController(args.repository),
+            onOpenPolls: () => Navigator.of(context).pushNamed(
+              polls,
+              arguments: ActivityDetailRouteArgs(
+                repository: args.repository,
+                activityId: args.activityId,
+              ),
+            ),
+            onOpenTasks: () => Navigator.of(context).pushNamed(
+              tasks,
+              arguments: ActivityDetailRouteArgs(
+                repository: args.repository,
+                activityId: args.activityId,
+              ),
+            ),
+            discussion: ActivityDiscussionSection(
+              activityId: args.activityId,
+              repository: DiscussionRepository(
+                DiscussionApi(args.repository.api.dio),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+    polls: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ActivityDetailRouteArgs || args.activityId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => PollListScreen(
+            activityId: args.activityId,
+            repository: PollRepository(PollApi(args.repository.api.dio)),
+          ),
+        );
+      },
+    ),
+    tasks: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ActivityDetailRouteArgs || args.activityId.trim().isEmpty)
+          return null;
+        final groupApi = GroupApi(args.repository.api.dio);
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => TaskListScreen(
+            activityId: args.activityId,
+            repository: TaskRepository(TaskApi(args.repository.api.dio)),
+            loadMembers: () async {
+              final detail = await args.repository.detail(args.activityId);
+              return groupApi.getMembers(detail.groupId);
+            },
           ),
         );
       },

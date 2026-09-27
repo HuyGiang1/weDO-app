@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface GroupRepository extends JpaRepository<GroupEntity, UUID> {
+    Optional<GroupEntity> findByName(String name);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select g from GroupEntity g where g.id = :groupId")
     Optional<GroupEntity> findByIdForUpdate(UUID groupId);

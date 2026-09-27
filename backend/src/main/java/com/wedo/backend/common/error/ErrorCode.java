@@ -68,6 +68,22 @@ public enum ErrorCode {
     INVALID_ACTIVITY_TIME(HttpStatus.BAD_REQUEST, "Activity time or timezone is invalid."),
     ACTIVITY_CAPACITY_INVALID(HttpStatus.BAD_REQUEST, "Activity capacity is invalid."),
     RSVP_LOCKED(HttpStatus.CONFLICT, "RSVP is locked."),
+    POLL_NOT_FOUND(HttpStatus.NOT_FOUND, "Poll was not found."),
+    POLL_CLOSED(HttpStatus.CONFLICT, "Poll is closed."),
+    POLL_DEADLINE_PASSED(HttpStatus.CONFLICT, "Poll deadline has passed."),
+    INVALID_POLL_SELECTION(HttpStatus.BAD_REQUEST, "Invalid poll selection."),
+    MAX_POLL_SELECTIONS_EXCEEDED(HttpStatus.BAD_REQUEST, "Maximum poll selections exceeded."),
+    POLL_OPTION_DISABLED(HttpStatus.CONFLICT, "Poll option is disabled."),
+    POLL_OPTION_CHANGE_NOT_ALLOWED(HttpStatus.CONFLICT, "Poll option change is not allowed."),
+    POLL_VOTERS_PRIVATE(HttpStatus.FORBIDDEN, "Poll voters are private."),
+    TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task was not found."),
+    TASK_UPDATE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "Task update is not allowed."),
+    TASK_DELETE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "Task deletion is not allowed."),
+    TASK_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "Task is already assigned."),
+    TASK_NOT_CLAIMABLE(HttpStatus.CONFLICT, "Task is not claimable."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Comment was not found."),
+    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "Only one reply level is allowed."),
+    COMMENT_UPDATE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "Comment update is not allowed."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

@@ -16,6 +16,21 @@ class UserAvatar extends StatelessWidget {
     this.radius = 24.0,
   });
 
+  String? get _resolvedUrl {
+    final key = avatarStorageKey?.trim();
+    if (key == null || key.isEmpty) return null;
+    if (key.startsWith('http://') || key.startsWith('https://')) return key;
+    const base = String.fromEnvironment(
+      'WEDO_API_BASE_URL',
+      defaultValue: 'http://localhost:8080',
+    );
+    final cleanBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final cleanKey = key.startsWith('/') ? key.substring(1) : key;
+    return cleanKey.startsWith('api/v1/media/')
+        ? '$cleanBase/$cleanKey'
+        : '$cleanBase/api/v1/media/$cleanKey';
+  }
+
   String _getInitials() {
     final trimmed = displayName.trim();
     if (trimmed.isEmpty) return '?';
@@ -28,17 +43,30 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final imageUrl = _resolvedUrl;
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.surfaceContainerHigh,
-      child: Text(
-        _getInitials(),
-        style: AppTextStyles.label.copyWith(
-          color: AppColors.primary,
-          fontWeight: FontWeight.bold,
-          fontSize: radius * 0.75,
-        ),
-      ),
+      child: imageUrl == null
+          ? _fallback()
+          : ClipOval(
+              child: Image.network(
+                imageUrl,
+                width: radius * 2,
+                height: radius * 2,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => _fallback(),
+              ),
+            ),
     );
   }
+
+  Widget _fallback() => Text(
+    _getInitials(),
+    style: AppTextStyles.label.copyWith(
+      color: AppColors.primary,
+      fontWeight: FontWeight.bold,
+      fontSize: radius * 0.75,
+    ),
+  );
 }

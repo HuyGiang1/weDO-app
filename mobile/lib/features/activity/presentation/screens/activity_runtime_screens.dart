@@ -1139,11 +1139,17 @@ class _ActivityCreateRuntimeScreenState
 class ActivityDetailRuntimeScreen extends StatefulWidget {
   final String activityId;
   final ActivityDetailController controller;
+  final VoidCallback? onOpenPolls;
+  final VoidCallback? onOpenTasks;
+  final Widget? discussion;
 
   const ActivityDetailRuntimeScreen({
     super.key,
     required this.activityId,
     required this.controller,
+    this.onOpenPolls,
+    this.onOpenTasks,
+    this.discussion,
   });
 
   @override
@@ -1405,6 +1411,42 @@ class _ActivityDetailRuntimeScreenState
                     ],
                   ],
                 ),
+                const SizedBox(height: 16),
+
+                _surfaceCard(
+                  children: [
+                    const Text(
+                      'Công cụ hoạt động',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(
+                        Icons.poll_outlined,
+                        color: AppColors.primary,
+                      ),
+                      title: const Text('Bình chọn'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: widget.onOpenPolls,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(
+                        Icons.task_alt_outlined,
+                        color: AppColors.primary,
+                      ),
+                      title: const Text('Công việc'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: widget.onOpenTasks,
+                    ),
+                  ],
+                ),
+                if (widget.discussion != null) widget.discussion!,
                 const SizedBox(height: 16),
 
                 // Capacity & Progress Card

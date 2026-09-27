@@ -1,0 +1,3 @@
+package com.wedo.backend.poll.entity;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="poll_vote_choices") public class PollVoteChoiceEntity { @Id private UUID id; @Column(name="vote_id",nullable=false) private UUID voteId; @Column(name="option_id",nullable=false) private UUID optionId; @Column(name="created_at",nullable=false) private Instant createdAt; protected PollVoteChoiceEntity(){} public PollVoteChoiceEntity(UUID id,UUID voteId,UUID optionId,Instant now){this.id=id;this.voteId=voteId;this.optionId=optionId;this.createdAt=now;} public UUID getOptionId(){return optionId;} }

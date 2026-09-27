@@ -93,13 +93,19 @@ try {
         if ($listener) { throw 'Port 8080 is occupied by a process that does not pass the weDO health check.' }
 
         $mavenWrapper = Join-Path $repoRoot 'backend\mvnw.cmd'
-        $backend = Start-Process -FilePath $env:ComSpec `
-            -ArgumentList @('/d', '/c', "`"$mavenWrapper`" spring-boot:run") `
-            -WorkingDirectory (Join-Path $repoRoot 'backend') `
-            -WindowStyle Hidden `
-            -RedirectStandardOutput $backendLog `
-            -RedirectStandardError $backendErrorLog `
-            -PassThru
+        $previousSeedSetting = $env:WEDO_LOCAL_TEST_DATA_ENABLED
+        try {
+            $env:WEDO_LOCAL_TEST_DATA_ENABLED = 'true'
+            $backend = Start-Process -FilePath $env:ComSpec `
+                -ArgumentList @('/d', '/c', "`"$mavenWrapper`" spring-boot:run") `
+                -WorkingDirectory (Join-Path $repoRoot 'backend') `
+                -WindowStyle Hidden `
+                -RedirectStandardOutput $backendLog `
+                -RedirectStandardError $backendErrorLog `
+                -PassThru
+        } finally {
+            $env:WEDO_LOCAL_TEST_DATA_ENABLED = $previousSeedSetting
+        }
         @{ processId = $backend.Id; startedAtUtc = $backend.StartTime.ToUniversalTime().ToString('o') } |
             ConvertTo-Json | Set-Content -Encoding UTF8 $backendPidFile
         Write-Host "Started backend (PID $($backend.Id)); logs: $logsDir"

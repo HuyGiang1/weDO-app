@@ -1887,17 +1887,27 @@ Groups response by GOING, MAYBE, NOT_GOING, NO_RESPONSE, WAITLIST.
 ```json
 {
   "question": "Đi Hội An ngày nào?",
-  "type": "SINGLE_CHOICE",
+  "pollType": "SINGLE_CHOICE",
   "options": ["Thứ 6", "Thứ 7", "Chủ nhật"],
   "allowMemberAddOption": true,
-  "maxSelections": null,
   "voteVisibility": "PUBLIC",
   "resultVisibility": "IMMEDIATE",
-  "deadlineAt": "2026-09-01T12:00:00+07:00"
+  "deadlineAt": "2026-09-01T05:00:00Z"
 }
 ```
 
 Vote visibility cannot be changed after the first vote.
+
+Any ACTIVE group member with readable Activity access may create a Poll. Poll creator,
+Group Owner, and Group Admin manage Polls according to the rules below. The M8 consumer
+app creates single-choice Polls only; the backend retains its multiple-choice compatibility
+for existing data and API consumers.
+
+`deadlineAt` is a complete instant, supplied with an explicit UTC offset (for example,
+`2026-09-01T05:00:00Z`). The consumer collects both local date and time; a same-day
+future time is valid. A deadline at or before server time is rejected on create. Each
+subsequent Poll read/mutation evaluates the deadline against server time and treats a
+passed deadline as closed; no scheduler is required.
 
 ### POLL-02 List/Detail
 
@@ -1914,7 +1924,14 @@ Vote visibility cannot be changed after the first vote.
 }
 ```
 
-Poll must be OPEN and before deadline. Single choice requires exactly one option. Multiple choice enforces maxSelections when configured. Existing vote may be changed while poll remains open.
+Poll must be OPEN and before deadline. The M8 consumer app submits exactly one option.
+Existing vote may be changed while the Poll remains open.
+
+Poll responses include `resultsVisible` and `permissions` (`canVote`, `canAddOption`,
+`canClose`, `canViewVoters`). Option responses include `canEdit`, `canDisable`, and
+`canDelete`. With `resultVisibility=IMMEDIATE`, results are visible while open; with
+`AFTER_CLOSE`, they become visible after closure. `voteVisibility=ANONYMOUS` never
+exposes voter identities; the voters endpoint is available only for PUBLIC polls.
 
 ### POLL-04 Add Option
 
@@ -1925,12 +1942,19 @@ Allowed only when creator enabled member-added options.
 
 Before any vote, option creator may edit/delete their option where allowed. Once voted, materially changing/deleting is forbidden. Poll Creator/Owner/Admin may disable an option while retaining existing votes.
 
-`POST /api/v1/poll-options/{optionId}/disable`
+`PATCH /api/v1/polls/{pollId}/options/{optionId}`
+
+`DELETE /api/v1/polls/{pollId}/options/{optionId}`
+`POST /api/v1/polls/{pollId}/options/{optionId}/disable`
+
+Option edit/delete is allowed to the option creator or Poll creator/Owner/Admin only
+before that option has votes. Poll creator/Owner/Admin may disable an option while
+the Poll is open.
 
 ### POLL-06 Close Poll
 
 `POST /api/v1/polls/{pollId}/close`
-Creator/authorized moderator may close early (`closed_at` set to now, `closed_by` set to actor). Poll also closes automatically upon reaching deadline (`closed_at` set to close time, `closed_by` is null). In both cases, persisted status transitions to CLOSED and no further votes or option changes are permitted.
+Creator/authorized moderator may close early (`closed_at` set to now, `closed_by` set to actor). Every Poll operation evaluates the deadline against server time; a passed deadline is effectively CLOSED immediately and may persist `CLOSED`/`closed_at` idempotently in that transaction with `closed_by` null. No background scheduler is required. In both cases no further votes or option changes are permitted.
 
 ### POLL-07 Public Voters
 
@@ -1955,6 +1979,10 @@ Only for PUBLIC polls. Anonymous polls still store user IDs internally for integ
 ```
 
 Task may have 1+ assignees or remain unassigned. Multiple assignees share ONE task status.
+Any ACTIVE group member with readable Activity access may create a Task. Every assignee must be an ACTIVE GroupMembership in the Activity's Group; ActivityParticipant is not used for eligibility.
+`dueAt` is an optional complete instant and the consumer collects both local date and
+time, serializing an explicit UTC offset. Same-day future times are valid. A passed
+`dueAt` means overdue only: it does not change `status` to `DONE` or delete the Task.
 
 ### TASK-02 List/Detail
 
@@ -1962,10 +1990,17 @@ Task may have 1+ assignees or remain unassigned. Multiple assignees share ONE ta
 `GET /api/v1/tasks/{taskId}`  
 Filters: status, assignedToMe.
 
+Each Task response includes server-derived `permissions`: `canEdit`,
+`canManageAssignees`, `canClaim`, `canChangeStatus`, and `canDelete`. Creation,
+core edits, and deletion are available to the Task creator or Group Owner/Admin;
+claim is available to an active member while unassigned; status changes are available
+to an assignee, Task creator, Activity creator, or Group Owner/Admin. Clients render
+these flags and do not implement authorization rules locally.
+
 ### TASK-03 Update Task
 
 `PATCH /api/v1/tasks/{taskId}`  
-Core task edits are controlled by Activity Creator/Owner/Admin.
+Core task and assignee edits are controlled by Task Creator/Owner/Admin.
 
 ### TASK-04 Change Status
 
@@ -1983,6 +2018,14 @@ Any assignee, Owner/Admin or Activity Creator can change shared status. Every tr
 
 `POST /api/v1/tasks/{taskId}/claim`
 
+### TASK-06 Delete Task
+
+`DELETE /api/v1/tasks/{taskId}`
+
+Only the Task Creator or a Group Owner/Admin may delete a Task. Task assignees
+do not gain delete permission solely from assignment. The current V6 schema
+cascades deletion to `task_assignees` and `task_status_history`.
+
 No subtasks in MVP. Completing Activity does not automatically complete tasks.
 
 ---
@@ -1995,12 +2038,18 @@ No subtasks in MVP. Completing Activity does not automatically complete tasks.
 `PATCH  /api/v1/comments/{commentId}`  
 `DELETE /api/v1/comments/{commentId}`
 
+The Activity comments response contains discussion-level `permissions`
+(`canComment`, `canReply`, `readOnly`) and visible comments. Each `CommentResponse`
+contains `authorId` plus the author's public profile (`id`, `username`, `displayName`,
+`avatarStorageKey`, `bio`), reply parent, and per-comment permissions (`canComment`,
+`canReply`, `canEdit`, `canDelete`, `canModerate`, `readOnly`).
+
 Rules:
 - One reply level only.
 - User can edit/delete own comments.
 - Owner/Admin can moderate; moderation is logged.
-- COMPLETED activities may retain active discussion.
-- CANCELLED activities may lock new comments based on domain setting/rule.
+- COMPLETED and CANCELLED activities retain readable discussion but reject all discussion mutation.
+- Archived groups reject all M8 mutation; removed, banned, and non-members cannot mutate M8 resources.
 
 ---
 

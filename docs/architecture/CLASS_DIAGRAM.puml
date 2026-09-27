@@ -11,6 +11,14 @@ class GroupActivityLogEntity { id: UUID\nactorUserId: UUID\naction: GroupActivit
 class ActivityEntity { id: UUID\nstatus: ActivityStatus\nstartAt: Instant?\nendAt: Instant?\ntimezone: String?\ncapacity: Integer? }
 class ActivityParticipantEntity { id: UUID\nrsvpStatus: ActivityRsvpStatus\nwaitlistSequence: Long? }
 class ActivityWaitlistSequenceEntity { activityId: UUID\ncurrentSequence: Long }
+class PollEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: PollStatus }
+class PollOptionEntity { id: UUID\npollId: UUID\nisDisabled: boolean }
+class PollVoteEntity { id: UUID\npollId: UUID\nuserId: UUID }
+class PollVoteChoiceEntity { voteId: UUID\noptionId: UUID }
+class TaskEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: TaskStatus }
+class TaskAssigneeEntity { taskId: UUID\nuserId: UUID }
+class TaskStatusHistoryEntity { taskId: UUID\nfromStatus: TaskStatus?\ntoStatus: TaskStatus }
+class ActivityCommentEntity { id: UUID\nactivityId: UUID\nauthorId: UUID\nparentCommentId: UUID?\nisDeleted: boolean }
 UserEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupInviteLinkEntity
@@ -20,5 +28,16 @@ GroupEntity "1" -- "0..*" ActivityEntity
 ActivityEntity "1" -- "0..*" ActivityParticipantEntity
 UserEntity "1" -- "0..*" ActivityParticipantEntity
 ActivityEntity "1" -- "1" ActivityWaitlistSequenceEntity
+ActivityEntity "1" -- "0..*" PollEntity
+PollEntity "1" -- "2..*" PollOptionEntity
+PollEntity "1" -- "0..*" PollVoteEntity
+PollVoteEntity "1" -- "1..*" PollVoteChoiceEntity
+PollOptionEntity "1" -- "0..*" PollVoteChoiceEntity
+ActivityEntity "1" -- "0..*" TaskEntity
+TaskEntity "1" -- "0..*" TaskAssigneeEntity
+TaskEntity "1" -- "1..*" TaskStatusHistoryEntity
+ActivityEntity "1" -- "0..*" ActivityCommentEntity
+ActivityCommentEntity "0..1" -- "0..*" ActivityCommentEntity : replies
 UserEntity "1" -- "0..*" FriendshipEntity
+UserEntity "1" -- "0..*" ActivityCommentEntity : author
 @enduml

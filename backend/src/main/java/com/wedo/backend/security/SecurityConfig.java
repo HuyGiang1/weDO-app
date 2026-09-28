@@ -51,6 +51,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/reset-password").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll()
                         .requestMatchers(
+                                "/ws",
+                                "/ws/**",
+                                "/api/v1/ws",
+                                "/api/v1/ws/**",
                                 "/api/v1/health",
                                 "/actuator/health",
                                 "/v3/api-docs/**",

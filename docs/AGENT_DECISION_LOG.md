@@ -159,3 +159,16 @@
      - **Single tap on reaction badge**: Opens `MessageReactionDetailsSheet` (`"Biểu cảm"`).
 - **Reason / Source**: M9 Corrective Pass 6 (`mobile/lib/features/chat/presentation/chat_screen.dart`, `mobile/lib/features/chat/presentation/chat_formatters.dart`).
 - **Consequences**: Eliminates gesture conflict between viewing message time and opening the reaction/action sheet while keeping bubble heights compact and preserving bottom-right reaction badge alignment.
+
+---
+
+### DEC-M10-01 — Chat Realtime Architecture (`/ws`, `AFTER_COMMIT` Bridge, Redis Coordination, and Viewer-Tailored Fanout)
+- **ID**: `DEC-M10-01`
+- **Milestone**: `M10`
+- **Decision**:
+  1. **PostgreSQL + M9 REST Remains Authoritative**: Durable chat mutations (`send`, `edit`, `unsend`, `react`, `read-state`, `pin`) execute via existing REST endpoints and PostgreSQL transactions. `ChatService` publishes domain events (`DomainMutationEvent`, `DomainReadEvent`) handled exclusively by `ChatRealtimeTransactionalBridge` with `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so rolled-back transactions never emit WebSocket or Redis frames.
+  2. **Viewer-Tailored Realtime Payloads & Anti-IDOR**: `ChatWebSocketHandshakeInterceptor` validates JWT access tokens (`Authorization: Bearer` header or `?access_token=` query parameter) and active user status before upgrade on `/ws` and `/api/v1/ws`. `SUBSCRIBE`, `TYPING_START`, `TYPING_STOP`, and `MARK_READ` frames enforce conversation membership, group archive rules, and block/stranger request boundaries. Outgoing message frames compute `isMine` and `permissions` per recipient user via `ChatService.messageForViewer`.
+  3. **Redis Fanout, Typing TTL, Multi-Session Presence & Graceful Fallback**: `ChatRealtimeCoordinator` coordinates cross-instance fanout on Redis pub/sub channel `wedo:chat:realtime` (deduplicated by `eventId`), stores ephemeral typing state in `typing:{conversationId}:{userId}` (`5s` TTL), and tracks multi-session presence in `presence:user:{userId}:sessions` (`120s` TTL), persisting `user_presence_snapshots.last_seen_at` only when a user's last active WebSocket session disconnects. If Redis is unreachable, `ChatRealtimeCoordinator` degrades gracefully to in-memory session delivery without breaking REST Chat.
+  4. **Flutter Deduplication & Reconnect Reconciliation**: `WebSocketChatRealtimeClient` automatically reconnects with exponential backoff, re-subscribes active conversations, and triggers silent history reconciliation on reconnect while deduplicating incoming frames by `eventId`, `message.id`, and `sequence`.
+- **Reason / Source**: `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §41, `docs/ERD_DATABASE_DESIGN_v1.0.md` §17, `backend/src/main/java/com/wedo/backend/chat/realtime/*`, `mobile/lib/features/chat/data/chat_realtime_client.dart`.
+- **Consequences**: Seamless multi-device realtime chat delivery, live typing/presence/read-avatar updates, and zero regressions to M9 Pass 6 UX.

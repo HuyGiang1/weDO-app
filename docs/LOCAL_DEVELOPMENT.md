@@ -50,8 +50,20 @@ With an authenticated user, open a group's conversation using
 `GET /api/v1/conversations/{conversationId}/messages`, and send text using
 `POST /api/v1/conversations/{conversationId}/messages`. Group membership,
 archive state, direct-message privacy, request status and message mutation
-windows are enforced by the backend. M9 is REST-only; WebSocket delivery,
-typing, presence and push are M10. V4 reserves attachment persistence, but
-upload, storage ownership, and rendering are deferred beyond M9. M9 physical
-device verification on Samsung (`R58M36JQYVY`) passed user acceptance with
-healthy backend (`UP`), active `adb reverse tcp:8080`, and foreground APK.
+windows are enforced by the backend. M9 physical device verification on Samsung
+(`R58M36JQYVY`) passed user acceptance with healthy backend (`UP`), active
+`adb reverse tcp:8080`, and foreground APK.
+
+## M10 Chat Realtime (WebSocket + Redis)
+
+M10 adds authenticated WebSocket endpoints `/ws` and `/api/v1/ws` backed by
+`ChatRealtimeTransactionalBridge` (`TransactionPhase.AFTER_COMMIT`) and
+`ChatRealtimeCoordinator` (Redis channel `wedo:chat:realtime`, typing TTL
+`typing:{conversationId}:{userId}`, and multi-session presence
+`presence:user:{userId}:sessions`). Run the multi-account realtime integration
+suite with:
+
+```powershell
+cd D:\weDO-app\backend
+.\mvnw.cmd -Dtest="ChatRealtimeIntegrationTest,ChatControllerTest,ChatServiceIntegrationTest" test
+```

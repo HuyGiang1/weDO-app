@@ -81,7 +81,7 @@ Reference: `docs/DEVELOPMENT_PLAN_MILESTONES_v1.0_FULL.md` §2.
 | `M7` | Activity + RSVP + FIFO Waitlist (`V12` unscheduled activities) | Completed |
 | `M8` | Poll + Task + Activity Discussion | Completed |
 | `M9` | Chat REST (Conversations, Group/DM, Message Requests, Reactions, Read State, Pins, Search) | Completed (`feat/m9-chat-rest`) |
-| `M10` | Realtime WebSocket (`/ws`) + Redis (Live delivery, Typing, Presence, Push fanout) | Planned |
+| `M10` | Realtime WebSocket (`/ws`) + Redis (Live delivery, Typing, Presence) | Implemented; pre-commit review on `feat/m10-chat-realtime` |
 | `M11` | Expense + Balance (Equal/Custom split, derived debt) | Planned |
 | `M12` | Settlement (Two-sided confirmation workflow) | Planned |
 | `M13` | Group Fund (Collections, Contributions, Fund Expenses, Reimbursements, Ledger) | Planned |

@@ -100,10 +100,15 @@ class ChatApi {
     String conversationId,
     String content, {
     String? replyToMessageId,
+    String? clientMessageId,
   }) => _object(
     () => dio.post(
       '/api/v1/conversations/${Uri.encodeComponent(conversationId)}/messages',
-      data: {'content': content, 'replyToMessageId': replyToMessageId},
+      data: {
+        'content': content,
+        'replyToMessageId': replyToMessageId,
+        'clientMessageId': ?clientMessageId,
+      },
     ),
     ChatMessage.fromJson,
   );

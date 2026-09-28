@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -8,6 +9,8 @@ import 'package:mobile/app/routes.dart';
 import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/chat/data/chat_api.dart';
 import 'package:mobile/features/chat/data/chat_models.dart';
+import 'package:mobile/features/chat/data/chat_realtime_client.dart';
+import 'package:mobile/features/chat/data/chat_realtime_event.dart';
 import 'package:mobile/features/chat/data/chat_repository.dart';
 import 'package:mobile/features/chat/presentation/chat_screen.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
@@ -509,7 +512,7 @@ void main() {
   });
 
   testWidgets(
-    'message tap opens compact quick reactions and permitted actions',
+    'message long press opens compact quick reactions and permitted actions while tap toggles exact timestamp',
     (tester) async {
       final adapter = _ChatScreenAdapter(
         messages: [
@@ -531,8 +534,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('❤️ 👍 3'), findsOneWidget);
       expect(find.byType(PopupMenuButton<String>), findsNothing);
+      expect(
+        find.byKey(const ValueKey('chat-tap-timestamp-own-message')),
+        findsNothing,
+      );
 
       await tester.tap(find.text('React to this'));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('chat-tap-timestamp-own-message')),
+        findsOneWidget,
+      );
+      expect(find.text('Sao chép'), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
+      expect(
+        find.byKey(const ValueKey('chat-tap-timestamp-own-message')),
+        findsNothing,
+      );
+
+      await tester.longPress(find.text('React to this'));
       await tester.pumpAndSettle();
       for (final emoji in ['👍', '❤️', '😂', '😮', '😢', '😡']) {
         expect(find.text(emoji), findsOneWidget);
@@ -546,13 +566,198 @@ void main() {
       await tester.pumpAndSettle();
       expect(adapter.lastReaction, '😡');
 
-      await tester.tap(find.text('React to this'));
+      await tester.longPress(find.text('React to this'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Thu hồi tin nhắn'));
       await tester.pumpAndSettle();
       expect(find.text('Tin nhắn đã được thu hồi'), findsOneWidget);
       expect(find.text('❤️ 2'), findsNothing);
       expect(find.text('👍 1'), findsNothing);
+    },
+  );
+
+  testWidgets('30-minute separator renders only on >=30m gaps and breaks author runs', (
+    tester,
+  ) async {
+    final adapter = _ChatScreenAdapter(
+      messages: [
+        _message(
+          id: 'm1',
+          sequence: 1,
+          authorId: 'peer',
+          name: 'Lan Anh',
+          content: 'Tin 1',
+          mine: false,
+          createdAt: '2026-09-27T01:00:00Z',
+        ),
+        _message(
+          id: 'm2',
+          sequence: 2,
+          authorId: 'peer',
+          name: 'Lan Anh',
+          content: 'Tin 2 trong 5 phút',
+          mine: false,
+          createdAt: '2026-09-27T01:05:00Z',
+        ),
+        _message(
+          id: 'm3',
+          sequence: 3,
+          authorId: 'peer',
+          name: 'Lan Anh',
+          content: 'Tin 3 sau 31 phút',
+          mine: false,
+          createdAt: '2026-09-27T01:36:00Z',
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(adapter));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('chat-time-separator-m1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-time-separator-m2')), findsNothing);
+    expect(find.byKey(const ValueKey('chat-time-separator-m3')), findsOneWidget);
+    // Separator breaks author run so Lan Anh header/avatar appears on m1 and m3
+    expect(find.text('Lan Anh'), findsNWidgets(2));
+  });
+
+  testWidgets(
+    'M10 realtime updates message create/dedupe, edit, reaction, unsend, read state, typing, and presence',
+    (tester) async {
+      final realtime = _FakeRealtimeClient();
+      final adapter = _ChatScreenAdapter(
+        messages: [
+          _message(
+            id: 'm1',
+            sequence: 1,
+            authorId: 'me',
+            name: 'Minh',
+            content: 'Tin đầu tiên',
+            mine: true,
+          ),
+        ],
+      );
+      await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
+      await tester.pumpAndSettle();
+      expect(realtime.subscribedConversations, contains('conversation-1'));
+
+      // 1. Live presence online
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'PRESENCE_UPDATED',
+          'eventId': 'evt-presence-1',
+          'payload': {
+            'user': {'id': 'peer-2', 'displayName': 'Lan Anh'},
+            'online': true,
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('chat-presence-online')), findsOneWidget);
+      expect(find.text('Đang hoạt động'), findsOneWidget);
+
+      // 2. Live typing indicator
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'TYPING_UPDATED',
+          'eventId': 'evt-typing-1',
+          'conversationId': 'conversation-1',
+          'payload': {
+            'user': {'id': 'peer-2', 'displayName': 'Lan Anh'},
+            'typing': true,
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('chat-typing-indicator')), findsOneWidget);
+      expect(find.text('Lan Anh đang nhập...'), findsOneWidget);
+
+      // 3. Live MESSAGE_CREATED clears typing and deduplicates repeated delivery
+      final createdEvent = ChatRealtimeEvent.fromJson({
+        'type': 'MESSAGE_CREATED',
+        'eventId': 'evt-msg-2',
+        'conversationId': 'conversation-1',
+        'sequence': 2,
+        'payload': {
+          'message': _message(
+            id: 'm2',
+            sequence: 2,
+            authorId: 'peer-2',
+            name: 'Lan Anh',
+            content: 'Chào từ WebSocket',
+            mine: false,
+          ),
+        },
+      });
+      realtime.emit(createdEvent);
+      realtime.emit(createdEvent); // duplicate eventId
+      await tester.pumpAndSettle();
+      expect(find.text('Chào từ WebSocket'), findsOneWidget);
+      expect(find.byKey(const ValueKey('chat-typing-indicator')), findsNothing);
+
+      // 4. Live MESSAGE_EDITED + MESSAGE_REACTION_UPDATED
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'MESSAGE_EDITED',
+          'eventId': 'evt-edit-2',
+          'conversationId': 'conversation-1',
+          'sequence': 2,
+          'payload': {
+            'message': _message(
+              id: 'm2',
+              sequence: 2,
+              authorId: 'peer-2',
+              name: 'Lan Anh',
+              content: 'Chào từ WebSocket (đã sửa)',
+              mine: false,
+              reactions: [
+                {'emoji': '❤️', 'count': 2, 'reactedByMe': false},
+              ],
+            ),
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Chào từ WebSocket (đã sửa)'), findsOneWidget);
+      expect(find.text('❤️ 2'), findsOneWidget);
+
+      // 5. Live READ_STATE_UPDATED moves reader avatar to m2
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'READ_STATE_UPDATED',
+          'eventId': 'evt-read-2',
+          'conversationId': 'conversation-1',
+          'sequence': 2,
+          'payload': {
+            'user': {'id': 'reader-9', 'displayName': 'Bình'},
+            'lastReadSequence': 2,
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('reader-reader-9')), findsOneWidget);
+
+      // 6. Live MESSAGE_UNSENT transitions bubble to withdrawn state
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'MESSAGE_UNSENT',
+          'eventId': 'evt-unsend-2',
+          'conversationId': 'conversation-1',
+          'sequence': 2,
+          'payload': {
+            'message': _message(
+              id: 'm2',
+              sequence: 2,
+              authorId: 'peer-2',
+              name: 'Lan Anh',
+              content: null,
+              mine: false,
+              status: 'UNSENT',
+            ),
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Tin nhắn đã được thu hồi'), findsOneWidget);
     },
   );
 
@@ -588,19 +793,22 @@ void main() {
   });
 }
 
-Widget _app(_ChatScreenAdapter adapter, {VoidCallback? onOpenGroupInfo}) =>
-    MaterialApp(
-      home: ChatScreen(
-        groupId: 'group-1',
-        onOpenGroupInfo: onOpenGroupInfo,
-        repository: ChatRepository(
-          ChatApi(
-            Dio(BaseOptions(baseUrl: 'https://test'))
-              ..httpClientAdapter = adapter,
-          ),
-        ),
+Widget _app(
+  _ChatScreenAdapter adapter, {
+  VoidCallback? onOpenGroupInfo,
+  ChatRealtimeClient? realtimeClient,
+}) => MaterialApp(
+  home: ChatScreen(
+    groupId: 'group-1',
+    onOpenGroupInfo: onOpenGroupInfo,
+    repository: ChatRepository(
+      ChatApi(
+        Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter,
       ),
-    );
+      realtimeClient: realtimeClient ?? const NoopChatRealtimeClient(),
+    ),
+  ),
+);
 
 Map<String, dynamic> _message({
   required String id,
@@ -611,10 +819,13 @@ Map<String, dynamic> _message({
   required bool mine,
   String status = 'ACTIVE',
   String? avatarStorageKey,
+  String createdAt = '2026-09-27T00:00:00Z',
   List<Map<String, Object>> reactions = const [],
 }) => {
   'id': id,
+  'conversationId': 'conversation-1',
   'sequence': sequence,
+  'type': 'TEXT',
   'isMine': mine,
   'author': {
     'id': authorId,
@@ -624,13 +835,67 @@ Map<String, dynamic> _message({
   'content': content,
   'status': status,
   'replyToMessageId': null,
-  'createdAt': '2026-09-27T00:00:00Z',
+  'createdAt': createdAt,
   'editedAt': null,
   'unsentAt': status == 'UNSENT' ? '2026-09-27T00:01:00Z' : null,
   'myReaction': null,
   'reactions': reactions,
   'permissions': _permissions(canEdit: mine && status == 'ACTIVE'),
 };
+
+class _FakeRealtimeClient implements ChatRealtimeClient {
+  final StreamController<ChatRealtimeEvent> _events =
+      StreamController<ChatRealtimeEvent>.broadcast();
+  final StreamController<ChatRealtimeConnectionState> _states =
+      StreamController<ChatRealtimeConnectionState>.broadcast();
+  final Set<String> subscribedConversations = <String>{};
+
+  void emit(ChatRealtimeEvent event) => _events.add(event);
+
+  @override
+  Stream<ChatRealtimeEvent> get events => _events.stream;
+
+  @override
+  Stream<ChatRealtimeConnectionState> get connectionStates => _states.stream;
+
+  @override
+  ChatRealtimeConnectionState get currentState =>
+      ChatRealtimeConnectionState.connected;
+
+  @override
+  Set<String> get subscribedConversationIds => subscribedConversations;
+
+  @override
+  Future<void> connect() async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  void subscribeConversation(String conversationId) {
+    subscribedConversations.add(conversationId);
+  }
+
+  @override
+  void unsubscribeConversation(String conversationId) {
+    subscribedConversations.remove(conversationId);
+  }
+
+  @override
+  void sendTypingStart(String conversationId) {}
+
+  @override
+  void sendTypingStop(String conversationId) {}
+
+  @override
+  void sendMarkRead(String conversationId, int lastReadSequence) {}
+
+  @override
+  void dispose() {
+    _events.close();
+    _states.close();
+  }
+}
 
 class _ChatScreenAdapter implements HttpClientAdapter {
   final List<Map<String, dynamic>> messages;

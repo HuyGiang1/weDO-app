@@ -23,6 +23,7 @@ import 'features/privacy/data/privacy_repository.dart';
 import 'features/qr/data/personal_qr_api.dart';
 import 'features/qr/data/personal_qr_repository.dart';
 import 'features/chat/data/chat_api.dart';
+import 'features/chat/data/chat_realtime_client.dart';
 import 'features/chat/data/chat_repository.dart';
 
 void main() async {
@@ -41,7 +42,14 @@ void main() async {
   );
   final profileRepository = ProfileRepository(api: ProfileApi(dio.dio));
   final groupRepository = GroupRepository(api: GroupApi(dio.dio));
-  final chatRepository = ChatRepository(ChatApi(dio.dio));
+  final chatRepository = ChatRepository(
+    ChatApi(dio.dio),
+    realtimeClient: WebSocketChatRealtimeClient(
+      baseUrl: apiConfig.baseUrl,
+      accessTokenProvider: () => holder.currentAccessToken,
+    ),
+  );
+  ChatRepository.defaultRealtimeClient = chatRepository.realtimeClient;
   final privacyRepository = PrivacyRepository(api: PrivacyApi(dio.dio));
   final personalQrRepository = PersonalQrRepository(
     api: PersonalQrApi(dio.dio),

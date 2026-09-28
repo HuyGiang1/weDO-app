@@ -42,11 +42,21 @@ public class ChatService {
     private final FriendshipRepository friendships;
     private final UserBlockRepository blocks;
     private final UserPrivacySettingsRepository privacy;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public ChatService(JdbcTemplate jdbc, GroupMembershipRepository memberships,
                        GroupRepository groups, GroupSettingsRepository settings,
                        FriendshipRepository friendships, UserBlockRepository blocks,
                        UserPrivacySettingsRepository privacy) {
+        this(jdbc, memberships, groups, settings, friendships, blocks, privacy, event -> { });
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ChatService(JdbcTemplate jdbc, GroupMembershipRepository memberships,
+                       GroupRepository groups, GroupSettingsRepository settings,
+                       FriendshipRepository friendships, UserBlockRepository blocks,
+                       UserPrivacySettingsRepository privacy,
+                       org.springframework.context.ApplicationEventPublisher events) {
         this.jdbc = jdbc;
         this.memberships = memberships;
         this.groups = groups;
@@ -54,6 +64,7 @@ public class ChatService {
         this.friendships = friendships;
         this.blocks = blocks;
         this.privacy = privacy;
+        this.events = events;
     }
 
     public List<ChatResponses.Conversation> list(UUID userId) {
@@ -216,29 +227,40 @@ public class ChatService {
         jdbc.update("INSERT INTO messages(id,conversation_id,sender_id,sequence,type,content,reply_to_message_id) VALUES (?,?,?,?,'TEXT',?,?)",
                 id,conversationId,userId,sequence,content,request.replyToMessageId());
         jdbc.update("UPDATE conversations SET updated_at=now() WHERE id=?",conversationId);
-        return messageById(id,userId);
+        ChatResponses.Message created = messageById(id,userId);
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), "MESSAGE_CREATED", conversationId, id, sequence, request.clientMessageId(), userId, Instant.now()));
+        return created;
     }
 
     public ChatResponses.Message edit(UUID messageId, UUID userId, ChatRequests.EditMessage request) {
         Map<String,Object> row=one("SELECT conversation_id,sender_id,content,status,created_at FROM messages WHERE id=?",messageId);
-        Access access=access((UUID)row.get("conversation_id"),userId,true);
+        UUID conversationId = (UUID) row.get("conversation_id");
+        Access access=access(conversationId,userId,true);
         if (!userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         String content=request.content().trim(); if(content.isEmpty()) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         jdbc.update("INSERT INTO message_edit_history(id,message_id,previous_content,edited_by) VALUES (?,?,?,?)",UUID.randomUUID(),messageId,row.get("content"),userId);
         jdbc.update("UPDATE messages SET content=?,edited_at=now() WHERE id=?",content,messageId);
-        return messageById(messageId,userId);
+        ChatResponses.Message edited = messageById(messageId,userId);
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), "MESSAGE_EDITED", conversationId, messageId, edited.sequence(), null, userId, Instant.now()));
+        return edited;
     }
 
     public ChatResponses.Message unsend(UUID messageId, UUID userId) {
         Map<String,Object> row=one("SELECT conversation_id,sender_id,status,created_at FROM messages WHERE id=? FOR UPDATE",messageId);
-        access((UUID)row.get("conversation_id"),userId,true);
+        UUID conversationId = (UUID) row.get("conversation_id");
+        access(conversationId,userId,true);
         if (!userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         jdbc.update("UPDATE messages SET status='UNSENT',content=NULL,unsent_at=now() WHERE id=?",messageId);
         jdbc.update("DELETE FROM message_pins WHERE message_id=?",messageId);
         jdbc.update("DELETE FROM message_reactions WHERE message_id=?",messageId);
-        return messageById(messageId,userId);
+        ChatResponses.Message withdrawn = messageById(messageId,userId);
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), "MESSAGE_UNSENT", conversationId, messageId, withdrawn.sequence(), null, userId, Instant.now()));
+        return withdrawn;
     }
 
     public void deleteForMe(UUID messageId, UUID userId) {
@@ -280,12 +302,16 @@ public class ChatService {
     public ChatResponses.Message react(UUID messageId, UUID userId, ChatRequests.Reaction request) {
         if (!SUPPORTED_REACTIONS.contains(request.emoji())) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         Map<String,Object> row=one("SELECT conversation_id,status FROM messages WHERE id=? FOR UPDATE",messageId);
-        access((UUID)row.get("conversation_id"),userId,true);
+        UUID conversationId = (UUID) row.get("conversation_id");
+        access(conversationId,userId,true);
         if (!"ACTIVE".equals(row.get("status"))) throw new BusinessException(ErrorCode.CONFLICT);
         String old=jdbc.query("SELECT emoji FROM message_reactions WHERE message_id=? AND user_id=?",rs->rs.next()?rs.getString(1):null,messageId,userId);
         if (request.emoji().equals(old)) jdbc.update("DELETE FROM message_reactions WHERE message_id=? AND user_id=?",messageId,userId);
         else jdbc.update("INSERT INTO message_reactions(id,message_id,user_id,emoji) VALUES (?,?,?,?) ON CONFLICT(message_id,user_id) DO UPDATE SET emoji=excluded.emoji,updated_at=now()",UUID.randomUUID(),messageId,userId,request.emoji());
-        return messageById(messageId,userId);
+        ChatResponses.Message updated = messageById(messageId,userId);
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), "MESSAGE_REACTION_UPDATED", conversationId, messageId, updated.sequence(), null, userId, Instant.now()));
+        return updated;
     }
 
     public void read(UUID conversationId, UUID userId, long sequence) {
@@ -293,10 +319,19 @@ public class ChatService {
         long max=jdbc.queryForObject("SELECT current_sequence FROM conversation_sequences WHERE conversation_id=?",Long.class,conversationId);
         if(sequence<0 || sequence>max) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         jdbc.update("INSERT INTO conversation_read_states(conversation_id,user_id,last_read_sequence) VALUES (?,?,?) ON CONFLICT(conversation_id,user_id) DO UPDATE SET last_read_sequence=GREATEST(conversation_read_states.last_read_sequence,excluded.last_read_sequence),updated_at=now()",conversationId,userId,sequence);
+        Long persisted = jdbc.query("SELECT last_read_sequence FROM conversation_read_states WHERE conversation_id=? AND user_id=?",
+                rs -> rs.next() ? rs.getLong(1) : 0L, conversationId, userId);
+        if (persisted != null && persisted > 0) {
+            ChatResponses.User readerUser = user(userId);
+            events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainReadEvent(
+                    UUID.randomUUID(), conversationId,
+                    new ChatResponses.ReaderState(userId, readerUser.displayName(), readerUser.avatarStorageKey(), persisted),
+                    Instant.now()));
+        }
     }
 
     public void pin(UUID messageId, UUID userId, boolean pin) {
-        Map<String,Object> row=one("SELECT m.conversation_id,m.status,gc.group_id FROM messages m LEFT JOIN group_conversations gc ON gc.conversation_id=m.conversation_id WHERE m.id=?",messageId);
+        Map<String,Object> row=one("SELECT m.conversation_id,m.status,m.sequence,gc.group_id FROM messages m LEFT JOIN group_conversations gc ON gc.conversation_id=m.conversation_id WHERE m.id=?",messageId);
         Access access=access((UUID)row.get("conversation_id"),userId,true);
         if(access.groupId==null) throw new BusinessException(ErrorCode.ACCESS_DENIED);
         if(pin) {
@@ -309,6 +344,9 @@ public class ChatService {
             if(count!=null&&count>=20) throw new BusinessException(ErrorCode.CONFLICT);
             jdbc.update("INSERT INTO message_pins(id,message_id,pinned_by) VALUES (?,?,?) ON CONFLICT(message_id) DO NOTHING",UUID.randomUUID(),messageId,userId);
         } else jdbc.update("DELETE FROM message_pins WHERE message_id=?",messageId);
+        Long seq = row.get("sequence") instanceof Number num ? num.longValue() : null;
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), pin ? "MESSAGE_PINNED" : "MESSAGE_UNPINNED", access.conversationId, messageId, seq, null, userId, Instant.now()));
     }
 
     @Transactional(readOnly = true)
@@ -481,6 +519,149 @@ public class ChatService {
         if (value instanceof java.sql.Timestamp timestamp) return timestamp.toInstant();
         if (value instanceof java.time.OffsetDateTime offset) return offset.toInstant();
         throw new IllegalStateException("Unexpected database timestamp type");
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isUserActive(UUID userId) {
+        if (userId == null) return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE id=? AND status='ACTIVE')",
+                Boolean.class, userId));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canSubscribeConversation(UUID conversationId, UUID userId) {
+        if (conversationId == null || userId == null) return false;
+        try {
+            access(conversationId, userId, false);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canSendInConversation(UUID conversationId, UUID userId) {
+        if (conversationId == null || userId == null) return false;
+        try {
+            Access access = access(conversationId, userId, true);
+            ensureSendAllowed(access, userId);
+            if ("DIRECT".equals(access.type) && "REQUEST_PENDING".equals(access.accessStatus)) {
+                Long sent = jdbc.queryForObject(
+                        "SELECT count(*) FROM messages WHERE conversation_id=? AND sender_id=? AND status='ACTIVE'",
+                        Long.class, conversationId, userId);
+                if (sent != null && sent >= 3) return false;
+            }
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> eligibleRecipientUserIds(UUID conversationId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT c.type, gc.group_id, g.status AS group_status, dc.user_id_1, dc.user_id_2
+                FROM conversations c
+                LEFT JOIN group_conversations gc ON gc.conversation_id = c.id
+                LEFT JOIN groups g ON g.id = gc.group_id
+                LEFT JOIN direct_conversations dc ON dc.conversation_id = c.id
+                WHERE c.id = ?
+                """, conversationId);
+        if (rows.isEmpty()) return java.util.Set.of();
+        Map<String, Object> row = rows.get(0);
+        String type = (String) row.get("type");
+        if ("GROUP".equals(type)) {
+            UUID groupId = (UUID) row.get("group_id");
+            String groupStatus = (String) row.get("group_status");
+            if (groupId == null || "DELETED".equals(groupStatus)) return java.util.Set.of();
+            return new java.util.LinkedHashSet<>(jdbc.query(
+                    "SELECT user_id FROM group_memberships WHERE group_id=? AND status='ACTIVE'",
+                    (rs, n) -> rs.getObject(1, UUID.class), groupId));
+        }
+        UUID a = (UUID) row.get("user_id_1");
+        UUID b = (UUID) row.get("user_id_2");
+        if (a == null || b == null || blocks.existsBlockBetween(a, b)) return java.util.Set.of();
+        return java.util.Set.of(a, b);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Set<UUID> sharedPeerUserIds(UUID userId) {
+        java.util.Set<UUID> peers = new java.util.LinkedHashSet<>();
+        peers.addAll(jdbc.query("""
+                SELECT DISTINCT gm2.user_id
+                FROM group_memberships gm1
+                JOIN group_memberships gm2 ON gm1.group_id = gm2.group_id
+                JOIN groups g ON g.id = gm1.group_id
+                WHERE gm1.user_id = ? AND gm1.status = 'ACTIVE'
+                  AND gm2.status = 'ACTIVE' AND gm2.user_id <> ?
+                  AND g.status IN ('ACTIVE', 'ARCHIVED')
+                """, (rs, n) -> rs.getObject(1, UUID.class), userId, userId));
+        peers.addAll(jdbc.query("""
+                SELECT CASE WHEN dc.user_id_1 = ? THEN dc.user_id_2 ELSE dc.user_id_1 END AS peer_id
+                FROM direct_conversations dc
+                WHERE (dc.user_id_1 = ? OR dc.user_id_2 = ?)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_blocks ub
+                      WHERE (ub.blocker_id = dc.user_id_1 AND ub.blocked_id = dc.user_id_2)
+                         OR (ub.blocker_id = dc.user_id_2 AND ub.blocked_id = dc.user_id_1)
+                  )
+                """, (rs, n) -> rs.getObject(1, UUID.class), userId, userId, userId));
+        return peers;
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<ChatResponses.Message> messageForViewer(UUID messageId, UUID viewerUserId) {
+        try {
+            List<MessageRow> rows = jdbc.query("""
+                    SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,
+                           m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at
+                    FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.id=?
+                    """, this::messageRow, messageId);
+            if (rows.isEmpty()) return java.util.Optional.empty();
+            MessageRow row = rows.get(0);
+            Access access = access(row.conversationId(), viewerUserId, false);
+            boolean hidden = Boolean.TRUE.equals(jdbc.queryForObject(
+                    "SELECT EXISTS(SELECT 1 FROM message_hidden_users WHERE message_id=? AND user_id=?)",
+                    Boolean.class, messageId, viewerUserId));
+            if (hidden) return java.util.Optional.empty();
+            if (access.groupId != null && access.historyPolicy == ChatHistoryPolicy.FROM_JOIN_TIME) {
+                Instant joined = jdbc.queryForObject(
+                        "SELECT created_at FROM group_memberships WHERE group_id=? AND user_id=? AND status='ACTIVE' ORDER BY created_at DESC LIMIT 1",
+                        (rs, n) -> rs.getTimestamp(1).toInstant(), access.groupId, viewerUserId);
+                if (joined != null && row.createdAt().isBefore(joined)) {
+                    return java.util.Optional.empty();
+                }
+            }
+            return java.util.Optional.of(toMessages(List.of(row), viewerUserId, access).get(0));
+        } catch (RuntimeException ex) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public ChatResponses.User userSummary(UUID userId) {
+        return user(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canViewPresence(UUID targetUserId, UUID viewerUserId) {
+        if (targetUserId == null || viewerUserId == null) return false;
+        if (targetUserId.equals(viewerUserId)) return true;
+        if (blocks.existsBlockBetween(targetUserId, viewerUserId)) return false;
+        boolean targetShows = privacy.findById(targetUserId).map(p -> p.isShowOnlineStatus()).orElse(true);
+        boolean viewerShows = privacy.findById(viewerUserId).map(p -> p.isShowOnlineStatus()).orElse(true);
+        return targetShows && viewerShows;
+    }
+
+    public void recordLastSeenSnapshot(UUID userId, Instant lastSeenAt) {
+        if (userId == null || lastSeenAt == null) return;
+        jdbc.update("""
+                INSERT INTO user_presence_snapshots(user_id, last_seen_at, updated_at)
+                VALUES (?, ?, now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET last_seen_at = EXCLUDED.last_seen_at, updated_at = now()
+                """, userId, java.sql.Timestamp.from(lastSeenAt));
     }
 
     private record Access(UUID conversationId,String type,UUID groupId,ChatHistoryPolicy historyPolicy,String accessStatus) { }

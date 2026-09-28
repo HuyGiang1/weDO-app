@@ -795,4 +795,14 @@ M0 → M1 → M2 → M3 → M4 → M5 → M6
 - Agent workflow defined.
 - Phase 8 starting point explicit.
 
+## 33. M10 Chat Realtime Delivery Record
+- **Milestone Branch:** `feat/m10-chat-realtime` (branched from `dev` checkpoint `5c2187dcb9b73c19ac1f1368e37d6cb369bfdbb4`).
+- **Backend WebSocket + Redis Coordination:**
+  - Authenticated WebSocket endpoints `/ws` and `/api/v1/ws` via `ChatWebSocketConfig`, `ChatWebSocketHandshakeInterceptor`, and `ChatWebSocketHandler`.
+  - `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` bridge (`ChatRealtimeTransactionalBridge`) guaranteeing realtime delivery only after durable PostgreSQL commits.
+  - Redis pub/sub fanout channel `wedo:chat:realtime`, ephemeral typing TTL keys `typing:{conversationId}:{userId}` (`5s`), and multi-session presence tracking `presence:user:{userId}:sessions` (`120s` TTL) with `user_presence_snapshots.last_seen_at` persistence on last session disconnect and graceful local fallback when Redis is unavailable.
+- **Flutter Realtime Client & UI Reconciliation:**
+  - `WebSocketChatRealtimeClient` (`chat_realtime_client.dart`) and `ChatRealtimeEvent` (`chat_realtime_event.dart`) wired into `ChatRepository`, `ChatScreen`, and `ChatHomeScreen`.
+  - Deduplicated live updates for `MESSAGE_CREATED`, `MESSAGE_EDITED`, `MESSAGE_UNSENT`, `MESSAGE_REACTION_UPDATED`, `READ_STATE_UPDATED` (live reader mini-avatar movement), `TYPING_UPDATED` (`"<Name> đang nhập..."`), and `PRESENCE_UPDATED` (`"Đang hoạt động"`), while preserving all M9 Pass 6 timestamp/gesture rules.
+
 **DEVELOPMENT PLAN & MILESTONES v1.0 — BASELINE ESTABLISHED**

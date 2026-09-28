@@ -4,9 +4,9 @@
 
 ## 1. Current Git & Branch State
 
-- **Active Branch**: `feat/m12-settlement`
-- **Base Commit (`dev`)**: `4495fd46da131301365b890a6c63efda510ca1e7` (M11 merged & closed)
-- **Active Milestone**: **M12 — Settlement / Repayment** (`SET-01`..`SET-05` implemented and verified end-to-end across backend, Flutter, and Samsung physical device `R58M36JQYVY`; ready for user review / commit authorization; no stage/commit/push performed)
+- **Active Branch**: `feat/m13-group-fund`
+- **Base Commit (`dev`)**: `2b5341888644de7b732f2d6f9fa29fb698b38f0d` (M12 merged & closed)
+- **Active Milestone**: **M13 — Group Fund** (`FUND-01`..`FUND-17` implemented and verified end-to-end across backend, Flutter, and Samsung physical device `R58M36JQYVY`; ready for user review / commit authorization; no stage/commit/push performed)
 - **Preserved Stash**: `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync` — **DO NOT** pop, apply, or drop.
 - **Local-Only Untracked Files (Never Stage/Commit)**:
   - `docs/LEARNING_HANDBOOK_M0_M2.md`
@@ -187,6 +187,60 @@ Canonical docs/handoff:
   - `mobile/test/app/routes_test.dart`
   - `mobile/test/features/expense/data/expense_models_test.dart`
   - `mobile/test/features/expense/presentation/expense_detail_screen_test.dart`
+- Canonical docs/handoff:
+  - `docs/AGENT_PROJECT_CONTEXT.md`
+  - `docs/AGENT_CURRENT_HANDOFF.md`
+  - `docs/AGENT_DECISION_LOG.md`
+  - `docs/architecture/CLASS_DIAGRAM.puml`
+
+## 6. Current M13 Handoff (`feat/m13-group-fund`)
+
+### Implementation Summary
+- **Database Schema (`V8__fund.sql` — No New Migration)**:
+  - Reuses all 9 existing `V8__fund.sql` tables (`group_funds`, `fund_managers`, `fund_collections`, `fund_collection_obligations`, `fund_contributions`, `fund_expenses`, `fund_reimbursements`, `fund_transactions`, `fund_transaction_reversals`). No Flyway migration (`V0`..`V12`) was edited and no `V13+` migration was added.
+  - Strictly separated from M11/M12 pairwise `expenses` / `settlements` (`V7__finance.sql`).
+- **Backend (`com.wedo.backend.fund.*`, `ErrorCode`, `FundServiceIntegrationTest`)**:
+  - Dedicated domain boundary (`FundController`, `FundService`, `FundDtos`) implementing `FUND-01`..`FUND-17` and all 18 M13 `ErrorCode` constants.
+  - Enforces single fund per group (`VND`), `OWNER` implicit fund governance + up to 2 assigned active `ADMIN` `Fund Manager` rows (`fund_managers`), automatic stale `Fund Manager` cleanup on `GroupMembershipEndedEvent` and admin demotion, derived obligation statuses (`UNPAID`, `PARTIAL`, `PAID`, `OVERDUE`), derived `ledgerBalance = sum(IN) - sum(OUT)` and `availableBalance = ledgerBalance - pendingReimbursements`, `FOR UPDATE` row-level locking across all balance/contribution/reimbursement/reversal/close mutations, immutable compensating `REVERSAL` entries (`fund_transaction_reversals`), and fund close preconditions (`ledgerBalance == 0`, `0` open collections, `0` pending contributions, `0` pending reimbursements).
+  - M13 hardening serializes collection close/cancel and contribution transitions on the parent fund before child rows to avoid lock-order inversion; rejects amounts with meaningful precision beyond the schema's 2 decimal places rather than silently rounding.
+- **Mobile (`mobile/lib/features/fund/*`, `routes.dart`, `group_info_screen.dart`)**:
+  - Dedicated Flutter feature boundary (`fund_failure.dart`, `fund_models.dart`, `fund_api.dart`, `fund_repository.dart`, `fund_controllers.dart`, `fund_screens.dart`) registered at `AppRoutes.groupFund = '/groups/fund'` (`FundRouteArgs`) and wired from `GroupInfoScreen` (`'Quỹ nhóm'`).
+  - Renders 4 localized Vietnamese tabs (`Tổng quan`, `Đợt thu`, `Chi quỹ & Hoàn tiền`, `Sổ giao dịch`) driven strictly by server-projected permission flags (`canCreateFund`, `canManageFund`, `canManageManagers`, `canContribute`, `canRequestReimbursement`, `canCloseFund`, `canReverse`, `readOnly`).
+
+### Latest Verification (2026-09-28)
+
+| Gate | Authoritative result |
+| --- | --- |
+| Focused backend `FundServiceIntegrationTest,ExpenseServiceIntegrationTest,SettlementServiceIntegrationTest` | 29 run, 0 failures, 0 errors, 0 skipped (`BUILD SUCCESS`; Testcontainers PostgreSQL started) |
+| Full backend `mvnw.cmd test` | 558 run, 0 failures, 0 errors, 1 skipped (`BUILD SUCCESS`) |
+| `flutter analyze` | No issues found |
+| Focused Flutter `fund_screen_test.dart` + `routes_test.dart` | 59 passed, 0 failed |
+| Complete `flutter test --reporter compact` | 645 passed, 0 failed |
+| Debug APK (`WEDO_API_BASE_URL=http://127.0.0.1:8080`) | Built & installed (`mobile/build/app/outputs/flutter-apk/app-debug.apk`) |
+| Samsung `R58M36JQYVY` Physical-Device E2E & Multi-Account QA | Real Flutter UI verified owner-created collection, member contribution submission, delegated Admin confirmation, direct expense, member reimbursement request, Admin approval, transaction reversal, and insufficient-available-balance rejection. Ledger returned to 80,000 VND after reversal; insufficient-funds UI error shown; `0` `FATAL EXCEPTION` in device logcat. The fund and delegated manager were already present in seed data; no REST calls were used for the claimed flows. |
+| Migration audit | V0..V12 unchanged; no new migration |
+
+### Exact M13 Include Candidates (Not Staged)
+- Backend production:
+  - `backend/src/main/java/com/wedo/backend/common/error/ErrorCode.java`
+  - `backend/src/main/java/com/wedo/backend/fund/controller/FundController.java`
+  - `backend/src/main/java/com/wedo/backend/fund/dto/FundDtos.java`
+  - `backend/src/main/java/com/wedo/backend/fund/service/FundService.java`
+- Backend tests:
+  - `backend/src/test/java/com/wedo/backend/fund/FundServiceIntegrationTest.java`
+- Flutter production:
+  - `mobile/lib/app/routes.dart`
+  - `mobile/lib/features/groups/presentation/screens/group_info_screen.dart`
+  - `mobile/lib/features/expense/data/expense_api.dart`
+  - `mobile/lib/features/fund/application/fund_controllers.dart`
+  - `mobile/lib/features/fund/data/fund_api.dart`
+  - `mobile/lib/features/fund/data/fund_failure.dart`
+  - `mobile/lib/features/fund/data/fund_models.dart`
+  - `mobile/lib/features/fund/data/fund_repository.dart`
+  - `mobile/lib/features/fund/presentation/fund_screens.dart`
+- Flutter tests:
+  - `mobile/test/app/routes_test.dart`
+  - `mobile/test/features/fund/fund_screen_test.dart`
 - Canonical docs/handoff:
   - `docs/AGENT_PROJECT_CONTEXT.md`
   - `docs/AGENT_CURRENT_HANDOFF.md`

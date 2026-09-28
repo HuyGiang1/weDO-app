@@ -80,9 +80,9 @@ class ExpenseApi {
     () => dio.get(
       '/api/v1/groups/${Uri.encodeComponent(groupId)}/settlements',
       queryParameters: {
-        if (status != null) 'status': status,
-        if (involvingMe != null) 'involvingMe': involvingMe,
-        if (otherUserId != null) 'otherUserId': otherUserId,
+        'status': ?status,
+        'involvingMe': ?involvingMe,
+        'otherUserId': ?otherUserId,
       },
     ),
     SettlementItem.fromJson,

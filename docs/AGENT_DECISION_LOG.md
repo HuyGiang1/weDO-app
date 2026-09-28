@@ -212,3 +212,25 @@
      - Confirming a `PENDING` settlement (`SELECT ... FOR UPDATE` on both `groups` and `settlements`) re-validates `amount <= currentDebt`, transitions `status` to `COMPLETED`, sets `completed_at`, records `settlement_status_history`, and immediately reduces derived pairwise debt.
 - **Reason / Source**: `docs/BA_CONSOLIDATED_SPECIFICATION_v1.0.md` §15.2 (`SET-01`..`SET-05`), `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §19, `docs/ERD_DATABASE_DESIGN_v1.0.md` §14 (`V7__finance.sql`).
 - **Consequences**: Prevents unilateral debt erasure, double confirmation, and concurrent over-settlement while preserving an immutable status history audit trail.
+
+---
+
+### DEC-M13-01 — Group Fund Dedicated Domain Boundary, Derived Ledger vs Available Balance, and Immutable Reversal Ledger (`FUND-01`..`FUND-17`)
+- **ID**: `DEC-M13-01`
+- **Milestone**: `M13`
+- **Decision**:
+  1. **Reuse `V8__fund.sql` Without New Migration & Keep Dedicated Domain Boundary**:
+     - M13 uses the 9 existing `V8__fund.sql` tables (`group_funds`, `fund_managers`, `fund_collections`, `fund_collection_obligations`, `fund_contributions`, `fund_expenses`, `fund_reimbursements`, `fund_transactions`, `fund_transaction_reversals`) with no new Flyway migration.
+     - Implemented in a dedicated package `com.wedo.backend.fund.*` (`FundController`, `FundService`, `FundDtos`) and Flutter module `mobile/lib/features/fund/*` so M13 pooled treasury cashflow never pollutes M11/M12 pairwise `expenses` / `settlements`.
+  2. **Governance & Automatic Stale Fund Manager Revocation (`FUND-02`)**:
+     - Group `OWNER` always holds full implicit Fund Governance + Fund Manager authority.
+     - `OWNER` may assign up to 2 active `ADMIN` members as `Fund Manager` rows in `fund_managers`.
+     - If an assigned `Fund Manager` is demoted to `MEMBER` or exits the group (`GroupMembershipEndedEvent`), `FundService` automatically revokes/filters stale `fund_managers` rows so non-eligible users never retain fund management rights.
+  3. **Derived Ledger Balance vs Available Balance & `FOR UPDATE` Concurrency (`FUND-10`..`FUND-14`)**:
+     - `ledgerBalance = sum(fund_transactions.direction = 'IN') - sum(fund_transactions.direction = 'OUT')`.
+     - `availableBalance = ledgerBalance - sum(fund_reimbursements.status = 'PENDING')`.
+     - All fund balance, contribution confirmation, reimbursement request/approval, transaction reversal, and fund close operations lock the `group_funds` row (`SELECT ... FOR UPDATE`) to prevent concurrent double-confirmation, over-contribution (`FUND_CONTRIBUTION_EXCEEDS_OBLIGATION`), or overdraft (`FUND_INSUFFICIENT_BALANCE`).
+  4. **Immutable Ledger & Compensating Reversals (`FUND-15`, `FUND-16`)**:
+     - `fund_transactions` rows are never updated or deleted. Reversing a `CONTRIBUTION`, `FUND_EXPENSE`, or `REIMBURSEMENT` transaction creates an opposite-direction `REVERSAL` row and links `fund_transaction_reversals(original_transaction_id, reversal_transaction_id)` (`UNIQUE(original_transaction_id)` prevents double reversal). Reversing an `IN` contribution requires `availableBalance >= amount` so the fund never drops below zero or violates pending reimbursement reservations.
+- **Reason / Source**: `docs/BA_CONSOLIDATED_SPECIFICATION_v1.0.md` §16 (`FUND-01`..`FUND-17`), `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §20, `docs/ERD_DATABASE_DESIGN_v1.0.md` §15 (`V8__fund.sql`).
+- **Consequences**: Complete auditability, zero cross-contamination between pairwise expense splits and pooled group treasury, and race-free balance/obligation enforcement.

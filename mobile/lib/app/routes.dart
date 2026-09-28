@@ -58,6 +58,9 @@ import '../features/chat/presentation/chat_requests_screen.dart';
 import '../features/expense/data/expense_api.dart';
 import '../features/expense/data/expense_repository.dart';
 import '../features/expense/presentation/expense_screens.dart';
+import '../features/fund/data/fund_api.dart';
+import '../features/fund/data/fund_repository.dart';
+import '../features/fund/presentation/fund_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -212,6 +215,19 @@ class ExpenseRouteArgs {
   const ExpenseRouteArgs({required this.repository, required this.groupRepository, required this.groupId});
 }
 
+class FundRouteArgs {
+  final FundRepository repository;
+  final GroupRepository groupRepository;
+  final String groupId;
+  final String? groupName;
+  const FundRouteArgs({
+    required this.repository,
+    required this.groupRepository,
+    required this.groupId,
+    this.groupName,
+  });
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
@@ -257,6 +273,7 @@ abstract final class AppRoutes {
   static const String activities = '/groups/activities';
   static const String groupExpenses = '/groups/expenses';
   static const String groupSettlements = '/groups/settlements';
+  static const String groupFund = '/groups/fund';
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
   static const String tasks = '/activities/tasks';
@@ -653,6 +670,15 @@ abstract final class AppRoutes {
                   groupId: args.groupId,
                 ),
               ),
+              onFund: () => Navigator.of(context).pushNamed(
+                groupFund,
+                arguments: FundRouteArgs(
+                  repository: FundRepository(FundApi(args.repository.api.dio)),
+                  groupRepository: args.repository,
+                  groupId: args.groupId,
+                  groupName: detail.value.detail?.name,
+                ),
+              ),
               onChatHome: () => Navigator.of(context).pushNamed(
                 chatHome,
                 arguments: ChatHomeRouteArgs(
@@ -770,6 +796,34 @@ abstract final class AppRoutes {
           ),
           settings: settings,
         );
+      },
+    ),
+    groupFund: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is FundRouteArgs && args.groupId.trim().isNotEmpty) {
+          return MaterialPageRoute<void>(
+            builder: (_) => GroupFundScreen(
+              groupId: args.groupId,
+              groupName: args.groupName,
+              repository: args.repository,
+              loadMembers: () => args.groupRepository.getMembers(args.groupId),
+            ),
+            settings: settings,
+          );
+        }
+        if (args is GroupInfoRouteArgs && args.groupId.trim().isNotEmpty) {
+          return MaterialPageRoute<void>(
+            builder: (_) => GroupFundScreen(
+              groupId: args.groupId,
+              repository: FundRepository(FundApi(args.repository.api.dio)),
+              loadMembers: () => args.repository.getMembers(args.groupId),
+            ),
+            settings: settings,
+          );
+        }
+        return null;
       },
     ),
     groupChat: AppRouteDefinition(

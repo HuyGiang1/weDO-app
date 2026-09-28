@@ -14,6 +14,7 @@ class GroupInfoScreen extends StatefulWidget {
   final VoidCallback? onActivities;
   final VoidCallback? onExpenses;
   final VoidCallback? onSettlements;
+  final VoidCallback? onFund;
   final VoidCallback? onChat;
   final VoidCallback? onChatHome;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
@@ -31,6 +32,7 @@ class GroupInfoScreen extends StatefulWidget {
     this.onActivities,
     this.onExpenses,
     this.onSettlements,
+    this.onFund,
     this.onChat,
     this.onChatHome,
     this.onInviteLinks,
@@ -105,6 +107,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onActivities: widget.onActivities,
             onExpenses: widget.onExpenses,
             onSettlements: widget.onSettlements,
+            onFund: widget.onFund,
             onChat: widget.onChat,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
@@ -133,6 +136,7 @@ class _GroupInfoContent extends StatelessWidget {
   final VoidCallback? onActivities;
   final VoidCallback? onExpenses;
   final VoidCallback? onSettlements;
+  final VoidCallback? onFund;
   final VoidCallback? onChat;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
@@ -149,6 +153,7 @@ class _GroupInfoContent extends StatelessWidget {
     this.onActivities,
     this.onExpenses,
     this.onSettlements,
+    this.onFund,
     this.onChat,
     this.onInviteLinks,
     this.onJoinRequests,
@@ -431,6 +436,15 @@ class _GroupInfoContent extends StatelessWidget {
                   iconColor: AppColors.primary,
                   title: 'Thanh toán công nợ',
                   onTap: onSettlements!,
+                ),
+                const Divider(height: 1),
+              ],
+              if (onFund != null) ...[
+                _ActionTile(
+                  icon: Icons.savings_outlined,
+                  iconColor: AppColors.primary,
+                  title: 'Quỹ nhóm',
+                  onTap: onFund!,
                 ),
                 const Divider(height: 1),
               ],

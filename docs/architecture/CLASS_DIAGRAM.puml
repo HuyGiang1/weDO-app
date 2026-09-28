@@ -31,6 +31,11 @@ class MessageHiddenUserEntity { messageId: UUID\nuserId: UUID\nhiddenAt: Instant
 class MessageReactionEntity { id: UUID\nmessageId: UUID\nuserId: UUID\nemoji: String }
 class ConversationReadStateEntity { conversationId: UUID\nuserId: UUID\nlastReadSequence: long }
 class MessagePinEntity { id: UUID\nmessageId: UUID\npinnedBy: UUID? }
+class ExpenseController
+class ExpenseService
+class ExpenseRequest { title: String\namount: BigDecimal\npayerUserId: UUID\nsplitMethod: EQUAL | CUSTOM_AMOUNT\nparticipantUserIds: UUID[]?\nshares: ShareRequest[]?\nactivityId: UUID?\noccurredAt: OffsetDateTime }
+class ExpenseDetail { id: UUID\namount: BigDecimal\nstatus: ACTIVE | CANCELLED\nshares: Share[]\nchangeHistory: Change[]\npermissions: PermissionProjection }
+class MyBalances { totalOwedByMe: BigDecimal\ntotalOwedToMe: BigDecimal\nbalances: UserBalance[] }
 UserEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupInviteLinkEntity
@@ -71,6 +76,12 @@ MessageEntity "0..1" -- "0..*" MessageEntity : replies
 UserEntity "1" -- "0..*" MessageEntity : sender
 ConversationEntity "1" -- "0..*" ConversationReadStateEntity
 GroupEntity "1" -- "0..1" GroupConversationEntity
+GroupEntity "1" -- "0..*" ExpenseDetail : groupId
+ActivityEntity "0..1" -- "0..*" ExpenseDetail : optional activityId
+ExpenseController --> ExpenseService
+ExpenseService ..> ExpenseRequest : validates and allocates
+ExpenseService ..> ExpenseDetail : projects persisted facts
+ExpenseService ..> MyBalances : derives from expenses and settlements
 UserEntity "1" -- "0..*" MessageReactionEntity
 UserEntity "1" -- "0..*" ConversationReadStateEntity
 ChatService ..> ChatRealtimeTransactionalBridge : publishes AFTER_COMMIT domain events

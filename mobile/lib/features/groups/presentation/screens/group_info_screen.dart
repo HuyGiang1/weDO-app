@@ -12,6 +12,7 @@ class GroupInfoScreen extends StatefulWidget {
   final GroupDetailController controller;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
+  final VoidCallback? onExpenses;
   final VoidCallback? onChat;
   final VoidCallback? onChatHome;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
@@ -27,6 +28,7 @@ class GroupInfoScreen extends StatefulWidget {
     required this.onActivityLog,
     required this.onLeave,
     this.onActivities,
+    this.onExpenses,
     this.onChat,
     this.onChatHome,
     this.onInviteLinks,
@@ -99,6 +101,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onSettings: widget.onSettings,
             onActivityLog: widget.onActivityLog,
             onActivities: widget.onActivities,
+            onExpenses: widget.onExpenses,
             onChat: widget.onChat,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
@@ -125,6 +128,7 @@ class _GroupInfoContent extends StatelessWidget {
   final int? memberCount;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
+  final VoidCallback? onExpenses;
   final VoidCallback? onChat;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
@@ -139,6 +143,7 @@ class _GroupInfoContent extends StatelessWidget {
     required this.onActivityLog,
     required this.onLeave,
     this.onActivities,
+    this.onExpenses,
     this.onChat,
     this.onInviteLinks,
     this.onJoinRequests,
@@ -403,6 +408,15 @@ class _GroupInfoContent extends StatelessWidget {
                   iconColor: AppColors.onSurfaceVariant,
                   title: 'Hoạt động',
                   onTap: onActivities!,
+                ),
+                const Divider(height: 1),
+              ],
+              if (onExpenses != null) ...[
+                _ActionTile(
+                  icon: Icons.receipt_long_outlined,
+                  iconColor: AppColors.primary,
+                  title: 'Chi tiêu',
+                  onTap: onExpenses!,
                 ),
                 const Divider(height: 1),
               ],

@@ -180,6 +180,15 @@ Calendar is derived from Activity; no duplicate calendar event table required in
 No authoritative `debts` table.
 Debt is derived from Expense facts and COMPLETED settlements.
 
+M11 runtime reuses the existing V7 finance schema; it adds no migration or
+table. ACTIVE expenses and their shares are the source facts, completed
+settlements reduce pairwise obligations, and pending settlements reserve
+obligations against expense edits/cancellation. Expense cancellation is a
+status transition so audit/history rows remain. M11 supports EQUAL and
+CUSTOM_AMOUNT splits with NUMERIC(19,2); settlement actions remain M12 scope.
+Receipt storage/upload is not implemented and does not add a receipt field to
+the as-built API projection.
+
 ## 11. Group Fund
 - group_funds
 - fund_managers

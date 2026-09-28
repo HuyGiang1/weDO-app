@@ -2121,18 +2121,19 @@ Single reminder configuration per user per activity. UI may offer preset offsets
 ```json
 {
   "title": "Tiền sân",
-  "amount": 600000,
+  "amount": "600000.00",
   "payerUserId": "...",
   "splitMethod": "EQUAL",
   "participantUserIds": ["...", "...", "..."],
   "activityId": null,
   "occurredAt": "2026-09-01T12:00:00+07:00",
-  "note": null,
-  "receiptStorageKey": null
+  "note": null
 }
 ```
 
-One payer only. Payer may be a participant. Backend calculates all ExpenseShare values; Flutter is not authoritative. EQUAL split requires totalAmount >= participantCount * 0.01 so every share > 0; uses deterministic remainder-unit distribution: base = floor(amount / N, 2); remainder units (0.01) distributed one-by-one to paid_by (if participant), then remaining participants ordered by canonical UUID.
+One payer only. Payer may be a participant. Only active group members may create an Expense or be selected as payer/participant. Backend calculates all ExpenseShare values; Flutter is not authoritative. EQUAL split requires amount >= participantCount * 0.01 so every share > 0; uses deterministic remainder-unit distribution: base = floor(amount / N, 2); remainder units (0.01) distributed one-by-one to paid_by (if participant), then remaining participants ordered by canonical UUID. Amounts use PostgreSQL NUMERIC(19,2) / Java BigDecimal; clients should serialize decimal strings to avoid binary floating-point rounding.
+
+All monetary values in Expense and Balance responses are decimal JSON strings, including shares, totals and signed pair balances, so clients preserve the full database precision. Expense instants are serialized with an explicit offset and displayed in the device's local time. Archived-group and cancelled-expense projections set both correction permissions to false.
 
 ### FIN-02 Create Expense - Custom Amount
 
@@ -2141,13 +2142,14 @@ Same endpoint with `splitMethod=CUSTOM_AMOUNT` and explicit shares.
 ```json
 {
   "title": "Ăn tối",
-  "amount": 1000000,
+  "amount": "10000.00",
   "payerUserId": "...",
   "splitMethod": "CUSTOM_AMOUNT",
   "shares": [
-    {"userId": "...", "amount": 300000},
-    {"userId": "...", "amount": 700000}
-  ]
+    {"userId": "...", "amount": "3000.00"},
+    {"userId": "...", "amount": "7000.00"}
+  ],
+  "occurredAt": "2026-09-01T12:00:00+07:00"
 }
 ```
 
@@ -2161,21 +2163,23 @@ Service requires `sum(shares) == expense.amount`. No self-debt is generated for 
 
 `GET /api/v1/groups/{groupId}/expenses?activityId=&involvingMe=&createdByMe=&from=&to=`
 
+Any active group member may read the group expense list. Optional filters are applied server-side. Each result includes payer/creator, participant count, status and caller-specific `canEdit` / `canCancel` permissions.
+
 ### FIN-05 Expense Detail
 
 `GET /api/v1/expenses/{expenseId}`  
-Includes payer, shares, activity reference, receipt, creator and change-history summary.
+Requires readable membership in the Expense's group. Includes payer, shares, optional activity reference, creator, audit changes and caller-specific permissions. Receipt upload/storage is not part of the current M11 implementation.
 
 ### FIN-06 Update Expense
 
 `PATCH /api/v1/expenses/{expenseId}`
 
-Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. Must preserve BOTH COMPLETED accounting protection (cannot cause already completed settlements to exceed underlying obligation / over-settle) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
+Creator may edit own Expense; Owner/Admin can perform corrections. Amount/payer/participants/split changes require audit log and debt recalculation from facts. Only active group members may be selected. Archived groups are read-only. Must preserve COMPLETED accounting protection and PENDING reservation protection (rejected if resulting debt is less than pending reserved); violation is rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ### FIN-07 Cancel Expense
 
 `POST /api/v1/expenses/{expenseId}/cancel`  
-No hard-delete financial history. Must preserve BOTH COMPLETED accounting protection (cancellation cannot leave completed settlements over-settled) AND PENDING reservation protection (rejected if resultingDebt < pendingReserved). Violation rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
+No hard-delete financial history; cancellation sets status to `CANCELLED`. Must preserve completed settlement and pending reservation protections; violation is rejected with `EXPENSE_UPDATE_NOT_ALLOWED`.
 
 ---
 
@@ -2186,7 +2190,7 @@ There is no authoritative `debts` table.
 Current pairwise debt is derived from:
 
 ```text
-Expense payer + ExpenseShare facts
+ACTIVE Expense payer + ExpenseShare facts
 minus COMPLETED Settlements
 then pairwise netting
 ```
@@ -2197,17 +2201,17 @@ then pairwise netting
 
 ```json
 {
-  "totalOwedByMe": 300000,
-  "totalOwedToMe": 550000,
+  "totalOwedByMe": "0.00",
+  "totalOwedToMe": "2000.00",
   "balances": [
     {
       "user": {
         "id": "...",
         "displayName": "Nam",
-        "avatarUrl": "..."
+        "avatarStorageKey": "..."
       },
       "direction": "OWES_YOU",
-      "amount": 200000
+      "amount": "2000.00"
     }
   ]
 }
@@ -2216,9 +2220,11 @@ then pairwise netting
 ### BAL-02 Balance With User
 
 `GET /api/v1/groups/{groupId}/balances/{userId}`  
-Includes net amount, source Expense breakdown, completed Settlements and pending settlement action context.
+Returns the caller-relative signed pair amount, direction, active source Expenses, completed Settlements and pending reservations. Both callers see equal magnitudes with opposite directions.
 
-Frontend is never allowed to set arbitrary debt.
+Positive `netAmount` means `OWES_YOU`; negative means `YOU_OWE`; zero means `SETTLED`. Summary totals and directional entries use non-negative amounts. Former-member financial facts remain in the ledger, while protected reads and mutations require current active membership.
+
+Frontend is never allowed to set arbitrary debt. M11 exposes reads only for settlement context; settlement create/confirm actions remain M12 scope. No debt table is introduced.
 
 ---
 

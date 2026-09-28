@@ -55,6 +55,9 @@ import '../features/chat/data/chat_repository.dart';
 import '../features/chat/presentation/chat_screen.dart';
 import '../features/chat/presentation/chat_home_screen.dart';
 import '../features/chat/presentation/chat_requests_screen.dart';
+import '../features/expense/data/expense_api.dart';
+import '../features/expense/data/expense_repository.dart';
+import '../features/expense/presentation/expense_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -202,6 +205,13 @@ class ActivityDetailRouteArgs {
   });
 }
 
+class ExpenseRouteArgs {
+  final ExpenseRepository repository;
+  final GroupRepository groupRepository;
+  final String groupId;
+  const ExpenseRouteArgs({required this.repository, required this.groupRepository, required this.groupId});
+}
+
 /// A unified route definition binding access policy to route construction.
 final class AppRouteDefinition {
   final AppRouteAccess access;
@@ -245,6 +255,7 @@ abstract final class AppRoutes {
   static const String groupJoinRequests = '/groups/join-requests';
   static const String groupBans = '/groups/bans';
   static const String activities = '/groups/activities';
+  static const String groupExpenses = '/groups/expenses';
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
   static const String tasks = '/activities/tasks';
@@ -625,6 +636,14 @@ abstract final class AppRoutes {
                   groupId: args.groupId,
                 ),
               ),
+              onExpenses: () => Navigator.of(context).pushNamed(
+                groupExpenses,
+                arguments: ExpenseRouteArgs(
+                  repository: ExpenseRepository(ExpenseApi(args.repository.api.dio)),
+                  groupRepository: args.repository,
+                  groupId: args.groupId,
+                ),
+              ),
               onChatHome: () => Navigator.of(context).pushNamed(
                 chatHome,
                 arguments: ChatHomeRouteArgs(
@@ -715,6 +734,17 @@ abstract final class AppRoutes {
             groupId: args.groupId,
             controller: GroupActivityLogController(args.repository),
           ),
+          settings: settings,
+        );
+      },
+    ),
+    groupExpenses: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => ExpenseListScreen(groupId: args.groupId, repository: args.repository, groupRepository: args.groupRepository),
           settings: settings,
         );
       },

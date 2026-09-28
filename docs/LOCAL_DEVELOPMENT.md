@@ -43,6 +43,22 @@ cd D:\weDO-app\backend
 .\mvnw.cmd -Dtest=M8MultiAccountIntegrationTest test
 ```
 
+## M11 Expense + Balance Verification
+
+The local QA group's `owner`, `admin`, `member1`, and `member2` accounts can
+exercise Expense create/list/detail/edit/cancel. `outsider` is not a member and
+must not read group expenses or balances. Backend multi-account assertions run
+with:
+
+```powershell
+cd D:\weDO-app\backend
+.\mvnw.cmd -Dtest=ExpenseServiceIntegrationTest test
+```
+
+An Expense is cancelled rather than deleted; its history remains while its
+derived balance effect returns to zero. M11 reuses V7 finance tables, adds no
+migration, and does not implement receipt uploads or M12 settlement actions.
+
 ## M9 Chat REST Smoke
 
 With an authenticated user, open a group's conversation using

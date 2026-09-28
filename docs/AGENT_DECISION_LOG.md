@@ -172,3 +172,25 @@
   4. **Flutter Deduplication & Reconnect Reconciliation**: `WebSocketChatRealtimeClient` automatically reconnects with exponential backoff, re-subscribes active conversations, and triggers silent history reconciliation on reconnect while deduplicating incoming frames by `eventId`, `message.id`, and `sequence`.
 - **Reason / Source**: `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §41, `docs/ERD_DATABASE_DESIGN_v1.0.md` §17, `backend/src/main/java/com/wedo/backend/chat/realtime/*`, `mobile/lib/features/chat/data/chat_realtime_client.dart`.
 - **Consequences**: Seamless multi-device realtime chat delivery, live typing/presence/read-avatar updates, and zero regressions to M9 Pass 6 UX.
+
+---
+
+### DEC-M11-01 - Expense Facts, Derived Pair Balances, and M12 Boundary
+- **ID**: `DEC-M11-01`
+- **Milestone**: `M11`
+- **Decision**:
+  1. Reuse the V7 `expenses`, `expense_shares`, `expense_change_logs`, and existing settlement tables; do not add a debt table or migration.
+  2. Store and calculate money as `NUMERIC(19,2)` / `BigDecimal`; Flutter represents amounts in integer minor units and sends decimal strings. EQUAL shares use deterministic cent allocation with remainder cents assigned to the payer first when included, otherwise canonical UUID order. CUSTOM_AMOUNT shares must sum exactly to the total.
+  3. Derive current pairwise net balances from ACTIVE expenses/shares minus COMPLETED settlements, preserving pending settlements as reservations. Cancellation changes expense status and retains history. Active membership is required for mutations and participants; group owners/admins and creators receive server-projected correction permissions.
+  4. Receipt upload/storage is deferred because no receipt upload/ownership contract exists in the current runtime. M12 settlement actions and M13 fund behavior are not pulled into M11.
+- **Reason / Source**: M11 verified runtime, V1-V12 migrations (finance schema from V7), current API contract and M11 acceptance.
+- **Consequences**: Expense history remains auditable, balances are recomputable, no arbitrary client debt or receipt storage key is trusted, and M11 requires no schema migration.
+
+---
+
+### DEC-M11-02 - Exact Monetary JSON and Read-Only Projections
+- **ID**: `DEC-M11-02`
+- **Milestone**: `M11`
+- **Decision**: Expense and Balance response amounts are decimal JSON strings, preserving all `NUMERIC(19,2)` digits across client JSON decoding. Archived-group and cancelled-expense responses disable both `canEdit` and `canCancel`. Flutter renders each permission independently, displays instants in local time, and translates audit states without showing internal reference IDs.
+- **Reason / Source**: M11 money precision, archive lifecycle, Vietnamese UI and server-authoritative permission requirements; focused boundary and widget tests.
+- **Consequences**: No binary floating-point loss on the wire, no advertised mutation on archived groups, and readable consumer history.

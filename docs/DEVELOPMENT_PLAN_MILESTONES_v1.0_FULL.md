@@ -467,7 +467,7 @@ Features:
 - participants
 - optional Activity
 - edit/cancel
-- receipt
+- receipt (deferred; upload/storage contract not implemented)
 - balance endpoint
 - pairwise netting
 
@@ -478,6 +478,12 @@ Use:
 No debts table.
 
 DoD: debt can be recomputed from facts.
+
+M11 implementation status: Expense create/list/detail/edit/cancel and derived
+group/pair balances are implemented against the existing V7 finance tables.
+Only EQUAL and CUSTOM_AMOUNT splits are supported. Server-side BigDecimal
+allocation and permissions are authoritative. No migration was required;
+settlement actions remain M12 and group fund remains M13.
 
 ## 15. M12 — Settlement
 

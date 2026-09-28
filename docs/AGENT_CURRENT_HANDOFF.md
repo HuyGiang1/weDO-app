@@ -4,9 +4,9 @@
 
 ## 1. Current Git & Branch State
 
-- **Active Branch**: `feat/m10-chat-realtime`
-- **Base Commit (`dev`)**: `5c2187dcb9b73c19ac1f1368e37d6cb369bfdbb4` (`merge: integrate m9 REST chat`, which merged M9 commit `8d88e693cb909d19df317913678febfa571f3ad5`)
-- **Active Milestone**: **M10 — Chat Realtime (`WebSocket + Redis`)** (Complete, verified, and deployed to Samsung `R58M36JQYVY`; uncommitted in pre-commit state pending manual review)
+- **Active Branch**: `feat/m11-expense-balance`
+- **Base Commit (`dev`)**: `3c0b151aaaa2d5838ceb354778df43488e164c76`
+- **Active Milestone**: **M11 — Expense + Balance** (implemented and verified; M10 realtime package restored to committed HEAD `3c0b151aaaa2d5838ceb354778df43488e164c76`; ready for user review / commit authorization; no stage/commit/push performed)
 - **Preserved Stash**: `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync` — **DO NOT** pop, apply, or drop.
 - **Local-Only Untracked Files (Never Stage/Commit)**:
   - `docs/LEARNING_HANDBOOK_M0_M2.md`
@@ -15,7 +15,7 @@
 
 ---
 
-## 2. What Is Implemented in M10 (`feat/m10-chat-realtime` Worktree)
+## 2. Historical M10 Implementation (`feat/m10-chat-realtime`)
 
 ### Database Schema (`V4__chat.sql` — No New Migration Required)
 - M10 reuses existing `V4__chat.sql` tables (`conversations`, `messages`, `conversation_read_states`, `user_presence_snapshots`).
@@ -51,7 +51,7 @@
 
 ---
 
-## 3. Latest Verified Test, Static Analysis & Two-Account Samsung Realtime Acceptance Status
+## 3. Historical M10 Test, Static Analysis & Two-Account Samsung Realtime Acceptance
 
 - **Backend Focused Chat + Realtime Suite** (`.\mvnw.cmd -Dtest="ChatRealtimeIntegrationTest,ChatControllerTest,ChatServiceIntegrationTest" test`):
   - **16 tests run, 0 failures, 0 errors, 0 skipped**
@@ -69,9 +69,75 @@
 
 ---
 
-## 4. Next Actions for Incoming Agent / User
+## 4. Current M11 Handoff
 
-1. **User Review of M10 Realtime Acceptance**:
-   - M10 is in pre-commit state on `feat/m10-chat-realtime` with two-account Samsung realtime acceptance verified.
-2. **After User Approval**:
-   - Stage and commit M10 (`feat/m10-chat-realtime`), excluding `docs/LEARNING_HANDBOOK_M0_M2.md`, `docs/M8_STITCH_FIDELITY_INVENTORY.md`, `.stitch/**`, and `stash@{0}`.
+- M11 implements Expense create/list/detail/edit/cancel and derived group/pair balances using existing V7 finance tables. No migration was added; M12 settlement actions and M13 fund remain deferred. Receipt upload is not implemented.
+- Backend service integration covers deterministic equal/custom splits, audit history, settlement reservations, archived read-only permission projections, member/outsider authorization, multi-account visibility, inverse pair balances, maximum monetary JSON precision, and concurrent edit/cancel consistency.
+- Flutter provides a group-specific Expense list, create/edit/detail/cancel and balance views. Amount handling uses integer minor units and decimal strings in both directions. Edit retains custom shares and the activity reference; edit and cancel controls independently consume server flags. Dates render in local time, audit states are Vietnamese, and reference IDs are not displayed.
+- Samsung `R58M36JQYVY` acceptance completed using the local QA group: created 50.00, edited to 60.00 with two 30.00 shares, observed the caller's owed balance increase to 30.00, then cancelled and observed it return to 0.00.
+- A cancel/reload `setState` Future-return crash was found and fixed, covered by a widget test and a successful fresh 5.00 create/cancel device check. Final corrected APK was rebuilt, installed and launched on Samsung; local time, translated cancellation history and zero balance were rechecked visually. No Flutter runtime exception appeared in the final app process logs.
+- The original backend on port 8080 was pre-M11 and was not stopped or changed by this M11 continuation. Current M11 source ran on temporary port 8081 for device checks. The temporary M11 backend and debug sessions are now stopped. Final APK uses `http://127.0.0.1:8080`; the temporary device `tcp:8080 -> host tcp:8081` mapping was restored to `tcp:8080 -> tcp:8080`. Local cancelled QA expense rows remain as audit history.
+- Preserve local-only docs and `.stitch/**`; preserve `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync`. Do not stage, commit, or push without separate authorization.
+
+### Latest Verification (2026-09-28)
+
+| Gate | Authoritative result |
+| --- | --- |
+| Backend compile `mvnw.cmd -DskipTests compile` | `BUILD SUCCESS` |
+| Focused backend `ChatRealtimeIntegrationTest,ExpenseServiceIntegrationTest` | 18 run, 0 failures, 0 errors, 0 skipped (`BUILD SUCCESS`) |
+| Full backend `mvnw.cmd test` | 542 run, 0 failures, 0 errors, 1 skipped (`BUILD SUCCESS`) |
+| Focused Flutter Expense tests | 15 passed, 0 failed |
+| `flutter analyze` | No issues found |
+| Complete `flutter test --reporter compact` | 641 passed, 0 failed; command exited successfully |
+| Debug APK with standard 8080 define | Successful; `mobile/build/app/outputs/flutter-apk/app-debug.apk`, 201414780 bytes |
+| Samsung | Create/edit/cancel/balance reversal passed; final local-time/history fixes verified on installed APK |
+| Migration audit | V0 bootstrap and V1-V12 retained unchanged; no new migration |
+| Debug/temp audit | No temporary paths, QA credentials, debug prints, TODO/FIXME in new M11 production files |
+
+### Realtime Package Recovery & Blocker Resolution
+
+- The stale/conflicting working-tree modification in `backend/src/main/java/com/wedo/backend/chat/realtime/ChatRealtimeCoordinator.java` (from an earlier pre-review M10 replay that added WebSocket `SEND_MESSAGE`/`EDIT_MESSAGE`/`UNSEND_MESSAGE`/`SET_REACTION` handlers) was restored to committed M10 `HEAD` (`3c0b151aaaa2d5838ceb354778df43488e164c76`).
+- All 6 production files under `backend/src/main/java/com/wedo/backend/chat/realtime/` and `backend/src/test/java/com/wedo/backend/chat/ChatRealtimeIntegrationTest.java` now match `HEAD` with zero working-tree diffs and zero empty/truncated files.
+- `ChatRealtimeIntegrationTest.durableMessageMutationsAreRejectedOverWebSocket`, the focused `ChatRealtimeIntegrationTest,ExpenseServiceIntegrationTest` suite (`18/18`), and the full backend suite (`542` run, `0` failures, `0` errors, `1` skipped) all pass. No blocker remains for M11 closeout.
+
+### Exact M11 Include Candidates (Not Staged)
+
+Backend production:
+- `backend/src/main/java/com/wedo/backend/common/error/ErrorCode.java`
+- `backend/src/main/java/com/wedo/backend/expense/controller/ExpenseController.java`
+- `backend/src/main/java/com/wedo/backend/expense/dto/ExpenseDtos.java`
+- `backend/src/main/java/com/wedo/backend/expense/service/ExpenseService.java`
+
+Backend tests:
+- `backend/src/test/java/com/wedo/backend/expense/ExpenseServiceIntegrationTest.java`
+
+Flutter production:
+- `mobile/lib/app/routes.dart`
+- `mobile/lib/features/groups/presentation/screens/group_info_screen.dart`
+- `mobile/lib/features/expense/application/expense_controllers.dart`
+- `mobile/lib/features/expense/data/expense_api.dart`
+- `mobile/lib/features/expense/data/expense_failure.dart`
+- `mobile/lib/features/expense/data/expense_models.dart`
+- `mobile/lib/features/expense/data/expense_repository.dart`
+- `mobile/lib/features/expense/presentation/expense_screens.dart`
+
+Flutter tests:
+- `mobile/test/app/routes_test.dart`
+- `mobile/test/features/expense/data/expense_models_test.dart`
+- `mobile/test/features/expense/presentation/expense_detail_screen_test.dart`
+
+Canonical docs/handoff:
+- `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md`
+- `docs/ERD_DATABASE_DESIGN_v1.0.md`
+- `docs/architecture/CLASS_DIAGRAM.puml`
+- `docs/DEVELOPMENT_PLAN_MILESTONES_v1.0_FULL.md`
+- `docs/LOCAL_DEVELOPMENT.md`
+- `docs/AGENT_CURRENT_HANDOFF.md`
+- `docs/AGENT_DECISION_LOG.md`
+
+Explicit exclusions:
+- `docs/LEARNING_HANDBOOK_M0_M2.md`
+- `docs/M8_STITCH_FIDELITY_INVENTORY.md`
+- `.stitch/**`, `.dev-runtime/**`, `.dev-logs/**`, generated build/cache/APK files and temporary device captures
+
+There are 23 M11 candidate files: 4 backend production, 1 backend test, 8 Flutter production, 3 Flutter tests and 7 documentation files. No migration candidate. Recommended commit subject upon explicit approval: `feat(m11): complete expense and balance runtime`.

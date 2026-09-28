@@ -9,12 +9,14 @@ import '../features/profile/data/profile_models.dart';
 import '../features/groups/data/group_repository.dart';
 import '../features/privacy/data/privacy_models.dart';
 import '../features/qr/data/personal_qr.dart';
+import '../features/chat/data/chat_repository.dart';
 
 /// Root application widget configuring MaterialApp, theme, and routes.
 class WeDoApp extends StatelessWidget {
   final AuthFlowCoordinator? authFlowCoordinator;
   final AuthSessionController authSessionController;
   final GroupRepository? groupRepository;
+  final ChatRepository? chatRepository;
   final Future<CurrentUser> Function()? loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)?
   updateProfile;
@@ -37,6 +39,7 @@ class WeDoApp extends StatelessWidget {
     this.authFlowCoordinator,
     required this.authSessionController,
     this.groupRepository,
+    this.chatRepository,
     this.loadCurrentUser,
     this.updateProfile,
     this.updateUsername,
@@ -63,8 +66,8 @@ class WeDoApp extends StatelessWidget {
       ),
       initialRoute:
           authSessionController.isAuthenticated && groupRepository != null
-              ? AppRoutes.groups
-              : AppRoutes.welcome,
+          ? AppRoutes.groups
+          : AppRoutes.welcome,
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
         settings.name == AppRoutes.groups &&
                 groupRepository != null &&
@@ -74,11 +77,11 @@ class WeDoApp extends StatelessWidget {
                 arguments: GroupsRouteArgs(repository: groupRepository!),
               )
             : settings.name == AppRoutes.profile &&
-                loadCurrentUser != null &&
-                updateProfile != null &&
-                updateUsername != null &&
-                changePassword != null &&
-                endSessionAfterPasswordChange != null
+                  loadCurrentUser != null &&
+                  updateProfile != null &&
+                  updateUsername != null &&
+                  changePassword != null &&
+                  endSessionAfterPasswordChange != null
             ? RouteSettings(
                 name: settings.name,
                 arguments: ProfileRouteArgs(
@@ -111,6 +114,7 @@ class WeDoApp extends StatelessWidget {
                 arguments: PublicUserProfileRouteArgs(
                   userId: (settings.arguments as String?) ?? '',
                   loadPublicProfile: loadPublicProfile!,
+                  chatRepository: chatRepository,
                 ),
               )
             : settings,

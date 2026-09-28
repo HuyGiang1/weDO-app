@@ -12,6 +12,8 @@ class GroupInfoScreen extends StatefulWidget {
   final GroupDetailController controller;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
+  final VoidCallback? onChat;
+  final VoidCallback? onChatHome;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
 
@@ -25,6 +27,8 @@ class GroupInfoScreen extends StatefulWidget {
     required this.onActivityLog,
     required this.onLeave,
     this.onActivities,
+    this.onChat,
+    this.onChatHome,
     this.onInviteLinks,
     this.onJoinRequests,
     this.onBans,
@@ -66,7 +70,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: const GroupsBottomNavigation(),
+      bottomNavigationBar: GroupsBottomNavigation(
+        onTap: (index) {
+          if (index == 2) widget.onChatHome?.call();
+        },
+      ),
       body: ValueListenableBuilder<GroupDetailState>(
         valueListenable: widget.controller,
         builder: (context, state, child) {
@@ -91,6 +99,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onSettings: widget.onSettings,
             onActivityLog: widget.onActivityLog,
             onActivities: widget.onActivities,
+            onChat: widget.onChat,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
             onBans: widget.onBans,
@@ -116,6 +125,7 @@ class _GroupInfoContent extends StatelessWidget {
   final int? memberCount;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
+  final VoidCallback? onChat;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
   final bool leaveTransferRequired;
@@ -129,6 +139,7 @@ class _GroupInfoContent extends StatelessWidget {
     required this.onActivityLog,
     required this.onLeave,
     this.onActivities,
+    this.onChat,
     this.onInviteLinks,
     this.onJoinRequests,
     this.onBans,
@@ -392,6 +403,15 @@ class _GroupInfoContent extends StatelessWidget {
                   iconColor: AppColors.onSurfaceVariant,
                   title: 'Hoạt động',
                   onTap: onActivities!,
+                ),
+                const Divider(height: 1),
+              ],
+              if (onChat != null) ...[
+                _ActionTile(
+                  icon: Icons.chat_bubble_outline,
+                  iconColor: AppColors.primary,
+                  title: 'Trò chuyện',
+                  onTap: onChat!,
                 ),
                 const Divider(height: 1),
               ],

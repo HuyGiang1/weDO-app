@@ -22,6 +22,8 @@ import 'features/privacy/data/privacy_api.dart';
 import 'features/privacy/data/privacy_repository.dart';
 import 'features/qr/data/personal_qr_api.dart';
 import 'features/qr/data/personal_qr_repository.dart';
+import 'features/chat/data/chat_api.dart';
+import 'features/chat/data/chat_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,8 +41,11 @@ void main() async {
   );
   final profileRepository = ProfileRepository(api: ProfileApi(dio.dio));
   final groupRepository = GroupRepository(api: GroupApi(dio.dio));
+  final chatRepository = ChatRepository(ChatApi(dio.dio));
   final privacyRepository = PrivacyRepository(api: PrivacyApi(dio.dio));
-  final personalQrRepository = PersonalQrRepository(api: PersonalQrApi(dio.dio));
+  final personalQrRepository = PersonalQrRepository(
+    api: PersonalQrApi(dio.dio),
+  );
   final sessionController = AuthSessionController(
     storage: storage,
     accessTokenHolder: holder,
@@ -91,11 +96,13 @@ void main() async {
       ),
       authSessionController: sessionController,
       groupRepository: groupRepository,
+      chatRepository: chatRepository,
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
       updateUsername: profileRepository.updateUsername,
       changePassword: repository.changePassword,
-      endSessionAfterPasswordChange: sessionController.endSessionAfterPasswordChange,
+      endSessionAfterPasswordChange:
+          sessionController.endSessionAfterPasswordChange,
       loadPrivacySettings: privacyRepository.getPrivacySettings,
       updatePrivacySettings: privacyRepository.updatePrivacySettings,
       loadPersonalQr: personalQrRepository.getPersonalQr,

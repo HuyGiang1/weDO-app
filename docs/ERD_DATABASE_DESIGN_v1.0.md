@@ -91,6 +91,24 @@ Important:
 - conversation_read_states
 - message_pins
 
+### V4 as-built Chat persistence (used by M9 REST)
+
+V4 already provides all Chat persistence tables; M9 does not need a migration.
+`conversations` is the root (`DIRECT` or `GROUP`) with subtype rows in
+`direct_conversations` (canonical, unique user pair) and
+`group_conversations` (unique group). `conversation_sequences` stores the
+monotonic sequence. `messages` stores sender, text/image type, optional reply,
+active/unsent status, edit/unsend timestamps and unique `(conversation_id,
+sequence)`. `message_requests` supports PENDING/ACCEPTED/DECLINED/CANCELLED,
+with at most one pending request per conversation. `message_attachments`,
+`message_edit_history`, `message_hidden_users`, `message_reactions`,
+`conversation_read_states`, and `message_pins` support their respective
+features and FK cascades. Reactions are unique per message/user; read state is
+one monotonic last-read sequence per conversation/user. M9 exposes text REST
+send. The V4 attachment table is reserved schema support; upload, storage
+ownership, and runtime rendering are deferred beyond M9. No raw storage key is
+accepted from clients.
+
 ## 6. Activity
 - activities
 - activity_participants

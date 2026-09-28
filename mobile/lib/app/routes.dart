@@ -49,6 +49,12 @@ import '../features/task/presentation/screens/task_screens.dart';
 import '../features/discussion/data/discussion_api.dart';
 import '../features/discussion/data/discussion_repository.dart';
 import '../features/discussion/presentation/widgets/activity_discussion_section.dart';
+import '../features/chat/data/chat_api.dart';
+import '../features/chat/data/chat_models.dart';
+import '../features/chat/data/chat_repository.dart';
+import '../features/chat/presentation/chat_screen.dart';
+import '../features/chat/presentation/chat_home_screen.dart';
+import '../features/chat/presentation/chat_requests_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -123,9 +129,11 @@ class PersonalQrRouteArgs {
 class PublicUserProfileRouteArgs {
   final String userId;
   final Future<PublicUserProfile> Function(String userId) loadPublicProfile;
+  final ChatRepository? chatRepository;
   const PublicUserProfileRouteArgs({
     required this.userId,
     required this.loadPublicProfile,
+    this.chatRepository,
   });
 }
 
@@ -136,8 +144,13 @@ class GroupsRouteArgs {
 
 class GroupInfoRouteArgs {
   final GroupRepository repository;
+  final ChatRepository? chatRepository;
   final String groupId;
-  const GroupInfoRouteArgs({required this.repository, required this.groupId});
+  const GroupInfoRouteArgs({
+    required this.repository,
+    required this.groupId,
+    this.chatRepository,
+  });
 }
 
 class GroupMemberRouteArgs {
@@ -154,6 +167,30 @@ class ActivitiesRouteArgs {
   final ActivityRepository repository;
   final String groupId;
   const ActivitiesRouteArgs({required this.repository, required this.groupId});
+}
+
+class ChatRouteArgs {
+  final ChatRepository repository;
+  final String? groupId;
+  final ChatConversation? conversation;
+  final GroupRepository? groupRepository;
+  const ChatRouteArgs({
+    required this.repository,
+    this.groupId,
+    this.conversation,
+    this.groupRepository,
+  });
+}
+
+class ChatRequestsRouteArgs {
+  final ChatRepository repository;
+  const ChatRequestsRouteArgs(this.repository);
+}
+
+class ChatHomeRouteArgs {
+  final ChatRepository chatRepository;
+  final GroupRepository groupRepository;
+  const ChatHomeRouteArgs(this.chatRepository, this.groupRepository);
 }
 
 class ActivityDetailRouteArgs {
@@ -211,6 +248,9 @@ abstract final class AppRoutes {
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
   static const String tasks = '/activities/tasks';
+  static const String groupChat = '/groups/chat';
+  static const String chatHome = '/chat';
+  static const String chatRequests = '/chat/requests';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -448,9 +488,33 @@ abstract final class AppRoutes {
         if (args is! PublicUserProfileRouteArgs || args.userId.trim().isEmpty)
           return null;
         return MaterialPageRoute<void>(
-          builder: (_) => PublicUserProfileScreen(
+          builder: (context) => PublicUserProfileScreen(
             userId: args.userId,
             loadPublicProfile: args.loadPublicProfile,
+            onMessage: args.chatRepository == null
+                ? null
+                : () async {
+                    try {
+                      final direct = await args.chatRepository!.openDirect(
+                        args.userId,
+                      );
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushNamed(
+                        groupChat,
+                        arguments: ChatRouteArgs(
+                          repository: args.chatRepository!,
+                          conversation: direct.conversation,
+                        ),
+                      );
+                    } catch (_) {
+                      if (context.mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Không thể bắt đầu cuộc trò chuyện.'),
+                          ),
+                        );
+                    }
+                  },
           ),
           settings: settings,
         );
@@ -485,6 +549,19 @@ abstract final class AppRoutes {
                   Navigator.of(context)
                       .pushNamed(groupInvitations, arguments: args)
                       .whenComplete(groupsController.refresh),
+              onChatRequests: () => Navigator.of(context).pushNamed(
+                chatRequests,
+                arguments: ChatRequestsRouteArgs(
+                  ChatRepository(ChatApi(args.repository.api.dio)),
+                ),
+              ),
+              onChat: () => Navigator.of(context).pushNamed(
+                chatHome,
+                arguments: ChatHomeRouteArgs(
+                  ChatRepository(ChatApi(args.repository.api.dio)),
+                  args.repository,
+                ),
+              ),
             );
           },
           settings: settings,
@@ -546,6 +623,24 @@ abstract final class AppRoutes {
                     api: ActivityApi(args.repository.api.dio),
                   ),
                   groupId: args.groupId,
+                ),
+              ),
+              onChatHome: () => Navigator.of(context).pushNamed(
+                chatHome,
+                arguments: ChatHomeRouteArgs(
+                  args.chatRepository ??
+                      ChatRepository(ChatApi(args.repository.api.dio)),
+                  args.repository,
+                ),
+              ),
+              onChat: () => Navigator.of(context).pushNamed(
+                groupChat,
+                arguments: ChatRouteArgs(
+                  repository:
+                      args.chatRepository ??
+                      ChatRepository(ChatApi(args.repository.api.dio)),
+                  groupId: args.groupId,
+                  groupRepository: args.repository,
                 ),
               ),
               onInviteLinks: () =>
@@ -621,6 +716,87 @@ abstract final class AppRoutes {
             controller: GroupActivityLogController(args.repository),
           ),
           settings: settings,
+        );
+      },
+    ),
+    groupChat: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ChatRouteArgs ||
+            (args.conversation == null &&
+                (args.groupId == null || args.groupId!.trim().isEmpty)))
+          return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) {
+            final groupId = args.conversation?.groupId ?? args.groupId;
+            return ChatScreen(
+              groupId: args.groupId,
+              initialConversation: args.conversation,
+              repository: args.repository,
+              onOpenGroupInfo: groupId == null || args.groupRepository == null
+                  ? null
+                  : () => Navigator.of(context).pushNamed(
+                      groupInfo,
+                      arguments: GroupInfoRouteArgs(
+                        repository: args.groupRepository!,
+                        groupId: groupId,
+                        chatRepository: args.repository,
+                      ),
+                    ),
+            );
+          },
+        );
+      },
+    ),
+    chatHome: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ChatHomeRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => ChatHomeScreen(
+            repository: args.chatRepository,
+            onGroups: () => Navigator.of(context).pushReplacementNamed(
+              groups,
+              arguments: GroupsRouteArgs(repository: args.groupRepository),
+            ),
+            onOpenConversation: (conversation) =>
+                Navigator.of(context).pushNamed(
+                  groupChat,
+                  arguments: ChatRouteArgs(
+                    repository: args.chatRepository,
+                    conversation: conversation,
+                    groupRepository: args.groupRepository,
+                  ),
+                ),
+          ),
+        );
+      },
+    ),
+    chatRequests: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ChatRequestsRouteArgs) return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => ChatRequestsScreen(
+            repository: args.repository,
+            onOpenDirect: (userId) async {
+              final direct = await args.repository.openDirect(userId);
+              if (!context.mounted) return;
+              Navigator.of(context).pushNamed(
+                groupChat,
+                arguments: ChatRouteArgs(
+                  repository: args.repository,
+                  conversation: direct.conversation,
+                ),
+              );
+            },
+          ),
         );
       },
     ),

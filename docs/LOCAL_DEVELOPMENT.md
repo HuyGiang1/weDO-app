@@ -42,3 +42,16 @@ multi-account integration harness is test-only and can be rerun with:
 cd D:\weDO-app\backend
 .\mvnw.cmd -Dtest=M8MultiAccountIntegrationTest test
 ```
+
+## M9 Chat REST Smoke
+
+With an authenticated user, open a group's conversation using
+`POST /api/v1/groups/{groupId}/conversation`, load pages from
+`GET /api/v1/conversations/{conversationId}/messages`, and send text using
+`POST /api/v1/conversations/{conversationId}/messages`. Group membership,
+archive state, direct-message privacy, request status and message mutation
+windows are enforced by the backend. M9 is REST-only; WebSocket delivery,
+typing, presence and push are M10. V4 reserves attachment persistence, but
+upload, storage ownership, and rendering are deferred beyond M9. M9 physical
+device verification on Samsung (`R58M36JQYVY`) passed user acceptance with
+healthy backend (`UP`), active `adb reverse tcp:8080`, and foreground APK.

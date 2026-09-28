@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -50,6 +51,9 @@ class BlockServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     @InjectMocks
     private BlockService blockService;
@@ -97,6 +101,7 @@ class BlockServiceTest {
         verify(userBlockRepository).saveAndFlush(any());
         verify(friendshipRepository).endActiveFriendshipBetween(eq(blockerId), eq(blockedId), any());
         verify(friendRequestRepository).cancelPendingBetween(eq(blockerId), eq(blockedId), any());
+        verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE message_requests"), any(Object[].class));
     }
 
     @Test

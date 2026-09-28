@@ -1647,7 +1647,7 @@ Backend reuses the canonical pair conversation and determines access status `OPE
 
 `GET /api/v1/conversations`
 
-Returns conversation identity, type, last message preview/time, unread count and appropriate presence indicator.
+Returns conversation identity, type, title, group avatar storage key, last-message preview/time and unread count. For an eligible active group member, listing also idempotently materializes the canonical group conversation when it does not yet exist; empty group chats are included. Group identity/avatar come from the Group record, and archived conversations are readable but read-only. This is a REST projection, not live presence.
 
 ### CHAT-03 Message Requests
 
@@ -1664,11 +1664,14 @@ Rules: before acceptance sender may send max 3 TEXT messages and no images/files
 
 `GET /api/v1/conversations/{conversationId}/messages?beforeSequence={seq}&limit=30`
 
-Must enforce group history policy, join time, delete-for-me rows, UNSENT representation, block/direct access and active/historical membership rules.
+Must enforce group history policy, join time, delete-for-me rows, UNSENT representation, block/direct access and active/historical membership rules. The page also returns each other eligible participant's authoritative `lastReadSequence` and public display/avatar projection. A reader is shown once under the newest loaded message whose sequence is at or below that reader's last-read sequence; live propagation is M10.
 
-### CHAT-06 Send Message
+### CHAT-06 Send Message (M9 REST)
 
-Primary realtime command is WebSocket `SEND_MESSAGE`.
+`POST /api/v1/conversations/{conversationId}/messages`
+
+M9 persists and returns the authoritative message over REST. It does not publish
+or broadcast events; delivery to other open clients is M10 WebSocket scope.
 
 ```json
 {
@@ -1681,22 +1684,26 @@ Primary realtime command is WebSocket `SEND_MESSAGE`.
 }
 ```
 
-Transaction: authorize conversation; validate Message Request restrictions; validate <=10 images; allocate monotonic conversation sequence; persist message; update conversation last_message; commit; publish/broadcast `MESSAGE_CREATED`. `clientMessageId` supports retry/idempotency.
+Transaction: authorize conversation; validate Message Request restrictions; allocate a monotonic conversation sequence; persist the message and update conversation timestamps. The M9 REST endpoint accepts text content and optional reply ID. V4's `message_attachments` table is reserved schema support; attachment upload, storage ownership, and rendering are deferred beyond M9. Clients must not submit arbitrary storage keys. REST does not broadcast `MESSAGE_CREATED`. M10 adds delivery/fanout and retry event semantics.
+
+### CHAT-REST Group Conversation
+
+`POST /api/v1/groups/{groupId}/conversation` creates or opens the group's single canonical conversation. A current ACTIVE group member is required. Archived groups remain readable but are read-only; removed, banned and non-member users cannot access the conversation.
 
 ### CHAT-07 Edit Message
 
 `PATCH /api/v1/messages/{messageId}`  
-Sender only, ACTIVE message, <=15 minutes. Preserve edit history and return/broadcast Edited state.
+Sender only, ACTIVE message, <=15 minutes by server time. Preserve edit history and return the authoritative edited message over REST. Realtime broadcast is M10.
 
 ### CHAT-08 Unsend Message
 
 `POST /api/v1/messages/{messageId}/unsend`  
-Sender only, <=15 minutes. Message becomes UNSENT, normal content is no longer exposed, and any active pin is removed automatically.
+Sender only, <=15 minutes by server time. Message becomes UNSENT, normal content is no longer exposed, and active pins and reactions are removed atomically. The endpoint returns the authoritative withdrawn message with no visible reactions; further reaction mutation is rejected. This withdraws it for everyone; realtime broadcast is M10.
 
 ### CHAT-09 Delete For Me
 
 `DELETE /api/v1/messages/{messageId}/me`  
-Creates message_hidden_users visibility row; does not affect other users.
+Creates a `message_hidden_users` visibility row at any time; hides the message only for the requesting user and does not affect other users. Flutter labels this separately as "Xóa tin nhắn"; unsend is "Thu hồi tin nhắn".
 
 ### CHAT-10 Reaction
 
@@ -1710,6 +1717,20 @@ Creates message_hidden_users visibility row; does not affect other users.
 
 No reaction -> create. Different emoji -> replace. Same emoji -> toggle off. Maximum one emoji/user/message is enforced by database key + service behavior.
 
+M9 quick-reaction values are constrained to `👍`, `❤️`, `😂`, `😮`, `😢`, and `😡`. UNSENT messages cannot be reacted to and never project reactions.
+
+`GET /api/v1/messages/{messageId}/reactions` returns a flat list of
+`{ user: { id, displayName, avatarUrl }, emoji }` public reactor projections.
+`avatarUrl` is a nullable, API-relative media URL, not a raw storage key.
+The current user is included normally; message `myReaction` remains unchanged.
+This read uses canonical conversation access plus history-policy join-time and
+hidden-for-me visibility checks. Cross-conversation outsiders and blocked direct
+participants cannot read identities. Visible UNSENT messages return `[]`.
+Archived groups remain readable for eligible members. Counts remain grouped by
+emoji in the message response; the compact badge shows at most two distinct emoji
+and the total count. Badge taps load a filterable reactor sheet over REST; refresh
+is explicit, with no polling or realtime infrastructure.
+
 ### CHAT-11 Read State
 
 `PUT /api/v1/conversations/{conversationId}/read-state`
@@ -1721,6 +1742,7 @@ No reaction -> create. Different emoji -> replace. Same emoji -> toggle off. Max
 ```
 
 Read state stores last-read sequence instead of one seen row per message.
+Message-history REST responses include other participants' read positions and avatar projections. Updated read positions appear on refresh/re-entry; subscription-based live updates are deferred to M10.
 
 ### CHAT-12 Pin Message
 
@@ -1735,6 +1757,15 @@ Owner/Admin or Member if group setting permits. Max 20 active pins/group convers
 `GET /api/v1/conversations/{conversationId}/messages/search?q=&senderId=&from=&to=`
 
 Search respects all history visibility, hidden and UNSENT rules.
+
+### CHAT-REST M9 Runtime Notes
+
+- `GET /api/v1/conversations` lists conversations the authenticated user may view.
+- `GET /api/v1/conversations/{conversationId}/messages` returns ascending sequence pages using `beforeSequence` and bounded `limit`.
+- `GET /api/v1/message-requests` lists incoming pending requests; receiver accept/decline uses CHAT-04.
+- Edit, unsend, delete-for-me, reaction, read-state, pin/unpin, pins and search are REST operations in M9.
+- Server time decides the edit/unsend 15-minute window. Client timestamps are never authorization inputs.
+- Presence, typing, push, WebSocket commands and Redis fanout are M10, not M9.
 
 ---
 

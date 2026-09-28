@@ -15,6 +15,7 @@ import com.wedo.backend.user.repository.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,17 +35,20 @@ public class BlockService {
     private final FriendshipRepository friendshipRepository;
     private final FriendRequestRepository friendRequestRepository;
     private final UserRepository userRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public BlockService(
             UserBlockRepository userBlockRepository,
             FriendshipRepository friendshipRepository,
             FriendRequestRepository friendRequestRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            JdbcTemplate jdbcTemplate
     ) {
         this.userBlockRepository = userBlockRepository;
         this.friendshipRepository = friendshipRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public void blockUser(UUID currentUserId, UUID targetUserId) {
@@ -74,6 +78,13 @@ public class BlockService {
 
         friendshipRepository.endActiveFriendshipBetween(currentUserId, targetUserId, now);
         friendRequestRepository.cancelPendingBetween(currentUserId, targetUserId, now);
+        jdbcTemplate.update("""
+                UPDATE message_requests mr SET status='CANCELLED',resolved_at=?,updated_at=?
+                FROM direct_conversations dc WHERE mr.conversation_id=dc.conversation_id
+                  AND mr.status='PENDING' AND dc.user_id_1 IN (?,?) AND dc.user_id_2 IN (?,?)
+                  AND dc.user_id_1 <> dc.user_id_2
+                """, java.sql.Timestamp.from(now), java.sql.Timestamp.from(now),
+                currentUserId, targetUserId, currentUserId, targetUserId);
     }
 
     public void unblockUser(UUID currentUserId, UUID targetUserId) {

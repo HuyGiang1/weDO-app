@@ -25,8 +25,8 @@ import 'package:mobile/features/profile/presentation/screens/public_user_profile
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 37 registered production routes', () {
-      expect(AppRoutes.routes.length, 37);
+    test('contains exactly 38 registered production routes', () {
+      expect(AppRoutes.routes.length, 38);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -66,6 +66,7 @@ void main() {
         AppRoutes.chatRequests,
         AppRoutes.groupExpenses,
         AppRoutes.groupSettlements,
+        AppRoutes.groupFund,
       };
 
       expect(AppRoutes.routes.keys.toSet(), expectedRoutes);
@@ -103,7 +104,8 @@ void main() {
                   entry.key == AppRoutes.chatHome ||
                   entry.key == AppRoutes.chatRequests ||
                   entry.key == AppRoutes.groupExpenses ||
-                  entry.key == AppRoutes.groupSettlements
+                  entry.key == AppRoutes.groupSettlements ||
+                  entry.key == AppRoutes.groupFund
               ? AppRouteAccess.authenticated
               : AppRouteAccess.public,
           reason: 'Route ${entry.key} must declare its intended access',

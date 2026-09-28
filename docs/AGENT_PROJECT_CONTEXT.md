@@ -83,8 +83,8 @@ Reference: `docs/DEVELOPMENT_PLAN_MILESTONES_v1.0_FULL.md` §2.
 | `M9` | Chat REST (Conversations, Group/DM, Message Requests, Reactions, Read State, Pins, Search) | Completed |
 | `M10` | Realtime WebSocket (`/ws`) + Redis (Live delivery, Typing, Presence) | Completed |
 | `M11` | Expense + Balance (Equal/Custom split, derived debt) | Completed |
-| `M12` | Settlement (Two-sided confirmation workflow) | Implemented; pre-commit review on `feat/m12-settlement` |
-| `M13` | Group Fund (Collections, Contributions, Fund Expenses, Reimbursements, Ledger) | Planned |
+| `M12` | Settlement (Two-sided confirmation workflow) | Completed |
+| `M13` | Group Fund (Collections, Contributions, Fund Expenses, Reimbursements, Ledger) | Implemented; pre-commit review on `feat/m13-group-fund` |
 | `M14` | Notification + FCM | Planned |
 | `M15` | Calendar + Reminder | Planned |
 | `M16` | Media + Search | Planned |

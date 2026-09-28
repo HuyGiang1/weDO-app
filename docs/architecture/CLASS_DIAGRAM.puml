@@ -38,6 +38,13 @@ class ExpenseDetail { id: UUID\namount: BigDecimal\nstatus: ACTIVE | CANCELLED\n
 class MyBalances { totalOwedByMe: BigDecimal\ntotalOwedToMe: BigDecimal\nbalances: UserBalance[] }
 class CreateSettlementRequest { otherUserId: UUID\namount: BigDecimal\ndeclarationType: I_PAID | I_RECEIVED }
 class SettlementResponse { id: UUID\ngroupId: UUID\nfromUser: UserSummary\ntoUser: UserSummary\namount: BigDecimal\nstatus: PENDING | COMPLETED | REJECTED | CANCELLED\ndeclarationType: I_PAID | I_RECEIVED\nstatusHistory: SettlementStatusChange[]\npermissions: SettlementPermissionProjection }
+class FundController
+class FundService
+class FundDetailResponse { fundId: UUID\ngroupId: UUID\nname: String\ncurrency: String\nstatus: ACTIVE | CLOSED\nledgerBalance: BigDecimal\navailableBalance: BigDecimal\npendingReimbursementsAmount: BigDecimal\nmanagers: FundManagerResponse[] }
+class CollectionDetailResponse { collectionId: UUID\nfundId: UUID\ntitle: String\nstatus: OPEN | CLOSED | CANCELLED\nobligations: CollectionObligationResponse[]\ncontributions: ContributionResponse[] }
+class FundExpenseResponse { expenseId: UUID\nfundId: UUID\ntitle: String\namount: BigDecimal\ntransactionId: UUID\nreversed: boolean }
+class ReimbursementResponse { reimbursementId: UUID\nfundId: UUID\namount: BigDecimal\nstatus: PENDING | COMPLETED | REJECTED | CANCELLED\ntransactionId: UUID?\nreversed: boolean }
+class FundTransactionResponse { transactionId: UUID\nfundId: UUID\ntransactionType: CONTRIBUTION | FUND_EXPENSE | REIMBURSEMENT | REVERSAL\ndirection: IN | OUT\namount: BigDecimal\nreversed: boolean\noriginalTransactionId: UUID? }
 UserEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupInviteLinkEntity
@@ -80,13 +87,25 @@ ConversationEntity "1" -- "0..*" ConversationReadStateEntity
 GroupEntity "1" -- "0..1" GroupConversationEntity
 GroupEntity "1" -- "0..*" ExpenseDetail : groupId
 GroupEntity "1" -- "0..*" SettlementResponse : groupId
+GroupEntity "1" -- "0..1" FundDetailResponse : groupId
+FundDetailResponse "1" -- "0..*" CollectionDetailResponse : fundId
+FundDetailResponse "1" -- "0..*" FundExpenseResponse : fundId
+FundDetailResponse "1" -- "0..*" ReimbursementResponse : fundId
+FundDetailResponse "1" -- "0..*" FundTransactionResponse : fundId
 ActivityEntity "0..1" -- "0..*" ExpenseDetail : optional activityId
+ActivityEntity "0..1" -- "0..*" FundExpenseResponse : optional activityId
 ExpenseController --> ExpenseService
 ExpenseService ..> ExpenseRequest : validates and allocates
 ExpenseService ..> ExpenseDetail : projects persisted facts
 ExpenseService ..> MyBalances : derives from expenses and settlements
 ExpenseService ..> CreateSettlementRequest : validates debt and pending reservations
 ExpenseService ..> SettlementResponse : manages PENDING/COMPLETED/REJECTED/CANCELLED lifecycle
+FundController --> FundService
+FundService ..> FundDetailResponse : derives ledgerBalance and availableBalance
+FundService ..> CollectionDetailResponse : manages obligations and contributions
+FundService ..> FundExpenseResponse : records direct fund outflow
+FundService ..> ReimbursementResponse : reserves pending and disburses approved
+FundService ..> FundTransactionResponse : appends immutable IN/OUT/REVERSAL ledger
 UserEntity "1" -- "0..*" MessageReactionEntity
 UserEntity "1" -- "0..*" ConversationReadStateEntity
 ChatService ..> ChatRealtimeTransactionalBridge : publishes AFTER_COMMIT domain events

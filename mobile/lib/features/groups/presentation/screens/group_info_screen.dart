@@ -13,6 +13,7 @@ class GroupInfoScreen extends StatefulWidget {
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
   final VoidCallback? onExpenses;
+  final VoidCallback? onSettlements;
   final VoidCallback? onChat;
   final VoidCallback? onChatHome;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
@@ -29,6 +30,7 @@ class GroupInfoScreen extends StatefulWidget {
     required this.onLeave,
     this.onActivities,
     this.onExpenses,
+    this.onSettlements,
     this.onChat,
     this.onChatHome,
     this.onInviteLinks,
@@ -102,6 +104,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onActivityLog: widget.onActivityLog,
             onActivities: widget.onActivities,
             onExpenses: widget.onExpenses,
+            onSettlements: widget.onSettlements,
             onChat: widget.onChat,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
@@ -129,6 +132,7 @@ class _GroupInfoContent extends StatelessWidget {
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
   final VoidCallback? onExpenses;
+  final VoidCallback? onSettlements;
   final VoidCallback? onChat;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
@@ -144,6 +148,7 @@ class _GroupInfoContent extends StatelessWidget {
     required this.onLeave,
     this.onActivities,
     this.onExpenses,
+    this.onSettlements,
     this.onChat,
     this.onInviteLinks,
     this.onJoinRequests,
@@ -417,6 +422,15 @@ class _GroupInfoContent extends StatelessWidget {
                   iconColor: AppColors.primary,
                   title: 'Chi tiêu',
                   onTap: onExpenses!,
+                ),
+                const Divider(height: 1),
+              ],
+              if (onSettlements != null) ...[
+                _ActionTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  iconColor: AppColors.primary,
+                  title: 'Thanh toán công nợ',
+                  onTap: onSettlements!,
                 ),
                 const Divider(height: 1),
               ],

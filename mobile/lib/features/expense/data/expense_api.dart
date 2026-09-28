@@ -70,4 +70,58 @@ class ExpenseApi {
     () => dio.get('/api/v1/groups/${Uri.encodeComponent(groupId)}/balances/me'),
     MyExpenseBalances.fromJson,
   );
+
+  Future<List<SettlementItem>> listSettlements(
+    String groupId, {
+    String? status,
+    bool? involvingMe,
+    String? otherUserId,
+  }) => _list(
+    () => dio.get(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/settlements',
+      queryParameters: {
+        if (status != null) 'status': status,
+        if (involvingMe != null) 'involvingMe': involvingMe,
+        if (otherUserId != null) 'otherUserId': otherUserId,
+      },
+    ),
+    SettlementItem.fromJson,
+  );
+
+  Future<SettlementItem> settlementDetail(String settlementId) => _object(
+    () => dio.get('/api/v1/settlements/${Uri.encodeComponent(settlementId)}'),
+    SettlementItem.fromJson,
+  );
+
+  Future<SettlementItem> createSettlement(
+    String groupId,
+    CreateSettlementDraft draft,
+  ) => _object(
+    () => dio.post(
+      '/api/v1/groups/${Uri.encodeComponent(groupId)}/settlements',
+      data: draft.toJson(),
+    ),
+    SettlementItem.fromJson,
+  );
+
+  Future<SettlementItem> confirmSettlement(String settlementId) => _object(
+    () => dio.post(
+      '/api/v1/settlements/${Uri.encodeComponent(settlementId)}/confirm',
+    ),
+    SettlementItem.fromJson,
+  );
+
+  Future<SettlementItem> rejectSettlement(String settlementId) => _object(
+    () => dio.post(
+      '/api/v1/settlements/${Uri.encodeComponent(settlementId)}/reject',
+    ),
+    SettlementItem.fromJson,
+  );
+
+  Future<SettlementItem> cancelSettlement(String settlementId) => _object(
+    () => dio.post(
+      '/api/v1/settlements/${Uri.encodeComponent(settlementId)}/cancel',
+    ),
+    SettlementItem.fromJson,
+  );
 }

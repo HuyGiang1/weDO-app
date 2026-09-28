@@ -194,3 +194,21 @@
 - **Decision**: Expense and Balance response amounts are decimal JSON strings, preserving all `NUMERIC(19,2)` digits across client JSON decoding. Archived-group and cancelled-expense responses disable both `canEdit` and `canCancel`. Flutter renders each permission independently, displays instants in local time, and translates audit states without showing internal reference IDs.
 - **Reason / Source**: M11 money precision, archive lifecycle, Vietnamese UI and server-authoritative permission requirements; focused boundary and widget tests.
 - **Consequences**: No binary floating-point loss on the wire, no advertised mutation on archived groups, and readable consumer history.
+
+---
+
+### DEC-M12-01 — Peer-to-Peer Two-Sided Settlement & Pending Debt Reservation (`SET-01`..`SET-05`)
+- **ID**: `DEC-M12-01`
+- **Milestone**: `M12`
+- **Decision**:
+  1. **Reuse `V7__finance.sql` Schema Without New Migration**: M12 uses the existing `settlements` and `settlement_status_history` tables (`V7__finance.sql`). No authoritative `debts` table is created.
+  2. **Direction & Counterparty Authority**:
+     - `I_PAID`: `from_user_id = caller`, `to_user_id = otherUserId`. Only `to_user_id` (creditor) can `confirm` or `reject`.
+     - `I_RECEIVED`: `from_user_id = otherUserId`, `to_user_id = caller`. Only `from_user_id` (debtor) can `confirm` or `reject`.
+     - Only `created_by` can `cancel` while `status = PENDING`.
+  3. **Pending Reservation & Derived Debt Reduction (`SET-02`, `SET-05`)**:
+     - `PENDING`, `REJECTED`, and `CANCELLED` settlements do not reduce derived pairwise debt (`ACTIVE` expense shares minus `COMPLETED` settlements).
+     - However, `PENDING` settlements reserve outstanding pairwise debt (`ledger.pending`) under a `SELECT id FROM groups WHERE id=? FOR UPDATE` row lock so concurrent settlement requests cannot over-settle remaining debt (`NO_OUTSTANDING_DEBT` when debt is zero/opposite; `SETTLEMENT_AMOUNT_EXCEEDS_DEBT` when exceeding `currentDebt - pendingReserved`).
+     - Confirming a `PENDING` settlement (`SELECT ... FOR UPDATE` on both `groups` and `settlements`) re-validates `amount <= currentDebt`, transitions `status` to `COMPLETED`, sets `completed_at`, records `settlement_status_history`, and immediately reduces derived pairwise debt.
+- **Reason / Source**: `docs/BA_CONSOLIDATED_SPECIFICATION_v1.0.md` §15.2 (`SET-01`..`SET-05`), `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §19, `docs/ERD_DATABASE_DESIGN_v1.0.md` §14 (`V7__finance.sql`).
+- **Consequences**: Prevents unilateral debt erasure, double confirmation, and concurrent over-settlement while preserving an immutable status history audit trail.

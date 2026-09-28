@@ -25,4 +25,29 @@ class ExpenseRepository {
   Future<ExpenseDetail> cancel(String id) => _guard(() => api.cancel(id));
   Future<MyExpenseBalances> myBalances(String groupId) =>
       _guard(() => api.myBalances(groupId));
+  Future<List<SettlementItem>> listSettlements(
+    String groupId, {
+    String? status,
+    bool? involvingMe,
+    String? otherUserId,
+  }) => _guard(
+    () => api.listSettlements(
+      groupId,
+      status: status,
+      involvingMe: involvingMe,
+      otherUserId: otherUserId,
+    ),
+  );
+  Future<SettlementItem> settlementDetail(String settlementId) =>
+      _guard(() => api.settlementDetail(settlementId));
+  Future<SettlementItem> createSettlement(
+    String groupId,
+    CreateSettlementDraft draft,
+  ) => _guard(() => api.createSettlement(groupId, draft));
+  Future<SettlementItem> confirmSettlement(String settlementId) =>
+      _guard(() => api.confirmSettlement(settlementId));
+  Future<SettlementItem> rejectSettlement(String settlementId) =>
+      _guard(() => api.rejectSettlement(settlementId));
+  Future<SettlementItem> cancelSettlement(String settlementId) =>
+      _guard(() => api.cancelSettlement(settlementId));
 }

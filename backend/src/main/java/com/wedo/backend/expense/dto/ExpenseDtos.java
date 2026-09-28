@@ -63,4 +63,39 @@ public final class ExpenseDtos {
             List<BalanceExpense> expenses, List<BalanceSettlement> settlements,
             List<BalanceSettlement> pendingSettlements
     ) { }
+
+    public record CreateSettlementRequest(
+            @NotNull UUID otherUserId,
+            @NotNull BigDecimal amount,
+            @NotBlank String declarationType
+    ) { }
+
+    public record SettlementPermissionProjection(
+            boolean canConfirm,
+            boolean canReject,
+            boolean canCancel
+    ) { }
+
+    public record SettlementStatusChange(
+            String fromStatus,
+            String toStatus,
+            UserSummary changedBy,
+            Instant createdAt
+    ) { }
+
+    public record SettlementResponse(
+            UUID id,
+            UUID groupId,
+            UserSummary fromUser,
+            UserSummary toUser,
+            UserSummary createdBy,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amount,
+            String status,
+            String declarationType,
+            Instant completedAt,
+            Instant createdAt,
+            Instant updatedAt,
+            List<SettlementStatusChange> statusHistory,
+            SettlementPermissionProjection permissions
+    ) { }
 }

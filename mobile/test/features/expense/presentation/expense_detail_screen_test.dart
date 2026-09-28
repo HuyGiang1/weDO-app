@@ -227,25 +227,55 @@ void main() {
     },
   );
 
-  testWidgets('balances display server directions and no settlement action', (
-    tester,
-  ) async {
-    final adapter = _ExpenseAdapter();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ExpenseBalanceScreen(
-          groupId: 'group-1',
-          repository: ExpenseRepository(ExpenseApi(_dio(adapter))),
+  testWidgets(
+    'balances display server directions, support creating settlement, and render settlement history & detail',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final adapter = _ExpenseAdapter();
+      final repository = ExpenseRepository(ExpenseApi(_dio(adapter)));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ExpenseBalanceScreen(
+            groupId: 'group-1',
+            repository: repository,
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Bạn đang nợ'), findsWidgets);
-    expect(find.text('Bạn được nhận'), findsWidgets);
-    expect(find.text('10,01 ₫'), findsWidgets);
-    expect(find.text('Payer'), findsOneWidget);
-    expect(find.text('Thanh toán'), findsNothing);
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Bạn đang nợ'), findsWidgets);
+      expect(find.text('Bạn được nhận'), findsWidgets);
+      expect(find.text('10,01 ₫'), findsWidgets);
+      expect(find.text('Payer'), findsWidgets);
+      expect(find.text('Thanh toán'), findsOneWidget);
+      expect(find.text('Lịch sử thanh toán'), findsOneWidget);
+
+      await tester.tap(find.text('Thanh toán'));
+      await tester.pumpAndSettle();
+      expect(find.text('Thanh toán cho Payer'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Số tiền thanh toán'),
+        '5.00',
+      );
+      await tester.tap(find.text('Gửi xác nhận'));
+      await tester.pumpAndSettle();
+      expect(adapter.settlementDraft?['declarationType'], 'I_PAID');
+      expect(adapter.settlementDraft?['otherUserId'], 'payer-1');
+      expect(adapter.settlementDraft?['amount'], '5.00');
+
+      await tester.ensureVisible(find.text('Member → Payer').first);
+      await tester.tap(find.text('Member → Payer').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Chi tiết thanh toán'), findsOneWidget);
+      expect(find.text('Lịch sử trạng thái'), findsOneWidget);
+      expect(find.text('Xác nhận'), findsOneWidget);
+      await tester.tap(find.text('Xác nhận'));
+      await tester.pumpAndSettle();
+      expect(adapter.settlementConfirmRequested, isTrue);
+      expect(find.text('Đã hoàn tất'), findsWidgets);
+    },
+  );
 
   test('repository maps API failure to Vietnamese', () async {
     final adapter = _ExpenseAdapter()..failureCode = 'ACCESS_DENIED';
@@ -299,10 +329,12 @@ Future<void> _detail(WidgetTester tester, _ExpenseAdapter adapter) async {
 
 class _ExpenseAdapter implements HttpClientAdapter {
   bool cancelRequested = false;
+  bool settlementConfirmRequested = false;
   bool canEdit = true, canCancel = true, empty = false;
   String? failureCode, mutationPath;
   Completer<void>? gate;
   Map<String, dynamic>? draft;
+  Map<String, dynamic>? settlementDraft;
   final List<String> paths = [];
   int memberLoads = 0;
 
@@ -343,6 +375,48 @@ class _ExpenseAdapter implements HttpClientAdapter {
           },
         ],
       };
+    } else if (options.path.contains('/settlements')) {
+      if (options.path.endsWith('/confirm')) {
+        settlementConfirmRequested = true;
+      }
+      if (options.data is Map) {
+        settlementDraft = Map<String, dynamic>.from(options.data as Map);
+      }
+      final settlementObj = {
+        'id': 'settlement-1',
+        'groupId': 'group-1',
+        'fromUser': {'id': 'member-1', 'displayName': 'Member'},
+        'toUser': {'id': 'payer-1', 'displayName': 'Payer'},
+        'amount': '5.00',
+        'declarationType': 'I_PAID',
+        'status': settlementConfirmRequested ? 'COMPLETED' : 'PENDING',
+        'createdBy': {'id': 'member-1', 'displayName': 'Member'},
+        'confirmedBy': settlementConfirmRequested
+            ? {'id': 'payer-1', 'displayName': 'Payer'}
+            : null,
+        'confirmedAt': settlementConfirmRequested
+            ? '2026-09-28T10:05:00Z'
+            : null,
+        'note': 'Partial',
+        'permissions': {
+          'canConfirm': !settlementConfirmRequested,
+          'canReject': !settlementConfirmRequested,
+          'canCancel': false,
+        },
+        'statusHistory': [
+          {
+            'fromStatus': null,
+            'toStatus': 'PENDING',
+            'changedBy': {'id': 'member-1', 'displayName': 'Member'},
+            'createdAt': '2026-09-28T10:00:00Z',
+          },
+        ],
+        'createdAt': '2026-09-28T10:00:00Z',
+        'updatedAt': '2026-09-28T10:00:00Z',
+      };
+      response = options.method == 'GET' && options.path.endsWith('/settlements')
+          ? [settlementObj]
+          : settlementObj;
     } else {
       if (options.path.endsWith('/cancel')) cancelRequested = true;
       if (options.data is Map) {

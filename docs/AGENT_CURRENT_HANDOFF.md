@@ -4,9 +4,9 @@
 
 ## 1. Current Git & Branch State
 
-- **Active Branch**: `feat/m11-expense-balance`
-- **Base Commit (`dev`)**: `3c0b151aaaa2d5838ceb354778df43488e164c76`
-- **Active Milestone**: **M11 — Expense + Balance** (implemented and verified; M10 realtime package restored to committed HEAD `3c0b151aaaa2d5838ceb354778df43488e164c76`; ready for user review / commit authorization; no stage/commit/push performed)
+- **Active Branch**: `feat/m12-settlement`
+- **Base Commit (`dev`)**: `4495fd46da131301365b890a6c63efda510ca1e7` (M11 merged & closed)
+- **Active Milestone**: **M12 — Settlement / Repayment** (`SET-01`..`SET-05` implemented and verified end-to-end across backend, Flutter, and Samsung physical device `R58M36JQYVY`; ready for user review / commit authorization; no stage/commit/push performed)
 - **Preserved Stash**: `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync` — **DO NOT** pop, apply, or drop.
 - **Local-Only Untracked Files (Never Stage/Commit)**:
   - `docs/LEARNING_HANDBOOK_M0_M2.md`
@@ -135,9 +135,60 @@ Canonical docs/handoff:
 - `docs/AGENT_CURRENT_HANDOFF.md`
 - `docs/AGENT_DECISION_LOG.md`
 
-Explicit exclusions:
-- `docs/LEARNING_HANDBOOK_M0_M2.md`
-- `docs/M8_STITCH_FIDELITY_INVENTORY.md`
-- `.stitch/**`, `.dev-runtime/**`, `.dev-logs/**`, generated build/cache/APK files and temporary device captures
+## 5. Current M12 Handoff (`feat/m12-settlement`)
 
-There are 23 M11 candidate files: 4 backend production, 1 backend test, 8 Flutter production, 3 Flutter tests and 7 documentation files. No migration candidate. Recommended commit subject upon explicit approval: `feat(m11): complete expense and balance runtime`.
+### Implementation Summary
+- **Database Schema (`V7__finance.sql` — No New Migration)**:
+  - Uses existing `settlements` and `settlement_status_history` tables (`V7__finance.sql`). No authoritative `debts` table and no M13 Group Fund tables are modified.
+- **Backend (`ExpenseController`, `ExpenseService`, `ExpenseDtos`, `ErrorCode`, `SettlementServiceIntegrationTest`)**:
+  - Endpoints:
+    - `POST /api/v1/groups/{groupId}/settlements`
+    - `GET /api/v1/groups/{groupId}/settlements`
+    - `GET /api/v1/settlements/{settlementId}`
+    - `POST /api/v1/settlements/{settlementId}/confirm`
+    - `POST /api/v1/settlements/{settlementId}/reject`
+    - `POST /api/v1/settlements/{settlementId}/cancel`
+  - Enforces `SET-01`..`SET-05`: direction derivation (`I_PAID` vs `I_RECEIVED`), active debt validation (`NO_OUTSTANDING_DEBT`, `SETTLEMENT_AMOUNT_EXCEEDS_DEBT`), pending debt reservation (`ledger.pending`), counterparty-only confirmation/rejection (`SETTLEMENT_CONFIRMATION_NOT_ALLOWED`), creator-only cancellation while `PENDING`, `SETTLEMENT_ALREADY_RESOLVED` protection under `FOR UPDATE` locking, archived group read-only projection, and `settlement_status_history` logging.
+- **Mobile (`expense_models.dart`, `expense_failure.dart`, `expense_api.dart`, `expense_repository.dart`, `expense_controllers.dart`, `expense_screens.dart`, `routes.dart`, `group_info_screen.dart`)**:
+  - `ExpenseBalanceScreen` (`Số dư nhóm` / `AppRoutes.groupSettlements = '/groups/settlements'`) displays member balances with `Thanh toán` (`YOU_OWE` -> `I_PAID`) and `Đã nhận tiền` (`OWES_YOU` -> `I_RECEIVED`) actions, prefilled settlement dialog supporting partial or full repayment, and `Lịch sử thanh toán` with server-projected `Xác nhận` / `Từ chối` / `Hủy yêu cầu` actions.
+  - `SettlementDetailScreen` (`Chi tiết thanh toán`) displays full settlement attributes, localized status badges, action buttons, and `Lịch sử trạng thái` (`statusHistory`) in local time.
+  - `GroupInfoScreen` adds `Thanh toán công nợ` navigation directly to `AppRoutes.groupSettlements`.
+
+### Latest Verification (2026-09-28)
+
+| Gate | Authoritative result |
+| --- | --- |
+| Focused backend `ExpenseServiceIntegrationTest,SettlementServiceIntegrationTest` | 17 run, 0 failures, 0 errors, 0 skipped (`BUILD SUCCESS`) |
+| Full backend `mvnw.cmd test` | 546 run, 0 failures, 0 errors, 1 skipped (`BUILD SUCCESS`) |
+| `flutter analyze` | No issues found |
+| Complete `flutter test --reporter compact` | 642 passed, 0 failed |
+| Debug APK (`WEDO_API_BASE_URL=http://127.0.0.1:8080`) | Built & installed (`mobile/build/app/outputs/flutter-apk/app-debug.apk`) |
+| Samsung `R58M36JQYVY` Physical-Device E2E & Multi-Account QA | Verified `owner@wedo.local`, `member1@wedo.local`, `outsider@wedo.local`: initial 150,000.00 debt -> 60,000.00 `PENDING` (balance remains 150,000.00) -> 100,000.00 overpayment rejected (`SETTLEMENT_AMOUNT_EXCEEDS_DEBT`) -> outsider rejected (`404 GROUP_NOT_FOUND`) -> 60,000.00 confirmed (`COMPLETED`, remaining debt 90,000.00) -> 90,000.00 `I_RECEIVED` confirmed (`COMPLETED`, remaining debt 0.00) -> Samsung UI live confirmation of 20,000.00 (`50.000 ₫` -> `30.000 ₫`) & `SettlementDetailScreen` status history verified |
+| Migration audit | V0..V12 unchanged; no new migration |
+
+### Exact M12 Include Candidates (Not Staged)
+- Backend production:
+  - `backend/src/main/java/com/wedo/backend/common/error/ErrorCode.java`
+  - `backend/src/main/java/com/wedo/backend/expense/controller/ExpenseController.java`
+  - `backend/src/main/java/com/wedo/backend/expense/dto/ExpenseDtos.java`
+  - `backend/src/main/java/com/wedo/backend/expense/service/ExpenseService.java`
+- Backend tests:
+  - `backend/src/test/java/com/wedo/backend/expense/SettlementServiceIntegrationTest.java`
+- Flutter production:
+  - `mobile/lib/app/routes.dart`
+  - `mobile/lib/features/groups/presentation/screens/group_info_screen.dart`
+  - `mobile/lib/features/expense/application/expense_controllers.dart`
+  - `mobile/lib/features/expense/data/expense_api.dart`
+  - `mobile/lib/features/expense/data/expense_failure.dart`
+  - `mobile/lib/features/expense/data/expense_models.dart`
+  - `mobile/lib/features/expense/data/expense_repository.dart`
+  - `mobile/lib/features/expense/presentation/expense_screens.dart`
+- Flutter tests:
+  - `mobile/test/app/routes_test.dart`
+  - `mobile/test/features/expense/data/expense_models_test.dart`
+  - `mobile/test/features/expense/presentation/expense_detail_screen_test.dart`
+- Canonical docs/handoff:
+  - `docs/AGENT_PROJECT_CONTEXT.md`
+  - `docs/AGENT_CURRENT_HANDOFF.md`
+  - `docs/AGENT_DECISION_LOG.md`
+  - `docs/architecture/CLASS_DIAGRAM.puml`

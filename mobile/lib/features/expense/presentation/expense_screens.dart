@@ -62,15 +62,19 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
       title: const Text('Chi tiêu'),
       actions: [
         IconButton(
-          tooltip: 'Số dư',
-          onPressed: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(
-              builder: (_) => ExpenseBalanceScreen(
-                groupId: widget.groupId,
-                repository: widget.repository,
-              ),
-            ),
-          ),
+          tooltip: 'Số dư & Thanh toán',
+          onPressed: () => Navigator.of(context)
+              .push<void>(
+                MaterialPageRoute(
+                  builder: (_) => ExpenseBalanceScreen(
+                    groupId: widget.groupId,
+                    repository: widget.repository,
+                  ),
+                ),
+              )
+              .then((_) {
+                if (mounted) _controller.load(widget.groupId);
+              }),
           icon: const Icon(Icons.account_balance_wallet_outlined),
         ),
       ],
@@ -102,14 +106,18 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
               if (state.balances != null)
                 _BalanceSummary(
                   balances: state.balances!,
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => ExpenseBalanceScreen(
-                        groupId: widget.groupId,
-                        repository: widget.repository,
-                      ),
-                    ),
-                  ),
+                  onTap: () => Navigator.of(context)
+                      .push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => ExpenseBalanceScreen(
+                            groupId: widget.groupId,
+                            repository: widget.repository,
+                          ),
+                        ),
+                      )
+                      .then((_) {
+                        if (mounted) _controller.load(widget.groupId);
+                      }),
                 ),
               if (state.failure != null)
                 _InlineFailure(
@@ -675,7 +683,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   );
 }
 
-class ExpenseBalanceScreen extends StatelessWidget {
+class ExpenseBalanceScreen extends StatefulWidget {
   final String groupId;
   final ExpenseRepository repository;
   const ExpenseBalanceScreen({
@@ -685,50 +693,654 @@ class ExpenseBalanceScreen extends StatelessWidget {
   });
 
   @override
+  State<ExpenseBalanceScreen> createState() => _ExpenseBalanceScreenState();
+}
+
+class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
+  late final SettlementBalanceController _controller =
+      SettlementBalanceController(widget.repository);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.load(widget.groupId);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openCreateSettlementDialog(ExpenseBalanceEntry entry) async {
+    final declarationType = entry.direction == 'YOU_OWE'
+        ? 'I_PAID'
+        : 'I_RECEIVED';
+    final amountController = TextEditingController(text: entry.amount.decimal);
+    final formKey = GlobalKey<FormState>();
+
+    final draft = await showDialog<CreateSettlementDraft>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          declarationType == 'I_PAID'
+              ? 'Thanh toán cho ${entry.user.displayName}'
+              : 'Xác nhận nhận tiền từ ${entry.user.displayName}',
+        ),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Dư nợ hiện tại: ${entry.amount.formatted}',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Số tiền thanh toán',
+                  helperText: 'Có thể trả một phần hoặc toàn bộ',
+                ),
+                validator: (value) {
+                  final parsed = ExpenseMoney.parseInput((value ?? '').trim());
+                  if (parsed == null || !parsed.isPositive) {
+                    return 'Vui lòng nhập số tiền hợp lệ lớn hơn 0';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              final parsed = ExpenseMoney.parseInput(
+                amountController.text.trim(),
+              )!;
+              Navigator.of(ctx).pop(
+                CreateSettlementDraft(
+                  declarationType: declarationType,
+                  otherUserId: entry.user.id,
+                  amount: parsed,
+                ),
+              );
+            },
+            child: const Text('Gửi xác nhận'),
+          ),
+        ],
+      ),
+    );
+
+    if (draft == null || !mounted) return;
+    final created = await _controller.createSettlement(widget.groupId, draft);
+    if (!mounted) return;
+    if (created != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã tạo yêu cầu thanh toán chờ đối phương xác nhận.'),
+        ),
+      );
+    } else if (_controller.state.failure != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_controller.state.failure!)),
+      );
+    }
+  }
+
+  Future<void> _performAction(
+    Future<SettlementItem?> Function() action,
+    String successMessage,
+  ) async {
+    final result = await action();
+    if (!mounted) return;
+    if (result != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
+    } else if (_controller.state.failure != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_controller.state.failure!)));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.background,
-    appBar: AppBar(title: const Text('Số dư nhóm')),
-    body: FutureBuilder<MyExpenseBalances>(
-      future: repository.myBalances(groupId),
+    appBar: AppBar(
+      title: const Text('Số dư nhóm'),
+      actions: [
+        IconButton(
+          tooltip: 'Làm mới',
+          onPressed: () => _controller.load(widget.groupId),
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+    ),
+    body: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final state = _controller.state;
+        if (state.loading && state.balances == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (state.failure != null && state.balances == null) {
+          return _FailureState(
+            message: state.failure!,
+            onRetry: () => _controller.load(widget.groupId),
+          );
+        }
+        final balances = state.balances;
+        if (balances == null) {
+          return const Center(child: Text('Chưa thể tải số dư.'));
+        }
+        return RefreshIndicator(
+          onRefresh: () => _controller.load(widget.groupId),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            children: [
+              _BalanceSummary(balances: balances),
+              if (state.failure != null)
+                _InlineFailure(
+                  message: state.failure!,
+                  onRetry: () => _controller.load(widget.groupId),
+                ),
+              const SizedBox(height: 16),
+              Text(
+                'Công nợ thành viên',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (balances.balances.isEmpty)
+                const _EmptyState(text: 'Hiện không có khoản nợ trong nhóm.')
+              else
+                ...balances.balances.map(
+                  (entry) => Card(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    elevation: 0,
+                    color: AppColors.surfaceContainerLowest,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              UserAvatar(
+                                displayName: entry.user.displayName,
+                                avatarStorageKey: entry.user.avatarStorageKey,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      entry.user.displayName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      entry.direction == 'OWES_YOU'
+                                          ? 'Bạn được nhận'
+                                          : 'Bạn đang nợ',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                entry.amount.formatted,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.tonalIcon(
+                              onPressed: state.working
+                                  ? null
+                                  : () => _openCreateSettlementDialog(entry),
+                              icon: Icon(
+                                entry.direction == 'YOU_OWE'
+                                    ? Icons.payments_outlined
+                                    : Icons.call_received_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                entry.direction == 'YOU_OWE'
+                                    ? 'Thanh toán'
+                                    : 'Đã nhận tiền',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 20),
+              Text(
+                'Lịch sử thanh toán',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (state.settlements.isEmpty)
+                const _EmptyState(text: 'Chưa có giao dịch thanh toán nào.')
+              else
+                ...state.settlements.map(
+                  (item) => _SettlementRow(
+                    settlement: item,
+                    working: state.working,
+                    onTap: () => Navigator.of(context)
+                        .push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => SettlementDetailScreen(
+                              groupId: widget.groupId,
+                              settlementId: item.id,
+                              repository: widget.repository,
+                            ),
+                          ),
+                        )
+                        .then((_) {
+                          if (mounted) _controller.load(widget.groupId);
+                        }),
+                    onConfirm: item.permissions.canConfirm
+                        ? () => _performAction(
+                            () => _controller.confirm(widget.groupId, item.id),
+                            'Đã xác nhận khoản thanh toán.',
+                          )
+                        : null,
+                    onReject: item.permissions.canReject
+                        ? () => _performAction(
+                            () => _controller.reject(widget.groupId, item.id),
+                            'Đã từ chối khoản thanh toán.',
+                          )
+                        : null,
+                    onCancel: item.permissions.canCancel
+                        ? () => _performAction(
+                            () => _controller.cancel(widget.groupId, item.id),
+                            'Đã hủy yêu cầu thanh toán.',
+                          )
+                        : null,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
+
+class SettlementDetailScreen extends StatefulWidget {
+  final String groupId;
+  final String settlementId;
+  final ExpenseRepository repository;
+
+  const SettlementDetailScreen({
+    super.key,
+    required this.groupId,
+    required this.settlementId,
+    required this.repository,
+  });
+
+  @override
+  State<SettlementDetailScreen> createState() => _SettlementDetailScreenState();
+}
+
+class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
+  late Future<SettlementItem> _future = widget.repository.settlementDetail(
+    widget.settlementId,
+  );
+  bool _working = false;
+
+  Future<void> _reload() async {
+    setState(() {
+      _future = widget.repository.settlementDetail(widget.settlementId);
+    });
+  }
+
+  Future<void> _runAction(
+    Future<SettlementItem> Function() action,
+    String successMessage,
+  ) async {
+    setState(() => _working = true);
+    try {
+      final updated = await action();
+      if (!mounted) return;
+      setState(() {
+        _future = Future<SettlementItem>.value(updated);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
+    } on ExpenseFailure catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
+    appBar: AppBar(title: const Text('Chi tiết thanh toán')),
+    body: FutureBuilder<SettlementItem>(
+      future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError || snapshot.data == null) {
-          return const Center(child: Text('Chưa thể tải số dư.'));
+          final error = snapshot.error;
+          return _FailureState(
+            message: error is ExpenseFailure
+                ? error.message
+                : 'Chưa thể tải chi tiết thanh toán.',
+            onRetry: _reload,
+          );
         }
-        final value = snapshot.data!;
+        final settlement = snapshot.data!;
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            _BalanceSummary(balances: value),
-            const SizedBox(height: 16),
-            if (value.balances.isEmpty)
-              const _EmptyState(text: 'Hiện không có khoản nợ trong nhóm.'),
-            ...value.balances.map(
-              (entry) => ListTile(
-                leading: UserAvatar(
-                  displayName: entry.user.displayName,
-                  avatarStorageKey: entry.user.avatarStorageKey,
-                ),
-                title: Text(entry.user.displayName),
-                subtitle: Text(
-                  entry.direction == 'OWES_YOU'
-                      ? 'Bạn được nhận'
-                      : 'Bạn đang nợ',
-                ),
-                trailing: Text(
-                  entry.amount.formatted,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+            Text(
+              '${settlement.fromUser.displayName} → ${settlement.toUser.displayName}',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              settlement.amount.formatted,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
               ),
             ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Chip(label: Text(_settlementStatusLabel(settlement.status))),
+            ),
+            const Divider(height: 28),
+            _DetailRow(
+              label: 'Người trả nợ',
+              value: settlement.fromUser.displayName,
+            ),
+            _DetailRow(
+              label: 'Người nhận tiền',
+              value: settlement.toUser.displayName,
+            ),
+            _DetailRow(
+              label: 'Loại khai báo',
+              value: _declarationTypeLabel(settlement.declarationType),
+            ),
+            _DetailRow(
+              label: 'Người tạo yêu cầu',
+              value: settlement.createdBy.displayName,
+            ),
+            _DetailRow(
+              label: 'Thời gian tạo',
+              value: _dateTime(settlement.createdAt),
+            ),
+            if (settlement.completedAt != null)
+              _DetailRow(
+                label: 'Thời gian hoàn tất',
+                value: _dateTime(settlement.completedAt!),
+              ),
+            if (settlement.permissions.canConfirm ||
+                settlement.permissions.canReject ||
+                settlement.permissions.canCancel) ...[
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  if (settlement.permissions.canConfirm)
+                    FilledButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () => _runAction(
+                              () => widget.repository.confirmSettlement(
+                                settlement.id,
+                              ),
+                              'Đã xác nhận khoản thanh toán.',
+                            ),
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Xác nhận'),
+                    ),
+                  if (settlement.permissions.canReject)
+                    OutlinedButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () => _runAction(
+                              () => widget.repository.rejectSettlement(
+                                settlement.id,
+                              ),
+                              'Đã từ chối khoản thanh toán.',
+                            ),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Từ chối'),
+                    ),
+                  if (settlement.permissions.canCancel)
+                    TextButton.icon(
+                      onPressed: _working
+                          ? null
+                          : () => _runAction(
+                              () => widget.repository.cancelSettlement(
+                                settlement.id,
+                              ),
+                              'Đã hủy yêu cầu thanh toán.',
+                            ),
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('Hủy yêu cầu'),
+                    ),
+                ],
+              ),
+            ],
+            const Divider(height: 32),
+            Text(
+              'Lịch sử trạng thái',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (settlement.statusHistory.isEmpty)
+              const Text('Chưa có lịch sử trạng thái.')
+            else
+              ...settlement.statusHistory.map(
+                (change) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.history, size: 20),
+                  title: Text(
+                    change.fromStatus == null
+                        ? 'Khởi tạo (${_settlementStatusLabel(change.toStatus)})'
+                        : '${_settlementStatusLabel(change.fromStatus!)} → ${_settlementStatusLabel(change.toStatus)}',
+                  ),
+                  subtitle: Text(
+                    '${change.changedBy?.displayName ?? 'Thành viên'} · ${_dateTime(change.createdAt)}',
+                  ),
+                ),
+              ),
           ],
         );
       },
     ),
   );
 }
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 2,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 3,
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SettlementRow extends StatelessWidget {
+  final SettlementItem settlement;
+  final bool working;
+  final VoidCallback onTap;
+  final VoidCallback? onConfirm;
+  final VoidCallback? onReject;
+  final VoidCallback? onCancel;
+
+  const _SettlementRow({
+    required this.settlement,
+    required this.working,
+    required this.onTap,
+    this.onConfirm,
+    this.onReject,
+    this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    elevation: 0,
+    color: AppColors.surfaceContainerLowest,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(child: Icon(Icons.swap_horiz)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${settlement.fromUser.displayName} → ${settlement.toUser.displayName}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${_declarationTypeLabel(settlement.declarationType)} · ${_dateTime(settlement.createdAt)}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      settlement.amount.formatted,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _settlementStatusLabel(settlement.status),
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (onConfirm != null || onReject != null || onCancel != null) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (onConfirm != null)
+                    FilledButton.tonal(
+                      onPressed: working ? null : onConfirm,
+                      child: const Text('Xác nhận'),
+                    ),
+                  if (onReject != null)
+                    OutlinedButton(
+                      onPressed: working ? null : onReject,
+                      child: const Text('Từ chối'),
+                    ),
+                  if (onCancel != null)
+                    TextButton(
+                      onPressed: working ? null : onCancel,
+                      child: const Text('Hủy yêu cầu'),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+String _settlementStatusLabel(String status) => switch (status) {
+  'PENDING' => 'Chờ xác nhận',
+  'COMPLETED' => 'Đã hoàn tất',
+  'REJECTED' => 'Đã từ chối',
+  'CANCELLED' => 'Đã hủy',
+  _ => status,
+};
+
+String _declarationTypeLabel(String declarationType) =>
+    switch (declarationType) {
+      'I_PAID' => 'Khai báo đã trả',
+      'I_RECEIVED' => 'Khai báo đã nhận',
+      _ => declarationType,
+    };
 
 class _ExpenseRow extends StatelessWidget {
   final ExpenseSummary expense;

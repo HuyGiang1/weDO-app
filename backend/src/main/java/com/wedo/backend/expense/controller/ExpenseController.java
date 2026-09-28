@@ -1,10 +1,12 @@
 package com.wedo.backend.expense.controller;
 
+import com.wedo.backend.expense.dto.ExpenseDtos.CreateSettlementRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseDetail;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseSummary;
 import com.wedo.backend.expense.dto.ExpenseDtos.MyBalances;
 import com.wedo.backend.expense.dto.ExpenseDtos.PairBalance;
+import com.wedo.backend.expense.dto.ExpenseDtos.SettlementResponse;
 import com.wedo.backend.expense.service.ExpenseService;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
 import jakarta.validation.Valid;
@@ -97,5 +99,58 @@ public class ExpenseController {
             @PathVariable UUID userId
     ) {
         return expenses.pairBalance(groupId, principal.userId(), userId);
+    }
+
+    @PostMapping("/groups/{groupId}/settlements")
+    @ResponseStatus(HttpStatus.CREATED)
+    public SettlementResponse createSettlement(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody CreateSettlementRequest request
+    ) {
+        return expenses.createSettlement(groupId, principal.userId(), request);
+    }
+
+    @GetMapping("/groups/{groupId}/settlements")
+    public List<SettlementResponse> listSettlements(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID groupId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean involvingMe,
+            @RequestParam(required = false) UUID otherUserId
+    ) {
+        return expenses.listSettlements(groupId, principal.userId(), status, involvingMe, otherUserId);
+    }
+
+    @GetMapping("/settlements/{settlementId}")
+    public SettlementResponse settlementDetail(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID settlementId
+    ) {
+        return expenses.settlementDetail(settlementId, principal.userId());
+    }
+
+    @PostMapping("/settlements/{settlementId}/confirm")
+    public SettlementResponse confirmSettlement(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID settlementId
+    ) {
+        return expenses.confirmSettlement(settlementId, principal.userId());
+    }
+
+    @PostMapping("/settlements/{settlementId}/reject")
+    public SettlementResponse rejectSettlement(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID settlementId
+    ) {
+        return expenses.rejectSettlement(settlementId, principal.userId());
+    }
+
+    @PostMapping("/settlements/{settlementId}/cancel")
+    public SettlementResponse cancelSettlement(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @PathVariable UUID settlementId
+    ) {
+        return expenses.cancelSettlement(settlementId, principal.userId());
     }
 }

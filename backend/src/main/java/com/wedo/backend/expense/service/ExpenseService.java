@@ -5,12 +5,16 @@ import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.expense.dto.ExpenseDtos.BalanceExpense;
 import com.wedo.backend.expense.dto.ExpenseDtos.BalanceSettlement;
 import com.wedo.backend.expense.dto.ExpenseDtos.Change;
+import com.wedo.backend.expense.dto.ExpenseDtos.CreateSettlementRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseDetail;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseSummary;
 import com.wedo.backend.expense.dto.ExpenseDtos.MyBalances;
 import com.wedo.backend.expense.dto.ExpenseDtos.PairBalance;
 import com.wedo.backend.expense.dto.ExpenseDtos.PermissionProjection;
+import com.wedo.backend.expense.dto.ExpenseDtos.SettlementPermissionProjection;
+import com.wedo.backend.expense.dto.ExpenseDtos.SettlementResponse;
+import com.wedo.backend.expense.dto.ExpenseDtos.SettlementStatusChange;
 import com.wedo.backend.expense.dto.ExpenseDtos.Share;
 import com.wedo.backend.expense.dto.ExpenseDtos.ShareRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.UserBalance;
@@ -507,9 +511,264 @@ public class ExpenseService {
         return result;
     }
 
+    @Transactional
+    public SettlementResponse createSettlement(UUID groupId, UUID actorId, CreateSettlementRequest request) {
+        requireMutableGroup(groupId, actorId);
+        if (request == null || request.otherUserId() == null || actorId.equals(request.otherUserId())) {
+            throw new BusinessException(ErrorCode.EXPENSE_PARTICIPANT_INVALID);
+        }
+        requireGroupParticipantHistory(groupId, request.otherUserId());
+        BigDecimal amount = money(request.amount());
+        if (amount.signum() <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_EXPENSE_AMOUNT);
+        }
+        String declarationType = request.declarationType() == null ? "" : request.declarationType().trim();
+        UUID fromUserId;
+        UUID toUserId;
+        if ("I_PAID".equals(declarationType)) {
+            fromUserId = actorId;
+            toUserId = request.otherUserId();
+        } else if ("I_RECEIVED".equals(declarationType)) {
+            fromUserId = request.otherUserId();
+            toUserId = actorId;
+        } else {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "Unsupported settlement declaration type.");
+        }
+
+        Ledger ledger = loadLedger(groupId, null, null);
+        BigDecimal currentDebt = currentDebtBetween(ledger, fromUserId, toUserId);
+        if (currentDebt.signum() <= 0) {
+            throw new BusinessException(ErrorCode.NO_OUTSTANDING_DEBT);
+        }
+        BigDecimal pendingReserved = ledger.pending.getOrDefault(new DirectedPair(fromUserId, toUserId), ZERO);
+        BigDecimal remainingAvailable = currentDebt.subtract(pendingReserved);
+        if (amount.compareTo(currentDebt) > 0 || amount.compareTo(remainingAvailable) > 0) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_AMOUNT_EXCEEDS_DEBT);
+        }
+
+        UUID settlementId = UUID.randomUUID();
+        Instant now = Instant.now();
+        jdbc.update("""
+                INSERT INTO settlements(id,group_id,from_user_id,to_user_id,amount,status,created_by,
+                    declaration_type,completed_at,created_at,updated_at)
+                VALUES (?,?,?,?,?,'PENDING',?,?,NULL,?,?)
+                """, settlementId, groupId, fromUserId, toUserId, amount, actorId,
+                declarationType, Timestamp.from(now), Timestamp.from(now));
+        recordSettlementStatusChange(settlementId, null, "PENDING", actorId, now);
+        return settlementDetail(settlementId, actorId);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<SettlementResponse> listSettlements(
+            UUID groupId, UUID actorId, String status, Boolean involvingMe, UUID otherUserId
+    ) {
+        ReadableGroupAccess access = groupPermissions.requireReadableMembership(groupId, actorId);
+        StringBuilder sql = new StringBuilder("SELECT * FROM settlements s WHERE s.group_id=?");
+        List<Object> args = new ArrayList<>();
+        args.add(groupId);
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND s.status=?");
+            args.add(status.trim());
+        }
+        if (Boolean.TRUE.equals(involvingMe)) {
+            sql.append(" AND (s.from_user_id=? OR s.to_user_id=?)");
+            args.add(actorId);
+            args.add(actorId);
+        }
+        if (otherUserId != null) {
+            sql.append(" AND ((s.from_user_id=? AND s.to_user_id=?) OR (s.from_user_id=? AND s.to_user_id=?))");
+            args.add(actorId);
+            args.add(otherUserId);
+            args.add(otherUserId);
+            args.add(actorId);
+        }
+        sql.append(" ORDER BY s.created_at DESC, s.id");
+        List<SettlementRow> rows = jdbc.query(sql.toString(), ExpenseService::mapSettlementRow, args.toArray());
+        return rows.stream().map(row -> toSettlementResponse(row, actorId, access)).toList();
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public SettlementResponse settlementDetail(UUID settlementId, UUID actorId) {
+        SettlementRow row = findSettlement(settlementId, false);
+        ReadableGroupAccess access = groupPermissions.requireReadableMembership(row.groupId(), actorId);
+        return toSettlementResponse(row, actorId, access);
+    }
+
+    @Transactional
+    public SettlementResponse confirmSettlement(UUID settlementId, UUID actorId) {
+        SettlementRow initial = findSettlement(settlementId, false);
+        requireMutableGroup(initial.groupId(), actorId);
+        SettlementRow current = findSettlement(settlementId, true);
+        if (!"PENDING".equals(current.status())) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_ALREADY_RESOLVED);
+        }
+        if (!actorId.equals(expectedConfirmer(current))) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_CONFIRMATION_NOT_ALLOWED);
+        }
+        Ledger ledger = loadLedger(current.groupId(), null, null);
+        BigDecimal currentDebt = currentDebtBetween(ledger, current.fromUserId(), current.toUserId());
+        if (currentDebt.signum() <= 0) {
+            throw new BusinessException(ErrorCode.NO_OUTSTANDING_DEBT);
+        }
+        if (current.amount().compareTo(currentDebt) > 0) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_AMOUNT_EXCEEDS_DEBT);
+        }
+        Instant now = Instant.now();
+        jdbc.update("UPDATE settlements SET status='COMPLETED', completed_at=?, updated_at=? WHERE id=?",
+                Timestamp.from(now), Timestamp.from(now), settlementId);
+        recordSettlementStatusChange(settlementId, "PENDING", "COMPLETED", actorId, now);
+        return settlementDetail(settlementId, actorId);
+    }
+
+    @Transactional
+    public SettlementResponse rejectSettlement(UUID settlementId, UUID actorId) {
+        SettlementRow initial = findSettlement(settlementId, false);
+        requireMutableGroup(initial.groupId(), actorId);
+        SettlementRow current = findSettlement(settlementId, true);
+        if (!"PENDING".equals(current.status())) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_ALREADY_RESOLVED);
+        }
+        if (!actorId.equals(expectedConfirmer(current))) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_CONFIRMATION_NOT_ALLOWED);
+        }
+        Instant now = Instant.now();
+        jdbc.update("UPDATE settlements SET status='REJECTED', updated_at=? WHERE id=?",
+                Timestamp.from(now), settlementId);
+        recordSettlementStatusChange(settlementId, "PENDING", "REJECTED", actorId, now);
+        return settlementDetail(settlementId, actorId);
+    }
+
+    @Transactional
+    public SettlementResponse cancelSettlement(UUID settlementId, UUID actorId) {
+        SettlementRow initial = findSettlement(settlementId, false);
+        requireMutableGroup(initial.groupId(), actorId);
+        SettlementRow current = findSettlement(settlementId, true);
+        if (!"PENDING".equals(current.status())) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_ALREADY_RESOLVED);
+        }
+        if (!actorId.equals(current.createdBy())) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_CONFIRMATION_NOT_ALLOWED);
+        }
+        Instant now = Instant.now();
+        jdbc.update("UPDATE settlements SET status='CANCELLED', updated_at=? WHERE id=?",
+                Timestamp.from(now), settlementId);
+        recordSettlementStatusChange(settlementId, "PENDING", "CANCELLED", actorId, now);
+        return settlementDetail(settlementId, actorId);
+    }
+
+    private BigDecimal currentDebtBetween(Ledger ledger, UUID debtor, UUID creditor) {
+        PairKey pair = PairKey.of(debtor, creditor);
+        BigDecimal canonical = ledger.net.getOrDefault(pair, ZERO);
+        BigDecimal signedDebt = pair.first().equals(debtor) ? canonical : canonical.negate();
+        return signedDebt.max(ZERO).setScale(2, RoundingMode.UNNECESSARY);
+    }
+
+    private void requireGroupParticipantHistory(UUID groupId, UUID userId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT count(*) FROM group_memberships m JOIN users u ON u.id=m.user_id
+                WHERE m.group_id=? AND m.user_id=?
+                """, Integer.class, groupId, userId);
+        if (count == null || count < 1) {
+            throw new BusinessException(ErrorCode.EXPENSE_PARTICIPANT_INVALID);
+        }
+    }
+
+    private static UUID expectedConfirmer(SettlementRow row) {
+        return "I_PAID".equals(row.declarationType()) ? row.toUserId() : row.fromUserId();
+    }
+
+    private SettlementRow findSettlement(UUID settlementId, boolean forUpdate) {
+        String sql = "SELECT * FROM settlements WHERE id=?" + (forUpdate ? " FOR UPDATE" : "");
+        try {
+            return jdbc.queryForObject(sql, ExpenseService::mapSettlementRow, settlementId);
+        } catch (EmptyResultDataAccessException ex) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_NOT_FOUND);
+        }
+    }
+
+    private static SettlementRow mapSettlementRow(ResultSet rs, int rowNum) throws SQLException {
+        Timestamp completed = rs.getTimestamp("completed_at");
+        Timestamp created = rs.getTimestamp("created_at");
+        Timestamp updated = rs.getTimestamp("updated_at");
+        return new SettlementRow(
+                rs.getObject("id", UUID.class),
+                rs.getObject("group_id", UUID.class),
+                rs.getObject("from_user_id", UUID.class),
+                rs.getObject("to_user_id", UUID.class),
+                rs.getObject("created_by", UUID.class),
+                rs.getBigDecimal("amount"),
+                rs.getString("status"),
+                rs.getString("declaration_type"),
+                completed == null ? null : completed.toInstant(),
+                created.toInstant(),
+                updated.toInstant()
+        );
+    }
+
+    private void recordSettlementStatusChange(
+            UUID settlementId, String fromStatus, String toStatus, UUID actorId, Instant now
+    ) {
+        jdbc.update("""
+                INSERT INTO settlement_status_history(id,settlement_id,from_status,to_status,changed_by,created_at)
+                VALUES (?,?,?,?,?,?)
+                """, UUID.randomUUID(), settlementId, fromStatus, toStatus, actorId, Timestamp.from(now));
+    }
+
+    private SettlementResponse toSettlementResponse(
+            SettlementRow row, UUID actorId, ReadableGroupAccess access
+    ) {
+        List<SettlementStatusChange> history = jdbc.query("""
+                SELECT h.from_status,h.to_status,h.changed_by,h.created_at,
+                       COALESCE(u.display_name,u.username::text,'Người dùng') AS actor_name,
+                       u.avatar_storage_key AS actor_avatar
+                FROM settlement_status_history h
+                LEFT JOIN users u ON u.id=h.changed_by
+                WHERE h.settlement_id=?
+                ORDER BY h.created_at ASC, h.id ASC
+                """, (rs, n) -> {
+            UUID changedBy = rs.getObject("changed_by", UUID.class);
+            UserSummary actor = changedBy == null
+                    ? null
+                    : new UserSummary(changedBy, rs.getString("actor_name"), rs.getString("actor_avatar"));
+            return new SettlementStatusChange(
+                    rs.getString("from_status"),
+                    rs.getString("to_status"),
+                    actor,
+                    rs.getTimestamp("created_at").toInstant()
+            );
+        }, row.id());
+
+        boolean mutable = access.group().getStatus() == GroupStatus.ACTIVE && "PENDING".equals(row.status());
+        UUID confirmerId = expectedConfirmer(row);
+        SettlementPermissionProjection permissions = new SettlementPermissionProjection(
+                mutable && actorId.equals(confirmerId),
+                mutable && actorId.equals(confirmerId),
+                mutable && actorId.equals(row.createdBy())
+        );
+
+        return new SettlementResponse(
+                row.id(),
+                row.groupId(),
+                user(row.fromUserId()),
+                user(row.toUserId()),
+                user(row.createdBy()),
+                row.amount().setScale(2, RoundingMode.UNNECESSARY),
+                row.status(),
+                row.declarationType(),
+                row.completedAt(),
+                row.createdAt(),
+                row.updatedAt(),
+                history,
+                permissions
+        );
+    }
+
     private record ExpenseRow(UUID id, UUID groupId, UUID activityId, String title, BigDecimal amount,
                               String splitType, String status, OffsetDateTime occurredAt, String note,
                               UUID payerId, UUID creatorId, Instant createdAt, Instant updatedAt) { }
+    private record SettlementRow(UUID id, UUID groupId, UUID fromUserId, UUID toUserId, UUID createdBy,
+                                 BigDecimal amount, String status, String declarationType,
+                                 Instant completedAt, Instant createdAt, Instant updatedAt) { }
     private record ShareFact(UUID userId, BigDecimal amount) { }
     private record ExpenseDraft(String title, BigDecimal amount, UUID payerId, String splitMethod,
                                 List<ShareFact> shares, UUID activityId, OffsetDateTime occurredAt, String note) { }

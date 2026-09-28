@@ -256,6 +256,7 @@ abstract final class AppRoutes {
   static const String groupBans = '/groups/bans';
   static const String activities = '/groups/activities';
   static const String groupExpenses = '/groups/expenses';
+  static const String groupSettlements = '/groups/settlements';
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
   static const String tasks = '/activities/tasks';
@@ -644,6 +645,14 @@ abstract final class AppRoutes {
                   groupId: args.groupId,
                 ),
               ),
+              onSettlements: () => Navigator.of(context).pushNamed(
+                groupSettlements,
+                arguments: ExpenseRouteArgs(
+                  repository: ExpenseRepository(ExpenseApi(args.repository.api.dio)),
+                  groupRepository: args.repository,
+                  groupId: args.groupId,
+                ),
+              ),
               onChatHome: () => Navigator.of(context).pushNamed(
                 chatHome,
                 arguments: ChatHomeRouteArgs(
@@ -745,6 +754,20 @@ abstract final class AppRoutes {
         if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty) return null;
         return MaterialPageRoute<void>(
           builder: (_) => ExpenseListScreen(groupId: args.groupId, repository: args.repository, groupRepository: args.groupRepository),
+          settings: settings,
+        );
+      },
+    ),
+    groupSettlements: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => ExpenseBalanceScreen(
+            groupId: args.groupId,
+            repository: args.repository,
+          ),
           settings: settings,
         );
       },

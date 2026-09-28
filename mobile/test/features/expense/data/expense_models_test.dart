@@ -72,4 +72,61 @@ void main() {
       expect(json['occurredAt'], '2026-09-28T10:00:00.000Z');
     },
   );
+
+  test(
+    'settlement DTOs parse permissions, status history, and request payloads',
+    () {
+      final item = SettlementItem.fromJson({
+        'id': 'settlement-1',
+        'groupId': 'group-1',
+        'fromUser': {'id': 'user-2', 'displayName': 'Bob'},
+        'toUser': {'id': 'user-1', 'displayName': 'Alice'},
+        'amount': '40.50',
+        'declarationType': 'I_PAID',
+        'status': 'COMPLETED',
+        'createdBy': {'id': 'user-2', 'displayName': 'Bob'},
+        'completedAt': '2026-09-28T11:00:00Z',
+        'permissions': {
+          'canConfirm': false,
+          'canReject': false,
+          'canCancel': false,
+        },
+        'statusHistory': [
+          {
+            'fromStatus': null,
+            'toStatus': 'PENDING',
+            'changedBy': {'id': 'user-2', 'displayName': 'Bob'},
+            'createdAt': '2026-09-28T10:30:00Z',
+          },
+          {
+            'fromStatus': 'PENDING',
+            'toStatus': 'COMPLETED',
+            'changedBy': {'id': 'user-1', 'displayName': 'Alice'},
+            'createdAt': '2026-09-28T11:00:00Z',
+          },
+        ],
+        'createdAt': '2026-09-28T10:30:00Z',
+        'updatedAt': '2026-09-28T11:00:00Z',
+      });
+
+      expect(item.amount.decimal, '40.50');
+      expect(item.status, 'COMPLETED');
+      expect(item.fromUser.displayName, 'Bob');
+      expect(item.toUser.displayName, 'Alice');
+      expect(item.statusHistory.length, 2);
+      expect(item.statusHistory.first.fromStatus, isNull);
+      expect(item.statusHistory.last.toStatus, 'COMPLETED');
+
+      final draft = CreateSettlementDraft(
+        declarationType: 'I_PAID',
+        otherUserId: 'user-1',
+        amount: ExpenseMoney.parseInput('40.50')!,
+      );
+      expect(draft.toJson(), {
+        'declarationType': 'I_PAID',
+        'otherUserId': 'user-1',
+        'amount': '40.50',
+      });
+    },
+  );
 }

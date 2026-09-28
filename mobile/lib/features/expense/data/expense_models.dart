@@ -305,3 +305,124 @@ class ExpenseDraft {
     'note': note,
   };
 }
+
+class SettlementPermissions {
+  final bool canConfirm;
+  final bool canReject;
+  final bool canCancel;
+  const SettlementPermissions({
+    required this.canConfirm,
+    required this.canReject,
+    required this.canCancel,
+  });
+  factory SettlementPermissions.fromJson(Map<String, dynamic>? json) =>
+      SettlementPermissions(
+        canConfirm: json?['canConfirm'] as bool? ?? false,
+        canReject: json?['canReject'] as bool? ?? false,
+        canCancel: json?['canCancel'] as bool? ?? false,
+      );
+}
+
+class SettlementStatusChange {
+  final String? fromStatus;
+  final String toStatus;
+  final ExpenseUser? changedBy;
+  final DateTime createdAt;
+  const SettlementStatusChange({
+    this.fromStatus,
+    required this.toStatus,
+    this.changedBy,
+    required this.createdAt,
+  });
+  factory SettlementStatusChange.fromJson(Map<String, dynamic> json) =>
+      SettlementStatusChange(
+        fromStatus: json['fromStatus'] as String?,
+        toStatus: json['toStatus'] as String,
+        changedBy: json['changedBy'] is Map
+            ? ExpenseUser.fromJson(
+                Map<String, dynamic>.from(json['changedBy'] as Map),
+              )
+            : null,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+}
+
+class SettlementItem {
+  final String id;
+  final String groupId;
+  final ExpenseUser fromUser;
+  final ExpenseUser toUser;
+  final ExpenseUser createdBy;
+  final ExpenseMoney amount;
+  final String status;
+  final String declarationType;
+  final DateTime? completedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final List<SettlementStatusChange> statusHistory;
+  final SettlementPermissions permissions;
+  const SettlementItem({
+    required this.id,
+    required this.groupId,
+    required this.fromUser,
+    required this.toUser,
+    required this.createdBy,
+    required this.amount,
+    required this.status,
+    required this.declarationType,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.statusHistory,
+    required this.permissions,
+  });
+  factory SettlementItem.fromJson(Map<String, dynamic> json) => SettlementItem(
+    id: json['id'] as String,
+    groupId: json['groupId'] as String,
+    fromUser: ExpenseUser.fromJson(
+      Map<String, dynamic>.from(json['fromUser'] as Map),
+    ),
+    toUser: ExpenseUser.fromJson(
+      Map<String, dynamic>.from(json['toUser'] as Map),
+    ),
+    createdBy: ExpenseUser.fromJson(
+      Map<String, dynamic>.from(json['createdBy'] as Map),
+    ),
+    amount: ExpenseMoney.fromJson(json['amount']),
+    status: json['status'] as String,
+    declarationType: json['declarationType'] as String,
+    completedAt: json['completedAt'] == null
+        ? null
+        : DateTime.parse(json['completedAt'] as String),
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: DateTime.parse(json['updatedAt'] as String),
+    statusHistory: (json['statusHistory'] as List? ?? const [])
+        .map(
+          (v) => SettlementStatusChange.fromJson(
+            Map<String, dynamic>.from(v as Map),
+          ),
+        )
+        .toList(),
+    permissions: SettlementPermissions.fromJson(
+      json['permissions'] is Map
+          ? Map<String, dynamic>.from(json['permissions'] as Map)
+          : null,
+    ),
+  );
+}
+
+class CreateSettlementDraft {
+  final String otherUserId;
+  final ExpenseMoney amount;
+  final String declarationType;
+  const CreateSettlementDraft({
+    required this.otherUserId,
+    required this.amount,
+    required this.declarationType,
+  });
+  Map<String, dynamic> toJson() => {
+    'otherUserId': otherUserId,
+    'amount': amount.decimal,
+    'declarationType': declarationType,
+  };
+}

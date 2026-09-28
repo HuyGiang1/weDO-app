@@ -1771,6 +1771,8 @@ Search respects all history visibility, hidden and UNSENT rules.
 
 ## 10. WebSocket Contract
 
+This early suggested command list is superseded by the implemented M10 contract in §41. Durable message mutations are REST-only; do not implement the mutation commands below over WebSocket.
+
 Suggested endpoint:
 
 ```text
@@ -3445,3 +3447,44 @@ TESTS
 ```
 
 The next design phase is **SYSTEM ARCHITECTURE**, where the project will finalize Spring Boot module/layer architecture, Flutter architecture, WebSocket/Redis topology, object storage/FCM integration, deployment boundaries and detailed package/code structure.
+
+---
+
+## 41. M10 Chat Realtime WebSocket & Redis Coordination Contract
+
+### 41.1 Endpoint & Authentication
+- **WebSocket Endpoints:** `/ws` and `/api/v1/ws` (`ChatWebSocketConfig`).
+- **Handshake Authentication (`ChatWebSocketHandshakeInterceptor`):**
+  - Accepts JWT access token via `Authorization: Bearer <token>` HTTP header or `?access_token=<token>` query parameter.
+  - Validates token signature, expiration, `access` token type, and active user status (`UserStatus.ACTIVE`).
+  - Rejects unauthenticated or inactive handshakes with HTTP 401 before WebSocket upgrade.
+
+### 41.2 Authoritative Mutation Rule (`TransactionPhase.AFTER_COMMIT`)
+- PostgreSQL remains the durable source of truth. Message send/edit/unsend/reaction/pin mutations use M9 REST endpoints (`POST /messages`, `PATCH /messages/{id}`, `POST /messages/{id}/unsend`, `PUT /messages/{id}/reaction`, `POST/DELETE /pin`); read position may be advanced through REST or the `MARK_READ` WebSocket command, and both delegate to `ChatService`.
+- `ChatService` publishes `DomainMutationEvent` and `DomainReadEvent` within the database transaction.
+- `ChatRealtimeTransactionalBridge` listens with `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so WebSocket/Redis events are emitted strictly after PostgreSQL transaction commit. Rolled-back transactions never emit realtime frames.
+
+### 41.3 Client-to-Server WebSocket JSON Frames
+- Durable message send/edit/unsend/reaction mutations are not WebSocket commands; clients must use the authoritative M9 REST endpoints listed in §41.2.
+- `SUBSCRIBE` (`{ "type": "SUBSCRIBE", "conversationId": "<uuid>" }`): Verifies conversation access (`ChatService.canSubscribeConversation`) before registering session subscription; denies outsiders/blocked users with `ERROR` (`ACCESS_DENIED`).
+- `UNSUBSCRIBE` (`{ "type": "UNSUBSCRIBE", "conversationId": "<uuid>" }`): Removes session subscription for the conversation.
+- `TYPING_START` / `TYPING_STOP` (`{ "type": "TYPING_START", "conversationId": "<uuid>" }`): Verifies `canSendInConversation`, sets/clears Redis TTL key `typing:{conversationId}:{userId}` (`5s`), and broadcasts `TYPING_UPDATED` to eligible conversation subscribers.
+- `MARK_READ` (`{ "type": "MARK_READ", "conversationId": "<uuid>", "lastReadSequence": <n> }`): Invokes authoritative `ChatService.markRead` and broadcasts `READ_STATE_UPDATED`.
+- `PING` (`{ "type": "PING" }`): Refreshes user session presence TTL and replies with `PONG`.
+
+### 41.4 Server-to-Client WebSocket JSON Frames (`ServerEvent`)
+- `CONNECTED`: Emitted immediately after WebSocket session establishment and multi-session presence registration.
+- `SUBSCRIBED` / `UNSUBSCRIBED`: Confirms subscription state and includes active `onlineUserIds` for the conversation.
+- `MESSAGE_CREATED`: Broadcasts viewer-tailored `ChatMessage` payload (`isMine` and `permissions` computed per recipient) and `clientMessageId`.
+- `MESSAGE_EDITED` / `MESSAGE_UNSENT` / `MESSAGE_REACTION_UPDATED`: Broadcasts authoritative updated `ChatMessage` state in place.
+- `READ_STATE_UPDATED`: Broadcasts `reader` (`ChatReaderState`: `userId`, `displayName`, `avatarStorageKey`, `lastReadSequence`) so clients move reader mini-avatars in real time.
+- `MESSAGE_PINNED` / `MESSAGE_UNPINNED`: Broadcasts pin state changes.
+- `TYPING_UPDATED`: Broadcasts `actor` (`ChatUser`) and `typing` (`true` / `false`).
+- `PRESENCE_UPDATED`: Broadcasts `actor` (`ChatUser`) and `online` (`true` / `false`) to shared conversation peers.
+- `PONG` / `ERROR`: Heartbeat reply and structured error feedback.
+
+### 41.5 Redis Coordination Keys & Graceful Fallback
+- **Pub/Sub Fanout Channel:** `wedo:chat:realtime` (`RedisEnvelope` with `eventId` deduplication across instances).
+- **Ephemeral Typing Key:** `typing:{conversationId}:{userId}` (`5s` TTL).
+- **Multi-Session Presence Set:** `presence:user:{userId}:sessions` (`120s` TTL). A user remains online until their last active WebSocket session closes, at which point `user_presence_snapshots.last_seen_at` is updated in PostgreSQL.
+- **Graceful Local Fallback:** When Redis is unreachable, `ChatRealtimeCoordinator` falls back to in-memory session delivery, typing, and presence sets without breaking REST Chat or single-node WebSocket delivery.

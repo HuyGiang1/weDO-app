@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +7,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../groups/presentation/widgets/group_widgets.dart';
 import '../../social/presentation/widgets/user_avatar.dart';
 import '../data/chat_models.dart';
+import '../data/chat_realtime_event.dart';
 import '../data/chat_repository.dart';
 import 'chat_formatters.dart';
 import 'message_reaction_details_sheet.dart';
@@ -39,26 +42,303 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _hasMore = false, _loadingEarlier = false;
   int? _nextBeforeSequence;
 
+  String? _selectedMessageIdForTime;
+  Timer? _selectedMessageTimeTimer;
+
+  StreamSubscription<ChatRealtimeEvent>? _realtimeSubscription;
+  final Set<String> _seenEventIds = <String>{};
+  final Map<String, ChatUser> _typingUsers = <String, ChatUser>{};
+  final Map<String, Timer> _typingTimers = <String, Timer>{};
+  final Set<String> _onlineUserIds = <String>{};
+  DateTime? _lastTypingSentAt;
+  bool _wasConnectedOnce = false;
+
   @override
   void initState() {
     super.initState();
+    _composer.addListener(_onComposerChanged);
+    _realtimeSubscription = widget.repository.realtimeClient.events.listen(
+      _onRealtimeEvent,
+    );
+    unawaited(widget.repository.realtimeClient.connect());
     _load();
   }
 
   @override
   void dispose() {
+    final conversationId = _conversation?.id;
+    if (conversationId != null) {
+      widget.repository.realtimeClient.unsubscribeConversation(conversationId);
+    }
+    _selectedMessageTimeTimer?.cancel();
+    for (final timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _realtimeSubscription?.cancel();
+    _composer.removeListener(_onComposerChanged);
     _composer.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  void _onComposerChanged() {
+    final conversation = _conversation;
+    if (conversation == null || conversation.permissions.readOnly) return;
+    final text = _composer.text.trim();
+    if (text.isEmpty) {
+      if (_lastTypingSentAt != null) {
+        _lastTypingSentAt = null;
+        widget.repository.realtimeClient.sendTypingStop(conversation.id);
+      }
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastTypingSentAt == null ||
+        now.difference(_lastTypingSentAt!) >= const Duration(seconds: 2)) {
+      _lastTypingSentAt = now;
+      widget.repository.realtimeClient.sendTypingStart(conversation.id);
+    }
+  }
+
+  void _toggleMessageTime(ChatMessage message) {
+    _selectedMessageTimeTimer?.cancel();
+    if (_selectedMessageIdForTime == message.id) {
+      setState(() => _selectedMessageIdForTime = null);
+      return;
+    }
+    setState(() => _selectedMessageIdForTime = message.id);
+    _selectedMessageTimeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted && _selectedMessageIdForTime == message.id) {
+        setState(() => _selectedMessageIdForTime = null);
+      }
+    });
+  }
+
+  String? _connectedOwnUserId;
+
+  String? get _knownOwnUserId {
+    if (_connectedOwnUserId != null) return _connectedOwnUserId;
+    for (final message in _messages) {
+      if (message.isMine && message.author != null) {
+        return message.author!.id;
+      }
+    }
+    return null;
+  }
+
+  void _onRealtimeEvent(ChatRealtimeEvent event) {
+    if (!mounted) return;
+    if (event.eventId != null && !_seenEventIds.add(event.eventId!)) {
+      return;
+    }
+    if (event.type == ChatRealtimeEventType.connected) {
+      if (event.actor?.id != null) {
+        _connectedOwnUserId = event.actor!.id;
+        _onlineUserIds.remove(_connectedOwnUserId);
+      }
+      final conversation = _conversation;
+      if (conversation != null) {
+        widget.repository.realtimeClient.subscribeConversation(conversation.id);
+        if (_wasConnectedOnce) {
+          unawaited(_load(silent: true));
+        }
+      }
+      _wasConnectedOnce = true;
+      return;
+    }
+    if (event.type == ChatRealtimeEventType.presenceUpdated) {
+      final userId = event.presenceUser?.id;
+      if (userId != null && userId != _knownOwnUserId) {
+        setState(() {
+          if (event.online == true) {
+            _onlineUserIds.add(userId);
+          } else {
+            _onlineUserIds.remove(userId);
+          }
+        });
+      }
+      return;
+    }
+
+    final conversation = _conversation;
+    if (conversation == null || event.conversationId != conversation.id) {
+      return;
+    }
+
+    switch (event.type) {
+      case ChatRealtimeEventType.subscribed:
+        setState(() {
+          _onlineUserIds
+            ..clear()
+            ..addAll(
+              event.onlineUserIds.where((id) => id != _knownOwnUserId),
+            );
+        });
+        break;
+
+      case ChatRealtimeEventType.messageCreated:
+        final incoming = event.message;
+        if (incoming == null) return;
+        final authorId = incoming.author?.id;
+        if (authorId != null) {
+          _typingTimers.remove(authorId)?.cancel();
+          _typingUsers.remove(authorId);
+        }
+        final ownUserId = _knownOwnUserId;
+        final isOwn =
+            incoming.isMine || (ownUserId != null && authorId == ownUserId);
+        final normalized = _copyMessageForViewer(incoming, isOwn: isOwn);
+        final existingIndex = _messages.indexWhere(
+          (m) => m.id == normalized.id || m.sequence == normalized.sequence,
+        );
+        setState(() {
+          if (existingIndex >= 0) {
+            _messages[existingIndex] = _mergeMessage(
+              _messages[existingIndex],
+              normalized,
+            );
+          } else {
+            final updated = [..._messages, normalized]
+              ..sort((a, b) => a.sequence.compareTo(b.sequence));
+            _messages = updated;
+          }
+        });
+        if (!isOwn) {
+          unawaited(
+            widget.repository.markRead(conversation.id, normalized.sequence),
+          );
+        }
+        break;
+
+      case ChatRealtimeEventType.messageEdited:
+      case ChatRealtimeEventType.messageUnsent:
+      case ChatRealtimeEventType.messageReactionUpdated:
+        final updated = event.message;
+        if (updated == null) return;
+        setState(() {
+          final index = _messages.indexWhere((m) => m.id == updated.id);
+          if (index >= 0) {
+            _messages[index] = _mergeMessage(_messages[index], updated);
+          }
+        });
+        break;
+
+      case ChatRealtimeEventType.readStateUpdated:
+        final readerUser = event.reader;
+        final lastReadSeq = event.lastReadSequence;
+        if (readerUser == null || lastReadSeq == null) return;
+        if (readerUser.userId == _knownOwnUserId) return;
+        setState(() {
+          final nextReaders = [..._readers];
+          final existingIdx = nextReaders.indexWhere(
+            (r) => r.userId == readerUser.userId,
+          );
+          if (existingIdx >= 0) {
+            if (lastReadSeq >= nextReaders[existingIdx].lastReadSequence) {
+              nextReaders[existingIdx] = ChatReaderState(
+                userId: readerUser.userId,
+                displayName: readerUser.displayName,
+                avatarStorageKey: readerUser.avatarStorageKey,
+                lastReadSequence: lastReadSeq,
+              );
+            }
+          } else {
+            nextReaders.add(
+              ChatReaderState(
+                userId: readerUser.userId,
+                displayName: readerUser.displayName,
+                avatarStorageKey: readerUser.avatarStorageKey,
+                lastReadSequence: lastReadSeq,
+              ),
+            );
+          }
+          _readers = nextReaders;
+        });
+        break;
+
+      case ChatRealtimeEventType.typingUpdated:
+        final typer = event.typingUser;
+        if (typer == null || typer.id == _knownOwnUserId) return;
+        _typingTimers.remove(typer.id)?.cancel();
+        if (event.typing == true) {
+          setState(() => _typingUsers[typer.id] = typer);
+          _typingTimers[typer.id] = Timer(const Duration(seconds: 6), () {
+            if (mounted) {
+              setState(() {
+                _typingTimers.remove(typer.id);
+                _typingUsers.remove(typer.id);
+              });
+            }
+          });
+        } else {
+          setState(() => _typingUsers.remove(typer.id));
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  ChatMessage _copyMessageForViewer(ChatMessage msg, {required bool isOwn}) {
+    if (msg.isMine == isOwn) return msg;
+    return ChatMessage(
+      id: msg.id,
+      sequence: msg.sequence,
+      status: msg.status,
+      content: msg.content,
+      replyToMessageId: msg.replyToMessageId,
+      myReaction: msg.myReaction,
+      author: msg.author,
+      isMine: isOwn,
+      createdAt: msg.createdAt,
+      editedAt: msg.editedAt,
+      unsentAt: msg.unsentAt,
+      reactions: msg.reactions,
+      permissions: msg.permissions,
+    );
+  }
+
+  ChatMessage _mergeMessage(ChatMessage existing, ChatMessage incoming) {
+    final isOwn = existing.isMine || incoming.isMine;
+    final withdrawn = incoming.status == 'UNSENT';
+    return ChatMessage(
+      id: incoming.id,
+      sequence: incoming.sequence,
+      status: incoming.status,
+      content: incoming.content,
+      replyToMessageId: incoming.replyToMessageId,
+      myReaction: incoming.myReaction ?? existing.myReaction,
+      author: incoming.author ?? existing.author,
+      isMine: isOwn,
+      createdAt: incoming.createdAt,
+      editedAt: incoming.editedAt,
+      unsentAt: incoming.unsentAt,
+      reactions: incoming.reactions,
+      permissions: withdrawn
+          ? const ChatPermissions(
+              canSend: true,
+              canEdit: false,
+              canUnsend: false,
+              canDeleteForMe: true,
+              canReact: false,
+              canPin: false,
+              readOnly: false,
+            )
+          : existing.permissions,
+    );
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _loading = true);
+    }
     try {
       final conversation =
           widget.initialConversation ??
           _conversation ??
           await widget.repository.openGroup(widget.groupId!);
+      widget.repository.realtimeClient.subscribeConversation(conversation.id);
       final page = await widget.repository.history(conversation.id);
       if (!mounted) return;
       setState(() {
@@ -76,9 +356,9 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } catch (error) {
-      if (mounted) setState(() => _failure = error);
+      if (mounted && !silent) setState(() => _failure = error);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !silent) setState(() => _loading = false);
     }
   }
 
@@ -112,10 +392,20 @@ class _ChatScreenState extends State<ChatScreen> {
     if (conversation == null || text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
+      _lastTypingSentAt = null;
+      widget.repository.realtimeClient.sendTypingStop(conversation.id);
       final message = await widget.repository.send(conversation.id, text);
       if (!mounted) return;
       _composer.clear();
-      setState(() => _messages = [..._messages, message]);
+      setState(() {
+        final existingIdx = _messages.indexWhere((m) => m.id == message.id);
+        if (existingIdx >= 0) {
+          _messages[existingIdx] = message;
+        } else {
+          _messages = [..._messages, message]
+            ..sort((a, b) => a.sequence.compareTo(b.sequence));
+        }
+      });
       await widget.repository.markRead(conversation.id, message.sequence);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scroll.hasClients) {
@@ -289,12 +579,21 @@ class _ChatScreenState extends State<ChatScreen> {
   void _notice(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
+  bool get _isPeerOnline {
+    final peerId = _conversation?.peer?.id;
+    if (peerId != null && _onlineUserIds.contains(peerId)) {
+      return true;
+    }
+    return _onlineUserIds.isNotEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _conversation?.title?.trim().isNotEmpty == true
         ? _conversation!.title!
         : _conversation?.peer?.displayName ?? 'Trò chuyện';
     final isGroup = _conversation?.type == 'GROUP';
+    final showOnline = _isPeerOnline;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -313,16 +612,66 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     const SizedBox(width: 10),
                     Flexible(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (showOnline)
+                            Row(
+                              key: const ValueKey('chat-presence-online'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(
+                                  Icons.circle,
+                                  size: 8,
+                                  color: Color(0xFF22C55E),
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Đang hoạt động',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               )
-            : Text(title),
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (showOnline)
+                    Row(
+                      key: const ValueKey('chat-presence-online'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.circle, size: 8, color: Color(0xFF22C55E)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Đang hoạt động',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
         backgroundColor: AppColors.background,
         leading: IconButton(
           tooltip: 'Quay lại',
@@ -379,44 +728,82 @@ class _ChatScreenState extends State<ChatScreen> {
                       final previous = messageIndex > 0
                           ? _messages[messageIndex - 1]
                           : null;
+                      final showSeparator = shouldShowChatTimeSeparator(
+                        previous?.createdAt,
+                        message.createdAt,
+                      );
                       final sameAuthorRun =
+                          !showSeparator &&
                           previous != null &&
                           previous.status != 'UNSENT' &&
                           previous.isMine == message.isMine &&
                           previous.author != null &&
                           message.author != null &&
                           previous.author!.id == message.author!.id;
-                      return _MessageTile(
-                        key: ValueKey(message.id),
-                        message: message,
-                        showAuthor:
-                            !message.isMine &&
-                            message.status != 'UNSENT' &&
-                            !sameAuthorRun,
-                        readers: _readersBelow(messageIndex),
-                        onOpenActions: () => _showMessageActions(message),
-                        onOpenReactions: () {
-                          if (message.status != 'ACTIVE') return;
-                          showModalBottomSheet<void>(
-                            context: context,
-                            isScrollControlled: true,
-                            showDragHandle: true,
-                            backgroundColor: AppColors.surfaceContainerLowest,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(24),
+                      return Column(
+                        key: ValueKey('chat-item-${message.id}'),
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showSeparator)
+                            _ChatTimeSeparator(
+                              key: ValueKey(
+                                'chat-time-separator-${message.id}',
                               ),
+                              timestamp: message.createdAt,
                             ),
-                            builder: (_) => MessageReactionDetailsSheet(
-                              messageId: message.id,
-                              repository: widget.repository,
-                            ),
-                          );
-                        },
+                          _MessageTile(
+                            key: ValueKey(message.id),
+                            message: message,
+                            showAuthor:
+                                !message.isMine &&
+                                message.status != 'UNSENT' &&
+                                !sameAuthorRun,
+                            showTapTime:
+                                _selectedMessageIdForTime == message.id,
+                            readers: _readersBelow(messageIndex),
+                            onTapBubble: () => _toggleMessageTime(message),
+                            onOpenActions: () => _showMessageActions(message),
+                            onOpenReactions: () {
+                              if (message.status != 'ACTIVE') return;
+                              showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                showDragHandle: true,
+                                backgroundColor:
+                                    AppColors.surfaceContainerLowest,
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(24),
+                                  ),
+                                ),
+                                builder: (_) => MessageReactionDetailsSheet(
+                                  messageId: message.id,
+                                  repository: widget.repository,
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       );
                     },
                   ),
           ),
+          if (_typingUsers.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${_typingUsers.values.map((u) => u.displayName).join(', ')} đang nhập...',
+                  key: const ValueKey('chat-typing-indicator'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           if (_conversation?.permissions.readOnly == true)
             const SafeArea(
               top: false,
@@ -481,10 +868,40 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
+class _ChatTimeSeparator extends StatelessWidget {
+  final DateTime timestamp;
+
+  const _ChatTimeSeparator({super.key, required this.timestamp});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          chatSeparatorLabel(timestamp),
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _MessageTile extends StatelessWidget {
   final ChatMessage message;
   final bool showAuthor;
+  final bool showTapTime;
   final List<ChatReaderState> readers;
+  final VoidCallback onTapBubble;
   final VoidCallback onOpenActions;
   final VoidCallback onOpenReactions;
 
@@ -492,7 +909,9 @@ class _MessageTile extends StatelessWidget {
     super.key,
     required this.message,
     required this.showAuthor,
+    required this.showTapTime,
     required this.readers,
+    required this.onTapBubble,
     required this.onOpenActions,
     required this.onOpenReactions,
   });
@@ -523,99 +942,112 @@ class _MessageTile extends StatelessWidget {
         style: const TextStyle(fontSize: 11, height: 1),
       ),
     ];
-    return Align(
-      key: ValueKey('chat-message-align-${message.id}'),
-      alignment: own ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(bottom: readers.isEmpty ? 10 : 14),
-          child: Column(
-            crossAxisAlignment: own
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!withdrawn && showTapTime)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Center(
+              child: Text(
+                chatTime(message.createdAt),
+                key: ValueKey('chat-tap-timestamp-${message.id}'),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        Align(
+          key: ValueKey('chat-message-align-${message.id}'),
+          alignment: own ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+            ),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: readers.isEmpty ? 10 : 14),
+              child: Column(
+                crossAxisAlignment: own
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
-                  if (!own) ...[
-                    SizedBox.square(
-                      dimension: 32,
-                      child: showAuthor && !withdrawn
-                          ? UserAvatar(
-                              key: ValueKey(
-                                'chat-message-avatar-${message.id}',
-                              ),
-                              displayName: name,
-                              avatarStorageKey:
-                                  message.author?.avatarStorageKey,
-                              radius: 16,
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Flexible(
-                    child: Column(
-                      crossAxisAlignment: own
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: [
-                        if (showAuthor)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: 3,
-                              left: 4,
-                              right: 4,
-                            ),
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        GestureDetector(
-                          onTap: withdrawn ? null : onOpenActions,
-                          onLongPress: withdrawn ? null : onOpenActions,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              // Reserve the hanging badge inside the hit-test bounds.
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  right: reactionBadge ? 2 : 0,
-                                  bottom: reactionBadge ? 12 : 0,
-                                ),
-                                child: Container(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!own) ...[
+                        SizedBox.square(
+                          dimension: 32,
+                          child: showAuthor && !withdrawn
+                              ? UserAvatar(
                                   key: ValueKey(
-                                    'chat-message-bubble-${message.id}',
+                                    'chat-message-avatar-${message.id}',
                                   ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
+                                  displayName: name,
+                                  avatarStorageKey:
+                                      message.author?.avatarStorageKey,
+                                  radius: 16,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: own
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                          children: [
+                            if (showAuthor)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: 3,
+                                  left: 4,
+                                  right: 4,
+                                ),
+                                child: Text(
+                                  name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.onSurfaceVariant,
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: withdrawn
-                                        ? AppColors.surfaceContainerHigh
-                                        : own
-                                        ? AppColors.primary
-                                        : AppColors.surfaceContainerLowest,
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: own
-                                        ? CrossAxisAlignment.end
-                                        : CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
+                                ),
+                              ),
+                            GestureDetector(
+                              onTap: withdrawn ? null : onTapBubble,
+                              onLongPress: withdrawn ? null : onOpenActions,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // Reserve the hanging badge inside the hit-test bounds.
+                                  Padding(
+                                    padding: EdgeInsets.only(
+                                      right: reactionBadge ? 2 : 0,
+                                      bottom: reactionBadge ? 12 : 0,
+                                    ),
+                                    child: Container(
+                                      key: ValueKey(
+                                        'chat-message-bubble-${message.id}',
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: withdrawn
+                                            ? AppColors.surfaceContainerHigh
+                                            : own
+                                            ? AppColors.primary
+                                            : AppColors.surfaceContainerLowest,
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: Text(
                                         withdrawn
                                             ? 'Tin nhắn đã được thu hồi'
                                             : message.content ?? '',
@@ -628,92 +1060,76 @@ class _MessageTile extends StatelessWidget {
                                               : FontStyle.normal,
                                         ),
                                       ),
-                                      if (!withdrawn)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 4,
-                                          ),
-                                          child: Text(
-                                            chatTime(message.createdAt),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: own
-                                                  ? Colors.white70
-                                                  : AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  if (reactionBadge)
+                                    Positioned(
+                                      bottom: 0,
+                                      right: 0,
+                                      child: Semantics(
+                                        button: true,
+                                        label: 'Xem biểu cảm',
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: onOpenReactions,
+                                          child: Container(
+                                            key: ValueKey(
+                                              'chat-reaction-badge-${message.id}',
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                            ),
+                                            constraints: const BoxConstraints(
+                                              minHeight: 18,
+                                              maxHeight: 20,
+                                              maxWidth: 108,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors
+                                                  .surfaceContainerLowest,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: AppColors.outlineVariant,
+                                              ),
+                                            ),
+                                            child: Text.rich(
+                                              TextSpan(
+                                                children: reactionSummarySpans,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              if (reactionBadge)
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  child: Semantics(
-                                    button: true,
-                                    label: 'Xem biểu cảm',
-                                    child: GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: onOpenReactions,
-                                      child: Container(
-                                        key: ValueKey(
-                                          'chat-reaction-badge-${message.id}',
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 5,
-                                        ),
-                                        constraints: const BoxConstraints(
-                                          minHeight: 18,
-                                          maxHeight: 20,
-                                          maxWidth: 108,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              AppColors.surfaceContainerLowest,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: AppColors.outlineVariant,
-                                          ),
-                                        ),
-                                        child: Text.rich(
-                                          TextSpan(
-                                            children: reactionSummarySpans,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  if (!withdrawn && readers.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: reactionBadge ? 5 : 3,
+                        right: 0,
+                        left: own ? 0 : 40,
+                      ),
+                      child: _ReaderStack(
+                        key: ValueKey('chat-readers-${message.id}'),
+                        readers: readers,
+                      ),
+                    ),
                 ],
               ),
-              if (!withdrawn && readers.isNotEmpty)
-                Padding(
-                  padding: EdgeInsets.only(
-                    top: reactionBadge ? 5 : 3,
-                    right: 0,
-                    left: own ? 0 : 40,
-                  ),
-                  child: _ReaderStack(
-                    key: ValueKey('chat-readers-${message.id}'),
-                    readers: readers,
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

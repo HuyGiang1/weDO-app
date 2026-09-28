@@ -4,9 +4,9 @@
 
 ## 1. Current Git & Branch State
 
-- **Active Branch**: `feat/m9-chat-rest`
-- **Base Commit (`HEAD`)**: `0d05097c573cb6d348e586bd6d03c8acfbb78ccd` (`feat(m8): implement poll, task, and activity discussion`)
-- **Active Milestone**: **M9 — REST Chat Runtime** (Complete, verified, and passed Samsung user acceptance; uncommitted pending explicit user commit approval)
+- **Active Branch**: `feat/m10-chat-realtime`
+- **Base Commit (`dev`)**: `5c2187dcb9b73c19ac1f1368e37d6cb369bfdbb4` (`merge: integrate m9 REST chat`, which merged M9 commit `8d88e693cb909d19df317913678febfa571f3ad5`)
+- **Active Milestone**: **M10 — Chat Realtime (`WebSocket + Redis`)** (Complete, verified, and deployed to Samsung `R58M36JQYVY`; uncommitted in pre-commit state pending manual review)
 - **Preserved Stash**: `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync` — **DO NOT** pop, apply, or drop.
 - **Local-Only Untracked Files (Never Stage/Commit)**:
   - `docs/LEARNING_HANDBOOK_M0_M2.md`
@@ -15,66 +15,63 @@
 
 ---
 
-## 2. What Is Implemented in M9 (`feat/m9-chat-rest` Worktree)
+## 2. What Is Implemented in M10 (`feat/m10-chat-realtime` Worktree)
 
 ### Database Schema (`V4__chat.sql` — No New Migration Required)
-- M9 uses the existing `V4__chat.sql` tables (`conversations`, `direct_conversations`, `group_conversations`, `conversation_sequences`, `messages`, `message_requests`, `message_attachments`, `message_edit_history`, `message_hidden_users`, `message_reactions`, `conversation_read_states`, `message_pins`).
-- No existing Flyway migrations (`V0`..`V12`) were modified and no new migration (`V13+`) was needed. `message_attachments` remains reserved schema support while media upload/rendering is deferred beyond M9.
+- M10 reuses existing `V4__chat.sql` tables (`conversations`, `messages`, `conversation_read_states`, `user_presence_snapshots`).
+- `ChatService.recordLastSeenSnapshot(userId, now)` upserts `user_presence_snapshots(user_id, last_seen_at)` when a user's last active WebSocket session disconnects.
+- No existing Flyway migrations (`V0`..`V12`) were modified and no new migration (`V13+`) was required.
 
-### Backend (`backend/src/main/java/com/wedo/backend/chat/...` & `BlockService.java`)
-- **REST Endpoints (`ChatController` at `/api/v1`)**:
-  - `GET /api/v1/conversations` (lists viewable conversations; idempotently materializes canonical active group conversations, including empty chats, with group avatar projection and unread count)
-  - `POST /api/v1/groups/{groupId}/conversation` (creates or opens canonical group conversation)
-  - `POST /api/v1/direct-conversations` (opens canonical direct conversation or initiates/resolves stranger message-request state)
-  - `GET /api/v1/message-requests`, `POST /api/v1/message-requests/{id}/accept`, `POST /api/v1/message-requests/{id}/decline` (stranger message requests with 3-text limit before accept and 72h cooldown after decline)
-  - `GET /api/v1/conversations/{id}/messages` (sequence-paginated message history via `beforeSequence` & `limit`, including other participants' persisted `lastReadSequence` and public avatar projection)
-  - `POST /api/v1/conversations/{id}/messages` (text-only message send + optional `replyToMessageId` + `clientMessageId`)
-  - `PATCH /api/v1/messages/{id}` (sender-only edit within 15-minute server-time window; preserves `message_edit_history`)
-  - `POST /api/v1/messages/{id}/unsend` (sender-only unsend within 15-minute server-time window; sets `UNSENT` and atomically clears active reactions and pins)
-  - `DELETE /api/v1/messages/{id}/me` (delete-for-me at any time via `message_hidden_users`)
-  - `PUT /api/v1/messages/{id}/reaction` (6 canonical quick reactions: `👍`, `❤️`, `😂`, `😮`, `😢`, `😡` with toggle/replace semantics)
-  - `GET /api/v1/messages/{id}/reactions` (authoritative reaction-detail projection `{ user: { id, displayName, avatarUrl }, emoji }` with anti-IDOR conversation/history/block enforcement)
-  - `PUT /api/v1/conversations/{id}/read-state` (monotonic `lastReadSequence` update)
-  - `POST /api/v1/messages/{id}/pin`, `DELETE /api/v1/messages/{id}/pin`, `GET /api/v1/conversations/{id}/pins` (up to 20 active pins per conversation)
-  - `GET /api/v1/conversations/{id}/messages/search` (scoped search respecting join-time, hidden-for-me, and `UNSENT` rules)
-- **Block Integration (`BlockService.java`)**:
-  - Blocking a user transitions any `PENDING` `message_requests` between the pair to `CANCELLED` without triggering the 72-hour decline cooldown.
+### Backend (`backend/src/main/java/com/wedo/backend/chat/realtime/...` & `ChatService.java`)
+- **WebSocket Endpoints & Security (`ChatWebSocketConfig`, `ChatWebSocketHandshakeInterceptor`, `SecurityConfig`)**:
+  - Registers `/ws` and `/api/v1/ws`.
+  - Handshake interceptor validates JWT access token (`Authorization: Bearer <token>` header or `?access_token=<token>` query param) and verifies `UserStatus.ACTIVE`, rejecting unauthenticated/invalid handshakes with HTTP 401.
+- **Transactional Event Bridge (`ChatRealtimeTransactionalBridge`)**:
+  - `ChatService` publishes `DomainMutationEvent` (`send`, `edit`, `unsend`, `react`, `pin`, `unpin`) and `DomainReadEvent` (`markRead`).
+  - `ChatRealtimeTransactionalBridge` listens with `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so WebSocket/Redis frames are dispatched strictly after durable PostgreSQL transaction commit.
+- **Redis Pub/Sub, Typing TTL & Multi-Session Presence (`ChatRealtimeCoordinator`, `ChatWebSocketHandler`)**:
+  - Publishes and subscribes to Redis channel `wedo:chat:realtime` (`RedisEnvelope` deduplicated by `eventId`).
+  - Ephemeral typing TTL keys `typing:{conversationId}:{userId}` (`5s` TTL) with `TYPING_START` / `TYPING_STOP` client frames and `TYPING_UPDATED` server broadcasts.
+  - Multi-session presence set `presence:user:{userId}:sessions` (`120s` TTL): user stays online across multiple concurrent sockets until the last session closes, broadcasting `PRESENCE_UPDATED` to shared conversation peers and persisting `user_presence_snapshots.last_seen_at`.
+  - Graceful local fallback when Redis is unreachable so REST Chat and single-node WebSocket delivery never fail.
+- **Durable mutation boundary**: WebSocket accepts subscription, typing, heartbeat, and read-state commands only. Message send/edit/unsend/reaction mutations use M9 REST endpoints; unsupported WebSocket mutation commands return `VALIDATION_FAILED` without changing PostgreSQL state.
 
-### Mobile (`mobile/lib/features/chat/...` + Navigation/Group Integration)
+### Mobile (`mobile/lib/features/chat/...` & `main.dart`)
 - **Files Implemented/Updated**:
-  - `mobile/lib/features/chat/data/chat_api.dart`, `chat_models.dart`, `chat_repository.dart`
-  - `mobile/lib/features/chat/presentation/chat_formatters.dart`, `chat_home_screen.dart`, `chat_requests_screen.dart`, `chat_screen.dart`, `message_reaction_details_sheet.dart`
-  - Integrated into `mobile/lib/app/routes.dart`, `mobile/lib/app/app.dart`, `mobile/lib/main.dart`, `group_info_screen.dart`, `my_groups_screen.dart`, `group_widgets.dart`, and `public_user_profile_screen.dart`.
-- **Corrective Passes Completed (Passes 1–6)**:
-  - **Pass 1–3**: Eligible/empty group conversation visibility, group avatar rendering, own-right vs other-left author run grouping, compact lower-right reaction badge (`chat-reaction-badge-<id>`), and REST-backed read indicators.
-  - **Pass 4**: `MessageReactionDetailsSheet` (`"Biểu cảm"`) showing filterable reactor identities (`UserAvatar`, `displayName`, emoji) from `GET /api/v1/messages/{id}/reactions`.
-  - **Pass 5**: Global bottom `Chat` tab always opens `ChatHomeScreen` (`/chat`) without forwarding `groupId`/`conversationId`; Group Info's explicit `"Trò chuyện"` button opens `/groups/chat` for that exact group; conversation header opens its own Group Info; Back from a conversation opened in Chat Home returns to Chat Home.
-  - **Pass 6**: Removed always-visible per-bubble timestamps; added centered time separators (`>= 30 minutes` or calendar date boundary, breaking visual author runs); separated gestures into single-tap bubble (2-second centered exact timestamp reveal), long-press bubble (quick reactions/actions sheet for `ACTIVE` messages), and single-tap reaction badge (`MessageReactionDetailsSheet`).
+  - `mobile/lib/features/chat/data/chat_realtime_event.dart` (`ChatRealtimeEvent`, `ChatRealtimeEventType`, `ChatRealtimeConnectionState`)
+  - `mobile/lib/features/chat/data/chat_realtime_client.dart` (`ChatRealtimeClient`, `WebSocketChatRealtimeClient`, `NoopChatRealtimeClient`)
+  - `mobile/lib/features/chat/data/chat_api.dart`, `chat_repository.dart`
+  - `mobile/lib/features/chat/presentation/chat_formatters.dart`, `chat_home_screen.dart`, `chat_screen.dart`
+  - `mobile/lib/main.dart`
+- **Capabilities & Preserved M9 Pass 6 UX**:
+  - Automatic WebSocket connection, `SUBSCRIBE`/`UNSUBSCRIBE` lifecycle, exponential-backoff reconnect, and silent reconnect history reconciliation.
+  - `ChatRepository.defaultRealtimeClient` wired in `main.dart` so all navigation routes (`MyGroupsScreen`, `GroupInfoScreen`, `ChatHomeScreen`) share the live `WebSocketChatRealtimeClient` instance, and `SUBSCRIBED` initial `onlineUserIds` snapshot excludes `viewerUserId` so `"Đang hoạt động"` reflects other active participants.
+  - Deduplicated live updates for `MESSAGE_CREATED`, `MESSAGE_EDITED`, `MESSAGE_UNSENT`, `MESSAGE_REACTION_UPDATED`, `READ_STATE_UPDATED` (moving reader mini-avatars in real time), `TYPING_UPDATED` (`"<Name> đang nhập..."` with 6s timeout), and `PRESENCE_UPDATED` (`"Đang hoạt động"` header badge and Chat Home green dot).
+  - Preserves all M9 Pass 6 UX rules (no per-bubble default timestamp, `>= 30m` & date-boundary centered time separators breaking author runs, single-tap 2s exact timestamp reveal, long-press quick reactions & actions sheet).
 
 ---
 
-## 3. Latest Verified Test, Static Analysis & Samsung Acceptance Status
+## 3. Latest Verified Test, Static Analysis & Two-Account Samsung Realtime Acceptance Status
 
+- **Backend Focused Chat + Realtime Suite** (`.\mvnw.cmd -Dtest="ChatRealtimeIntegrationTest,ChatControllerTest,ChatServiceIntegrationTest" test`):
+  - **16 tests run, 0 failures, 0 errors, 0 skipped**
 - **Backend Full Suite** (`.\mvnw.cmd test`):
-  - **524 tests run, 0 failures, 0 errors, 1 skipped**
-- **Mobile Focused Chat Pass 6 Suite** (`flutter test test/features/chat --reporter compact`):
-  - **21 passed, 0 failures**
-- **Mobile Focused Chat / Routing / Group Suite** (`flutter test test/features/chat test/app/routes_test.dart test/features/groups/presentation/group_widgets_test.dart --reporter compact`):
-  - **86 passed, 0 failures**
+  - **529 tests run, 0 failures, 0 errors, 1 skipped**
 - **Mobile Static Analysis** (`flutter analyze`):
   - **Clean (`No issues found!`)**
 - **Mobile Full Test Suite** (`flutter test --reporter compact`):
-  - **623 passed, 0 failures**
-- **Samsung Physical Device (`R58M36JQYVY`)**:
-  - **PASS by user** (backend `UP`, `adb reverse tcp:8080` active, latest debug APK installed, device unlocked, app foregrounded).
+  - **626 passed, 0 failures**
+- **Two-Account Samsung Physical Device Realtime Acceptance (`R58M36JQYVY`)**:
+  - **PASSED END-TO-END WITHOUT MANUAL REFRESH**:
+    - **Samsung client (`R58M36JQYVY`)**: `member1@wedo.local` (`QA Member 1`) viewing `weDO QA Team` (`groupId: 3ba858f7-858f-40db-a5d1-444fd6f88c36`, `conversationId: f2af179e-4627-4fa7-8972-5665c153bc36`).
+    - **Local realtime harness client**: `member2@wedo.local` (`QA Member 2`) and `outsider@wedo.local` over `/ws` + M9 REST mutation endpoints.
+    - Verified live `MESSAGE_CREATED` (both directions + duplicate suppression), live `TYPING_START` (`"QA Member 2 đang nhập..."`), live `TYPING_STOP`, typing TTL auto-expiry, live `MESSAGE_REACTION_UPDATED` (`❤️ 1` -> `👍 1` + `"Biểu cảm"` reaction details bottom sheet), live `READ_STATE_UPDATED` (`QM` reader mini-avatar movement), live `MESSAGE_EDITED` (`"Chào trực tiếp M10 (đã chỉnh sửa)"`), live `MESSAGE_UNSENT` (`"Tin nhắn đã được thu hồi"`), multi-session `PRESENCE_UPDATED` (`"● Đang hoạt động"` remains online with 2 sessions -> 1 session, goes offline on 0 sessions), reconnect/resubscribe with gap message delivery, and `outsider@wedo.local` security negative checks (`ERROR:ACCESS_DENIED` / `ERROR:GROUP_NOT_FOUND`).
 
 ---
 
 ## 4. Next Actions for Incoming Agent / User
 
-1. **Ready for M9 Commit (Requires Explicit User Approval)**:
-   - Stage only the 37 M9 + agent handoff files (`16` modified tracked files + `21` untracked M9/handoff files).
-   - Explicitly exclude `docs/LEARNING_HANDBOOK_M0_M2.md`, `docs/M8_STITCH_FIDELITY_INVENTORY.md`, `.stitch/**`, and `stash@{0}`.
-   - Recommended commit message: `feat(m9): complete REST chat runtime`.
-2. **After M9 Commit / Push Approval**:
-   - Proceed to **M10 — Realtime WebSocket (`/ws`) + Redis** on a new milestone branch when requested by the user.
+1. **User Review of M10 Realtime Acceptance**:
+   - M10 is in pre-commit state on `feat/m10-chat-realtime` with two-account Samsung realtime acceptance verified.
+2. **After User Approval**:
+   - Stage and commit M10 (`feat/m10-chat-realtime`), excluding `docs/LEARNING_HANDBOOK_M0_M2.md`, `docs/M8_STITCH_FIDELITY_INVENTORY.md`, `.stitch/**`, and `stash@{0}`.

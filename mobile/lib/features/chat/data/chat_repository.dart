@@ -1,10 +1,18 @@
 import '../../../core/network/api_exception.dart';
 import 'chat_api.dart';
 import 'chat_models.dart';
+import 'chat_realtime_client.dart';
 
 class ChatRepository {
+  static ChatRealtimeClient defaultRealtimeClient =
+      const NoopChatRealtimeClient();
+
   final ChatApi api;
-  const ChatRepository(this.api);
+  final ChatRealtimeClient realtimeClient;
+  ChatRepository(
+    this.api, {
+    ChatRealtimeClient? realtimeClient,
+  }) : realtimeClient = realtimeClient ?? defaultRealtimeClient;
   Future<ChatConversation> openGroup(String id) => api.openGroup(id);
   Future<ChatDirectOpen> openDirect(String userId) => api.openDirect(userId);
   Future<List<ChatMessageRequest>> messageRequests() => api.messageRequests();
@@ -16,7 +24,11 @@ class ChatRepository {
     int? beforeSequence,
     int limit = 30,
   }) => api.history(id, beforeSequence: beforeSequence, limit: limit);
-  Future<ChatMessage> send(String id, String content) => api.send(id, content);
+  Future<ChatMessage> send(
+    String id,
+    String content, {
+    String? clientMessageId,
+  }) => api.send(id, content, clientMessageId: clientMessageId);
   Future<ChatMessage> edit(String id, String content) => api.edit(id, content);
   Future<ChatMessage> unsend(String id) => api.unsend(id);
   Future<void> deleteForMe(String id) => api.deleteForMe(id);

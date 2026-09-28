@@ -264,10 +264,12 @@ PostgreSQL:
 - Settlement
 - Fund
 - Notification
+- `user_presence_snapshots` (`user_id`, `last_seen_at`): Durable last-seen snapshot updated by M10 (`ChatService.recordLastSeenSnapshot`) when a user's last active WebSocket session closes.
 
-Redis:
-- Presence
-- Typing
+Redis (M10 Chat Realtime):
+- Pub/Sub Fanout Channel: `wedo:chat:realtime` (`RedisEnvelope` with `eventId` deduplication)
+- Multi-Session Presence Set: `presence:user:{userId}:sessions` (`120s` TTL)
+- Ephemeral Typing Key: `typing:{conversationId}:{userId}` (`5s` TTL)
 - Rate limit
 - Temporary WebSocket/session state
 - TTL-based ephemeral data

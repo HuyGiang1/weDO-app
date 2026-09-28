@@ -73,4 +73,9 @@ ConversationEntity "1" -- "0..*" ConversationReadStateEntity
 GroupEntity "1" -- "0..1" GroupConversationEntity
 UserEntity "1" -- "0..*" MessageReactionEntity
 UserEntity "1" -- "0..*" ConversationReadStateEntity
+ChatService ..> ChatRealtimeTransactionalBridge : publishes AFTER_COMMIT domain events
+ChatRealtimeTransactionalBridge --> ChatRealtimeCoordinator : dispatches committed chat events
+ChatWebSocketConfig --> ChatWebSocketHandler : registers /ws, /api/v1/ws
+ChatWebSocketConfig --> ChatWebSocketHandshakeInterceptor : enforces JWT handshake
+ChatWebSocketHandler --> ChatRealtimeCoordinator : manages sessions, typing, presence
 @enduml

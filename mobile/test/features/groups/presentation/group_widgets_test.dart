@@ -124,7 +124,10 @@ void main() {
     final controller = GroupDetailController(
       _repository(
         _Adapter({
-          '/api/v1/groups/g': _detail('OWNER'),
+          '/api/v1/groups/g': _detail(
+            'OWNER',
+            avatarStorageKey: 'avatars/canonical-group.png',
+          ),
           '/api/v1/groups/g/members': [_member('a'), _member('b')],
         }),
       ),
@@ -145,6 +148,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
     expect(find.text('Groups'), findsOneWidget);
+    final avatar = tester.widget<GroupAvatar>(find.byType(GroupAvatar));
+    expect(avatar.avatarStorageKey, 'avatars/canonical-group.png');
+    expect(
+      avatar.resolvedUrl,
+      'http://localhost:8080/api/v1/media/avatars/canonical-group.png',
+    );
     await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
     expect(find.text('Rời nhóm'), findsOneWidget);
   });
@@ -303,11 +312,11 @@ Map<String, dynamic> _summary(String id) => {
   'callerRole': 'MEMBER',
   'updatedAt': '2026-01-01T00:00:00Z',
 };
-Map<String, dynamic> _detail(String role) => {
+Map<String, dynamic> _detail(String role, {String? avatarStorageKey}) => {
   'id': 'g',
   'name': 'Group G',
   'description': null,
-  'avatarStorageKey': null,
+  'avatarStorageKey': avatarStorageKey,
   'status': 'ACTIVE',
   'ownerUserId': 'u',
   'callerRole': role,

@@ -383,6 +383,10 @@ started by this closeout.
 
 ## 12. M9 — Chat REST
 
+Implementation status: REST implementation, automated verification, and physical
+Samsung (`R58M36JQYVY`) user acceptance complete on `feat/m9-chat-rest`, based
+on the verified `dev` checkpoint.
+
 Features:
 - conversations
 - group chat
@@ -406,6 +410,34 @@ Rules:
 - cursor/sequence pagination
 
 DoD: complete chat works by REST before realtime.
+
+M9 scope clarification: the V4 `message_attachments` table reserves persistence
+for future attachments, but M9's implemented REST send contract is text-only.
+Attachment upload, storage ownership, and rendering are deferred to a dedicated
+media scope; they are not an M9 closeout blocker. M9 verification on Samsung
+(`R58M36JQYVY`) confirmed device detection, APK build/install/launch, healthy
+backend (`UP`), active `adb reverse tcp:8080`, unlocked foreground runtime, and
+user acceptance PASS.
+
+M9 chat corrective acceptance: the conversation list idempotently materializes
+and returns eligible active group conversations, including empty chats. Message
+history includes other participants' persisted `lastReadSequence` and avatar
+projection; Flutter shows each reader once under the newest applicable loaded
+message. Read changes are REST-backed and refresh/re-entry based; live read
+propagation remains M10. Quick reactions are limited to 👍, ❤️, 😂, 😮, 😢 and 😡,
+with a compact lower-right badge and REST-backed reaction details sheet
+(`GET /api/v1/messages/{id}/reactions`). Unsend atomically removes reactions and
+pins and returns the authoritative withdrawn message; withdrawn content has no
+visible reactions and cannot be reacted to. Chat bubbles omit always-visible
+per-row timestamps, displaying centered time separators (`>= 30 minutes` or date
+boundary, breaking visual author runs), single-tap temporary centered exact
+timestamp reveal, and long-press quick reaction/action sheets.
+
+M9 navigation invariant: the global Chat bottom tab always opens Chat Home
+(`/chat`) without group/conversation IDs. Group Info's explicit "Trò chuyện"
+action opens that group's canonical conversation; selecting a Chat Home row
+opens that exact conversation and Back returns to the list. The conversation
+header continues to open its own Group Info.
 
 ## 13. M10 — Realtime WebSocket + Redis
 

@@ -19,6 +19,18 @@ class TaskEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: TaskStat
 class TaskAssigneeEntity { taskId: UUID\nuserId: UUID }
 class TaskStatusHistoryEntity { taskId: UUID\nfromStatus: TaskStatus?\ntoStatus: TaskStatus }
 class ActivityCommentEntity { id: UUID\nactivityId: UUID\nauthorId: UUID\nparentCommentId: UUID?\nisDeleted: boolean }
+class ConversationEntity { id: UUID\ntype: DIRECT | GROUP\ncreatedAt: Instant\nupdatedAt: Instant }
+class DirectConversationEntity { conversationId: UUID\nuserId1: UUID\nuserId2: UUID }
+class GroupConversationEntity { conversationId: UUID\ngroupId: UUID }
+class ConversationSequenceEntity { conversationId: UUID\ncurrentSequence: long }
+class MessageRequestEntity { id: UUID\nsenderId: UUID\nreceiverId: UUID\nstatus: RequestStatus\nresolvedAt: Instant? }
+class MessageEntity { id: UUID\nsequence: long\nsenderId: UUID?\ntype: TEXT | IMAGE\ncontent: String?\nstatus: ACTIVE | UNSENT\nreplyToMessageId: UUID? }
+class MessageAttachmentEntity { id: UUID\nstorageKey: String\ncontentType: String\nfileSizeBytes: long\nsortOrder: int }
+class MessageEditHistoryEntity { id: UUID\npreviousContent: String?\neditedAt: Instant }
+class MessageHiddenUserEntity { messageId: UUID\nuserId: UUID\nhiddenAt: Instant }
+class MessageReactionEntity { id: UUID\nmessageId: UUID\nuserId: UUID\nemoji: String }
+class ConversationReadStateEntity { conversationId: UUID\nuserId: UUID\nlastReadSequence: long }
+class MessagePinEntity { id: UUID\nmessageId: UUID\npinnedBy: UUID? }
 UserEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupInviteLinkEntity
@@ -40,4 +52,25 @@ ActivityEntity "1" -- "0..*" ActivityCommentEntity
 ActivityCommentEntity "0..1" -- "0..*" ActivityCommentEntity : replies
 UserEntity "1" -- "0..*" FriendshipEntity
 UserEntity "1" -- "0..*" ActivityCommentEntity : author
+ConversationEntity "1" -- "0..1" DirectConversationEntity
+ConversationEntity "1" -- "0..1" GroupConversationEntity
+ConversationEntity "1" -- "1" ConversationSequenceEntity
+ConversationEntity "1" -- "0..*" MessageEntity
+ConversationEntity "1" -- "0..*" MessageRequestEntity
+MessageEntity "1" -- "0..*" MessageAttachmentEntity
+note right of MessageAttachmentEntity
+  V4 schema capability.
+  Upload, ownership and rendering
+  are deferred beyond M9.
+end note
+MessageEntity "1" -- "0..*" MessageEditHistoryEntity
+MessageEntity "1" -- "0..*" MessageHiddenUserEntity
+MessageEntity "1" -- "0..*" MessageReactionEntity
+MessageEntity "1" -- "0..1" MessagePinEntity
+MessageEntity "0..1" -- "0..*" MessageEntity : replies
+UserEntity "1" -- "0..*" MessageEntity : sender
+ConversationEntity "1" -- "0..*" ConversationReadStateEntity
+GroupEntity "1" -- "0..1" GroupConversationEntity
+UserEntity "1" -- "0..*" MessageReactionEntity
+UserEntity "1" -- "0..*" ConversationReadStateEntity
 @enduml

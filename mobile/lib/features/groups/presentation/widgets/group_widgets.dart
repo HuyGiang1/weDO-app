@@ -27,11 +27,21 @@ class GroupAvatar extends StatelessWidget {
 
   String? get resolvedUrl {
     if (avatarUrl != null && avatarUrl!.isNotEmpty) return avatarUrl;
-    if (avatarStorageKey == null || avatarStorageKey!.trim().isEmpty) return null;
+    if (avatarStorageKey == null || avatarStorageKey!.trim().isEmpty) {
+      return null;
+    }
     final key = avatarStorageKey!.trim();
     if (key.startsWith('http://') || key.startsWith('https://')) return key;
-    final base = baseUrl ?? defaultBaseUrl ?? const String.fromEnvironment('WEDO_API_BASE_URL', defaultValue: 'http://localhost:8080');
-    final cleanBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final base =
+        baseUrl ??
+        defaultBaseUrl ??
+        const String.fromEnvironment(
+          'WEDO_API_BASE_URL',
+          defaultValue: 'http://localhost:8080',
+        );
+    final cleanBase = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     final cleanKey = key.startsWith('/') ? key.substring(1) : key;
     if (cleanKey.startsWith('api/v1/media/')) {
       return '$cleanBase/$cleanKey';
@@ -129,10 +139,13 @@ String groupUpdatedLabel(DateTime value, {DateTime? now}) {
 }
 
 class GroupsBottomNavigation extends StatelessWidget {
-  const GroupsBottomNavigation({super.key});
+  final int currentIndex;
+  final ValueChanged<int>? onTap;
+  const GroupsBottomNavigation({super.key, this.currentIndex = 1, this.onTap});
   @override
   Widget build(BuildContext context) => BottomNavigationBar(
-    currentIndex: 1,
+    currentIndex: currentIndex,
+    onTap: onTap,
     type: BottomNavigationBarType.fixed,
     items: [
       BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),

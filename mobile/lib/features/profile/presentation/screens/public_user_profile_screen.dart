@@ -8,10 +8,12 @@ import '../widgets/profile_ui.dart';
 class PublicUserProfileScreen extends StatefulWidget {
   final String userId;
   final Future<PublicUserProfile> Function(String userId) loadPublicProfile;
+  final VoidCallback? onMessage;
   const PublicUserProfileScreen({
     super.key,
     required this.userId,
     required this.loadPublicProfile,
+    this.onMessage,
   });
 
   @override
@@ -83,6 +85,14 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                       '@${profile.username}',
                       style: AppTextStyles.bodyMedium,
                     ),
+                    if (widget.onMessage != null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      FilledButton.icon(
+                        onPressed: widget.onMessage,
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text('Nháº¯n tin'),
+                      ),
+                    ],
                     if (bio != null && bio.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.lg),
                       ProfileSurface(

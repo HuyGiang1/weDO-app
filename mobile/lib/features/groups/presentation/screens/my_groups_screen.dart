@@ -12,6 +12,8 @@ class MyGroupsScreen extends StatefulWidget {
   final ValueChanged<String> onOpenGroup;
   final VoidCallback? onJoinByCode;
   final VoidCallback? onInvitations;
+  final VoidCallback? onChatRequests;
+  final VoidCallback? onChat;
 
   const MyGroupsScreen({
     super.key,
@@ -20,6 +22,8 @@ class MyGroupsScreen extends StatefulWidget {
     required this.onOpenGroup,
     this.onJoinByCode,
     this.onInvitations,
+    this.onChatRequests,
+    this.onChat,
   });
   @override
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
@@ -35,7 +39,11 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      bottomNavigationBar: const GroupsBottomNavigation(),
+      bottomNavigationBar: GroupsBottomNavigation(
+        onTap: (index) {
+          if (index == 2) widget.onChat?.call();
+        },
+      ),
       body: SafeArea(
         child: ValueListenableBuilder<GroupsState>(
           valueListenable: widget.controller,
@@ -107,10 +115,21 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                       ],
                     ),
                   ),
-                  ElevatedButton.icon(
-                    onPressed: widget.onCreate,
-                    icon: const Icon(Icons.add),
-                    label: const Text(AppStrings.createGroup),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.onChatRequests != null)
+                        IconButton(
+                          tooltip: 'Lời mời trò chuyện',
+                          onPressed: widget.onChatRequests,
+                          icon: const Icon(Icons.mark_chat_unread_outlined),
+                        ),
+                      ElevatedButton.icon(
+                        onPressed: widget.onCreate,
+                        icon: const Icon(Icons.add),
+                        label: const Text(AppStrings.createGroup),
+                      ),
+                    ],
                   ),
                 ],
               ),

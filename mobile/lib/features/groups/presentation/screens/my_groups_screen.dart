@@ -13,6 +13,7 @@ class MyGroupsScreen extends StatefulWidget {
   final VoidCallback? onJoinByCode;
   final VoidCallback? onInvitations;
   final VoidCallback? onChatRequests;
+  final VoidCallback? onNotifications;
   final VoidCallback? onChat;
 
   const MyGroupsScreen({
@@ -23,6 +24,7 @@ class MyGroupsScreen extends StatefulWidget {
     this.onJoinByCode,
     this.onInvitations,
     this.onChatRequests,
+    this.onNotifications,
     this.onChat,
   });
   @override
@@ -118,6 +120,13 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.onNotifications != null)
+                        IconButton(
+                          key: const Key('open_notifications_button'),
+                          tooltip: 'Thông báo',
+                          onPressed: widget.onNotifications,
+                          icon: const Icon(Icons.notifications_outlined),
+                        ),
                       if (widget.onChatRequests != null)
                         IconButton(
                           tooltip: 'Lời mời trò chuyện',

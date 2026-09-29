@@ -112,6 +112,8 @@ public enum ErrorCode {
     FUND_TRANSACTION_ALREADY_REVERSED(HttpStatus.CONFLICT, "Fund transaction has already been reversed."),
     FUND_REVERSAL_NOT_ALLOWED(HttpStatus.CONFLICT, "Reversing this fund transaction is not allowed."),
     FUND_CLOSE_PRECONDITION_FAILED(HttpStatus.CONFLICT, "Group fund cannot be closed while open collections, pending items, or non-zero balance exist."),
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "Notification was not found."),
+    DEVICE_NOT_FOUND(HttpStatus.NOT_FOUND, "User device was not found."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
 
     private final HttpStatus status;

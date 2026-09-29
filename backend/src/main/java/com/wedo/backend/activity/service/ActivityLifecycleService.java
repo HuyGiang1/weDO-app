@@ -11,6 +11,10 @@ import com.wedo.backend.group.repository.GroupActivityLogRepository;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.group.service.ReadableGroupAccess;
 import java.time.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +30,9 @@ public class ActivityLifecycleService {
     private final ActivityResponseFactory responses;
     private final GroupActivityLogRepository groupActivityLogRepository;
     private final Clock clock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     public ActivityLifecycleService(ActivityRepository activities,
                                     ActivityParticipantRepository participants,
@@ -108,20 +115,86 @@ public class ActivityLifecycleService {
         long going = participants.countByActivityIdAndRsvpStatus(id, ActivityRsvpStatus.GOING);
         if (cap != null && cap < going) throw new BusinessException(ErrorCode.ACTIVITY_CAPACITY_INVALID);
         Integer oldCapacity = a.getCapacity();
+        boolean confirmedScheduleChanged = false;
+        boolean confirmedLocationChanged = false;
         if (s == ActivityStatus.CONFIRMED) {
+            confirmedScheduleChanged = !Objects.equals(a.getStartAt(), start)
+                    || !Objects.equals(a.getEndAt(), end)
+                    || !Objects.equals(a.getTimezone(), zone);
+            confirmedLocationChanged = !Objects.equals(a.getLocation(), loc);
             logIfChanged(a, actor, "startAt", a.getStartAt(), start, now);
             logIfChanged(a, actor, "endAt", a.getEndAt(), end, now);
             logIfChanged(a, actor, "timezone", a.getTimezone(), zone, now);
-            if (!java.util.Objects.equals(a.getLocation(), loc)) {
+            if (confirmedLocationChanged) {
                 changes.save(new ActivityChangeLogEntity(UUID.randomUUID(), id, actor, "location", String.valueOf(a.getLocation()), String.valueOf(loc), now));
             }
         }
         a.update(title, desc, start, end, zone, loc, cap, now);
+        if (confirmedScheduleChanged || confirmedLocationChanged) {
+            publishConfirmedDetailsChanged(a, actor, now, confirmedScheduleChanged, confirmedLocationChanged);
+        }
         if ((oldCapacity != null && (cap == null || cap > oldCapacity)) && s != ActivityStatus.IN_PROGRESS) {
             rsvps.promoteAll(a, now);
         }
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), a.getGroupId(), actor, GroupActivityAction.ACTIVITY_UPDATED, now));
         return response(a, actor);
+    }
+
+    private void publishConfirmedDetailsChanged(
+            ActivityEntity activity,
+            UUID actorId,
+            Instant occurredAt,
+            boolean scheduleChanged,
+            boolean locationChanged
+    ) {
+        if (eventPublisher == null) return;
+        LinkedHashSet<UUID> recipients = new LinkedHashSet<>();
+        recipients.addAll(participants.findByActivityIdAndRsvpStatusOrderByWaitlistSequenceAsc(
+                activity.getId(), ActivityRsvpStatus.GOING).stream().map(ActivityParticipantEntity::getUserId).toList());
+        recipients.addAll(participants.findByActivityIdAndRsvpStatusOrderByWaitlistSequenceAsc(
+                activity.getId(), ActivityRsvpStatus.MAYBE).stream().map(ActivityParticipantEntity::getUserId).toList());
+        recipients.remove(actorId);
+        if (recipients.isEmpty()) return;
+
+        permissions.requireReadableMembership(activity.getGroupId(), actorId);
+        if (scheduleChanged) {
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "ACTIVITY_TIME_CHANGED:" + activity.getId() + ":" + occurredAt.toEpochMilli(),
+                    "ACTIVITY_TIME_CHANGED",
+                    "ACTIVITY",
+                    "NORMAL",
+                    false,
+                    actorId,
+                    activity.getGroupId(),
+                    List.copyOf(recipients),
+                    "Thời gian hoạt động đã thay đổi",
+                    "Thời gian của hoạt động " + activity.getTitle() + " đã thay đổi.",
+                    "ACTIVITY",
+                    activity.getId(),
+                    "/activities/detail",
+                    Map.of("groupId", activity.getGroupId().toString(), "activityId", activity.getId().toString()),
+                    occurredAt
+            ));
+        }
+        if (locationChanged) {
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "ACTIVITY_LOCATION_CHANGED:" + activity.getId() + ":" + occurredAt.toEpochMilli(),
+                    "ACTIVITY_LOCATION_CHANGED",
+                    "ACTIVITY",
+                    "NORMAL",
+                    false,
+                    actorId,
+                    activity.getGroupId(),
+                    List.copyOf(recipients),
+                    "Địa điểm hoạt động đã thay đổi",
+                    "Địa điểm của hoạt động " + activity.getTitle() + " đã thay đổi.",
+                    "ACTIVITY",
+                    activity.getId(),
+                    "/activities/detail",
+                    Map.of("groupId", activity.getGroupId().toString(), "activityId", activity.getId().toString()),
+                    occurredAt
+            ));
+        }
     }
 
     private ActivityEntity lockedAuthorized(UUID id, UUID actor) {

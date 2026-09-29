@@ -61,6 +61,9 @@ import '../features/expense/presentation/expense_screens.dart';
 import '../features/fund/data/fund_api.dart';
 import '../features/fund/data/fund_repository.dart';
 import '../features/fund/presentation/fund_screens.dart';
+import '../features/notification/data/notification_api.dart';
+import '../features/notification/data/notification_repository.dart';
+import '../features/notification/presentation/notification_screens.dart';
 
 export 'auth_route_guard.dart';
 
@@ -93,6 +96,7 @@ class ProfileRouteArgs {
   })
   changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
+  final Future<void> Function()? logout;
 
   const ProfileRouteArgs({
     required this.loadCurrentUser,
@@ -100,6 +104,7 @@ class ProfileRouteArgs {
     required this.updateUsername,
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
+    this.logout,
   });
 }
 
@@ -212,7 +217,11 @@ class ExpenseRouteArgs {
   final ExpenseRepository repository;
   final GroupRepository groupRepository;
   final String groupId;
-  const ExpenseRouteArgs({required this.repository, required this.groupRepository, required this.groupId});
+  const ExpenseRouteArgs({
+    required this.repository,
+    required this.groupRepository,
+    required this.groupId,
+  });
 }
 
 class FundRouteArgs {
@@ -226,6 +235,12 @@ class FundRouteArgs {
     required this.groupId,
     this.groupName,
   });
+}
+
+class NotificationRouteArgs {
+  final NotificationRepository repository;
+  final GroupRepository? groupRepository;
+  const NotificationRouteArgs({required this.repository, this.groupRepository});
 }
 
 /// A unified route definition binding access policy to route construction.
@@ -274,6 +289,8 @@ abstract final class AppRoutes {
   static const String groupExpenses = '/groups/expenses';
   static const String groupSettlements = '/groups/settlements';
   static const String groupFund = '/groups/fund';
+  static const String notifications = '/notifications';
+  static const String notificationSettings = '/notifications/settings';
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
   static const String tasks = '/activities/tasks';
@@ -456,6 +473,7 @@ abstract final class AppRoutes {
             updateUsername: loader.updateUsername,
             changePassword: loader.changePassword,
             endSessionAfterPasswordChange: loader.endSessionAfterPasswordChange,
+            logout: loader.logout,
           ),
           settings: settings,
         );
@@ -584,6 +602,15 @@ abstract final class AppRoutes {
                   ChatRepository(ChatApi(args.repository.api.dio)),
                 ),
               ),
+              onNotifications: () => Navigator.of(context).pushNamed(
+                notifications,
+                arguments: NotificationRouteArgs(
+                  repository: NotificationRepository(
+                    NotificationApi(args.repository.api.dio),
+                  ),
+                  groupRepository: args.repository,
+                ),
+              ),
               onChat: () => Navigator.of(context).pushNamed(
                 chatHome,
                 arguments: ChatHomeRouteArgs(
@@ -657,7 +684,9 @@ abstract final class AppRoutes {
               onExpenses: () => Navigator.of(context).pushNamed(
                 groupExpenses,
                 arguments: ExpenseRouteArgs(
-                  repository: ExpenseRepository(ExpenseApi(args.repository.api.dio)),
+                  repository: ExpenseRepository(
+                    ExpenseApi(args.repository.api.dio),
+                  ),
                   groupRepository: args.repository,
                   groupId: args.groupId,
                 ),
@@ -665,7 +694,9 @@ abstract final class AppRoutes {
               onSettlements: () => Navigator.of(context).pushNamed(
                 groupSettlements,
                 arguments: ExpenseRouteArgs(
-                  repository: ExpenseRepository(ExpenseApi(args.repository.api.dio)),
+                  repository: ExpenseRepository(
+                    ExpenseApi(args.repository.api.dio),
+                  ),
                   groupRepository: args.repository,
                   groupId: args.groupId,
                 ),
@@ -677,6 +708,17 @@ abstract final class AppRoutes {
                   groupRepository: args.repository,
                   groupId: args.groupId,
                   groupName: detail.value.detail?.name,
+                ),
+              ),
+              onNotificationMute: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => GroupNotificationSettingsSheet(
+                  repository: NotificationRepository(
+                    NotificationApi(args.repository.api.dio),
+                  ),
+                  groupId: args.groupId,
+                  groupName: detail.value.detail?.name ?? 'Nhóm WeDo',
                 ),
               ),
               onChatHome: () => Navigator.of(context).pushNamed(
@@ -777,9 +819,14 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final args = settings.arguments;
-        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty) return null;
+        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty)
+          return null;
         return MaterialPageRoute<void>(
-          builder: (_) => ExpenseListScreen(groupId: args.groupId, repository: args.repository, groupRepository: args.groupRepository),
+          builder: (_) => ExpenseListScreen(
+            groupId: args.groupId,
+            repository: args.repository,
+            groupRepository: args.groupRepository,
+          ),
           settings: settings,
         );
       },
@@ -788,7 +835,8 @@ abstract final class AppRoutes {
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
         final args = settings.arguments;
-        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty) return null;
+        if (args is! ExpenseRouteArgs || args.groupId.trim().isEmpty)
+          return null;
         return MaterialPageRoute<void>(
           builder: (_) => ExpenseBalanceScreen(
             groupId: args.groupId,
@@ -820,6 +868,47 @@ abstract final class AppRoutes {
               repository: FundRepository(FundApi(args.repository.api.dio)),
               loadMembers: () => args.repository.getMembers(args.groupId),
             ),
+            settings: settings,
+          );
+        }
+        return null;
+      },
+    ),
+    notifications: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is NotificationRouteArgs) {
+          return MaterialPageRoute<void>(
+            builder: (_) => NotificationCenterScreen(
+              repository: args.repository,
+              groupRepository: args.groupRepository,
+            ),
+            settings: settings,
+          );
+        }
+        if (args is GroupsRouteArgs) {
+          return MaterialPageRoute<void>(
+            builder: (_) => NotificationCenterScreen(
+              repository: NotificationRepository(
+                NotificationApi(args.repository.api.dio),
+              ),
+              groupRepository: args.repository,
+            ),
+            settings: settings,
+          );
+        }
+        return null;
+      },
+    ),
+    notificationSettings: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is NotificationRouteArgs) {
+          return MaterialPageRoute<void>(
+            builder: (_) =>
+                NotificationSettingsScreen(repository: args.repository),
             settings: settings,
           );
         }

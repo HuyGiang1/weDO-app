@@ -4,9 +4,9 @@
 
 ## 1. Current Git & Branch State
 
-- **Active Branch**: `feat/m13-group-fund`
-- **Base Commit (`dev`)**: `2b5341888644de7b732f2d6f9fa29fb698b38f0d` (M12 merged & closed)
-- **Active Milestone**: **M13 — Group Fund** (`FUND-01`..`FUND-17` implemented and verified end-to-end across backend, Flutter, and Samsung physical device `R58M36JQYVY`; ready for user review / commit authorization; no stage/commit/push performed)
+- **Active Branch**: `feat/m14-notification-fcm`
+- **Base Commit (`dev`)**: `a34de335cefa283b218bf80f5e421ccff58b96b3` (M13 merged & closed)
+- **Active Milestone**: **M14 — Notification + FCM** (`NOTI-01`..`NOTI-06` implemented; live Samsung warm/background acceptance for Chat, Activity, Poll, Task, Finance, Fund, global/category suppression, UI group mute, and critical bypass verified. Cold-start tap remains unverified. The full backend suite retains one Fund JSON assertion reproduced at clean base. Local commit is explicitly approved; no push is authorized.)
 - **Preserved Stash**: `stash@{0}: On dev: codex-m7-foundation-pre-m6-sync` — **DO NOT** pop, apply, or drop.
 - **Local-Only Untracked Files (Never Stage/Commit)**:
   - `docs/LEARNING_HANDBOOK_M0_M2.md`
@@ -246,3 +246,49 @@ Canonical docs/handoff:
   - `docs/AGENT_CURRENT_HANDOFF.md`
   - `docs/AGENT_DECISION_LOG.md`
   - `docs/architecture/CLASS_DIAGRAM.puml`
+
+---
+
+## 7. Current M14 Handoff (`feat/m14-notification-fcm`)
+
+### Implementation Summary
+- **Database Schema (`V1__identity_and_auth.sql`, `V9__notifications.sql`, `V10__cross_module_indexes.sql` — No New Migration)**:
+  - Reuses existing `user_devices` (`V1`), `notifications`, `user_notification_settings`, `group_notification_settings` (`V9`), and `uq_user_devices_active_push_token` (`V10`). Zero Flyway migrations (`V0`..`V12`) were modified and no `V13+` migration was added.
+- **Backend (`com.wedo.backend.notification.*`, `ChatRealtimeCoordinator`, domain event emitters)**:
+  - Implemented `NotificationController`, `NotificationService`, `NotificationDtos`, `NotificationDomainEvent`, `NotificationDomainEventListener`, `PushGateway`, and `FcmPushGateway` covering `NOTI-01`..`NOTI-06` and `/api/v1/me/devices` (`GET`, `POST`, `DELETE /{deviceId}`).
+  - Notification persistence is `AFTER_COMMIT` and `REQUIRES_NEW`; per-recipient duplicate checks serialize with a PostgreSQL transaction advisory lock. Push dispatch happens after the persistence transaction. A post-commit database failure is isolated from business state but can lose that notification because there is no durable outbox.
+  - In-app inbox persistence is independent of push policy. User global/category settings suppress push only; group mute suppresses noncritical push only. Only waitlist promotion, settlement confirmation, fund contribution confirmation, and fund reimbursement approval are marked critical; join-request approval is not a critical bypass.
+  - `ChatRealtimeCoordinator.isUserSubscribedToConversation` checks an open local socket and active conversation subscription; unsubscribe/disconnect remove local state. Subscription state is not shared across backend instances, so open-chat suppression is best-effort in a multi-instance deployment.
+  - `FcmPushGateway` sends via Firebase Admin `FirebaseMessaging` using ADC, maps invalid/transient/provider failures, and returns provider acceptance only after Firebase returns a message ID. Device token values are not logged. `NotificationService` retains `AFTER_COMMIT` + `REQUIRES_NEW` isolation and PostgreSQL advisory-lock duplicate prevention.
+  - Flutter uses `firebase_core`/`firebase_messaging`, Google Services Gradle integration, Android notification permission, stable secure device IDs, initial/token-refresh registration, logout deactivation, and foreground/background/opened/cold-start handlers. The untracked local `mobile/android/app/google-services.json` must remain excluded.
+- **Mobile (`mobile/lib/features/notification/*`, `routes.dart`, `my_groups_screen.dart`, `group_info_screen.dart`)**:
+  - Dedicated Flutter module (`notification_failure.dart`, `notification_models.dart`, `notification_api.dart`, `notification_repository.dart`, `notification_controllers.dart`, `notification_screens.dart`) registered at `AppRoutes.notifications = '/notifications'` and `AppRoutes.notificationSettings = '/notifications/settings'`.
+  - Wired `"Thông báo"` header action in `MyGroupsScreen` and `"Tắt thông báo nhóm"` bottom sheet (`1 giờ`, `8 giờ`, `1 ngày`, `Cho đến khi bật lại`) in `GroupInfoScreen`.
+
+### Latest Verification (2026-09-29)
+
+| Gate | Authoritative result |
+| --- | --- |
+| Focused backend notification/producer suites (`M8MultiAccountIntegrationTest`, `ExpenseServiceIntegrationTest`) | 18 run, 0 failures, 0 errors, 0 skipped |
+| Full backend `mvnw.cmd test` | 573 run, 1 failure, 0 errors, 1 skipped; sole failure is `FundServiceIntegrationTest.maxTwoFundManagersOutsiderAccessDenialAndExactJsonDecimalStringSerialization` at line 594; exact test also fails at base commit `a34de335cefa283b218bf80f5e421ccff58b96b3` |
+| `flutter analyze` | No issues found |
+| Focused Flutter notification push/API/router tests | 21 passed, 0 failed |
+| Complete `flutter test --reporter compact` | 666 passed, 0 failed |
+| Debug APK (`WEDO_API_BASE_URL=http://127.0.0.1:8080`) | Fresh debug build succeeded at `mobile/build/app/outputs/flutter-apk/app-debug.apk`; installed on Samsung `R58M36JQYVY` |
+| Samsung `R58M36JQYVY` E2E | Fresh Chat push+system tap opened the exact group conversation and marked read; active-conversation realtime message appeared without a redundant card, then away-message push returned. Activity push+tap opened its matching detail. Poll and Task push+taps opened their parent Activity detail and marked rows read. Finance Expense push+tapped to Expense detail. Fund collection push+tapped to Group Fund. Read/unread count updated. Global-off and Poll-off were toggled in Flutter UI; inbox persisted and server dispatch decisions were `SUPPRESSED_USER_PUSH_DISABLED` / `SUPPRESSED_CATEGORY_DISABLED`. Group mute was selected in Flutter UI; a fresh Poll persisted with `SUPPRESSED_GROUP_MUTED` and no matching Android card. While muted, critical Fund contribution-confirmed was `GATEWAY_ACCEPTED` and appeared on the Samsung. Preferences and group mute were restored. Open-chat foreground behavior verified. Cold-start tap not verified. |
+| Provider evidence | Real Firebase sends persisted `GATEWAY_ACCEPTED`; stale active fake-prefix QA device rows were deactivated, and no active fake-prefix rows remain |
+| Device logcat | Final bounded logcat scan: 0 `FATAL EXCEPTION`; 14 AndroidRuntime lines, 0 FirebaseMessaging lines, 0 FirebaseApp lines in the last 3000 lines. No credential or token contents printed. Stay-awake was disabled and DND restored to Priority (`zen_mode=1`). |
+| Migration/security audits | V0..V12 unchanged; no V13. Secret-pattern scan had no matches in code/source; external Firebase Admin JSON was never opened. Google Services JSON remains untracked/unstaged. One active real device registration; no fake-prefix active token. |
+
+### M14 Environment Recheck (2026-09-29)
+- `GOOGLE_APPLICATION_CREDENTIALS` resolved to the requested external path and `Test-Path` was true; the credential file was never opened, copied, logged, or staged.
+- Docker Desktop 4.86.0 / Engine 29.7.2 and Testcontainers PostgreSQL work with elevated access; ordinary sandbox access to the Docker named pipe is denied.
+- Device token values and Firebase Admin credential contents were never written to logs or reports. Two stale fake-prefix local QA device records were removed; the real Samsung token is active.
+
+### Current M14 Blockers
+- Full backend suite has one failing Fund JSON decimal-string assertion (`FundServiceIntegrationTest.java:594`); the exact test also fails at clean base `a34de335cefa283b218bf80f5e421ccff58b96b3`, so it is pre-existing. Do not fold an unrelated Fund behavior change into M14 without review.
+- Notification coverage audit added Activity confirmed schedule/location change notices to GOING/MAYBE participants, Poll create/close notices, and Task assignment/status-change notices. Focused integration tests prove exact recipients/categories/targets; Flutter route tests cover supported target types. Existing policy producers remain for Group invitation/join approval, Chat message, Activity creation/waitlist promotion, Expense/Settlement, and Fund. Social/Discussion do not have canonical notification producers.
+- Live warm/background acceptance now covers Chat, Activity, Poll, Task, Finance, and Fund notification routes/taps; mark-read behavior and unread count; global/category suppression; Flutter UI group mute; critical Fund bypass while muted; and open-chat suppression versus away-chat push. Cold-start/terminated tap was not verified; no product defect remains from the current required scenarios.
+- `FundDtos.java` has no normalized content diff; `git ls-files --eol` reports mixed working-tree line endings, leaving a status-only modified marker. No content was restored or staged.
+- Verification retained: backend focused 18 passed; full backend 573 run, 1 confirmed clean-base Fund serialization failure, 0 errors, 1 skipped; Flutter focused 32 passed; analyze clean; full Flutter 667 passed; fresh debug APK built and installed. The only known suite failure is baseline and is not an M14 blocker.
+- M14 local commit is explicitly approved with the exact message in the commit request; verify the resulting commit in `git log`. No push is authorized. Preserve/exclude `mobile/android/app/google-services.json`, both local-only docs, `.stitch/`, `.dev-runtime/`, `.dev-logs/`, and the protected stash.

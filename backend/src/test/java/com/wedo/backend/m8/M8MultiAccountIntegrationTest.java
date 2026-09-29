@@ -6,8 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wedo.backend.activity.entity.ActivityEntity;
+import com.wedo.backend.activity.entity.ActivityParticipantEntity;
+import com.wedo.backend.activity.entity.ActivityRsvpStatus;
 import com.wedo.backend.activity.entity.ActivityStatus;
+import com.wedo.backend.activity.dto.UpdateActivityRequest;
+import com.wedo.backend.activity.repository.ActivityParticipantRepository;
 import com.wedo.backend.activity.repository.ActivityRepository;
+import com.wedo.backend.activity.service.ActivityLifecycleService;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
@@ -46,6 +51,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Deterministic real-PostgreSQL M8 persona coverage.
@@ -58,16 +64,23 @@ class M8MultiAccountIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired private GroupRepository groups;
     @Autowired private GroupMembershipRepository memberships;
     @Autowired private ActivityRepository activities;
+    @Autowired private ActivityParticipantRepository participants;
+    @Autowired private ActivityLifecycleService activityLifecycle;
     @Autowired private TaskRepository tasks;
     @Autowired private PollService polls;
     @Autowired private TaskService taskService;
     @Autowired private DiscussionService discussions;
     @Autowired private GroupBanService bans;
+    @Autowired private JdbcTemplate jdbc;
 
     @Test
     void pollPersonasCoverVotingClosureAnonymityAndOutsiderProtection() {
         Fixture fixture = fixture();
         PollResponse publicPoll = polls.create(fixture.activityId, fixture.owner(), pollRequest(VoteVisibility.PUBLIC));
+        assertNotification(fixture.admin(), "POLL_CREATED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotification(fixture.memberC(), "POLL_CREATED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotification(fixture.memberD(), "POLL_CREATED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotificationCount(fixture.owner(), "POLL_CREATED", publicPoll.id(), 0);
         UUID optionA = publicPoll.options().get(0).id();
         UUID optionB = publicPoll.options().get(1).id();
 
@@ -82,6 +95,10 @@ class M8MultiAccountIntegrationTest extends AbstractPostgresIntegrationTest {
                 () -> polls.vote(publicPoll.id(), fixture.outsider(), new VotePollRequest(List.of(optionA))));
 
         polls.close(publicPoll.id(), fixture.admin());
+        assertNotification(fixture.owner(), "POLL_CLOSED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotification(fixture.memberC(), "POLL_CLOSED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotification(fixture.memberD(), "POLL_CLOSED", "POLL", "POLL", publicPoll.id(), fixture.activityId);
+        assertNotificationCount(fixture.admin(), "POLL_CLOSED", publicPoll.id(), 0);
         assertCode(ErrorCode.POLL_CLOSED,
                 () -> polls.vote(publicPoll.id(), fixture.memberC(), new VotePollRequest(List.of(optionA))));
 
@@ -95,10 +112,14 @@ class M8MultiAccountIntegrationTest extends AbstractPostgresIntegrationTest {
         Fixture fixture = fixture();
         TaskResponse assigned = taskService.create(fixture.activityId, fixture.owner(),
                 new CreateTaskRequest("Assigned", null, List.of(fixture.memberC()), null));
+        assertNotification(fixture.memberC(), "TASK_ASSIGNED", "TASK", "TASK", assigned.id(), fixture.activityId);
+        assertNotificationCount(fixture.owner(), "TASK_ASSIGNED", assigned.id(), 0);
         assertTrue(taskService.get(assigned.id(), fixture.owner()).permissions().canDelete());
         assertFalse(taskService.get(assigned.id(), fixture.memberC()).permissions().canDelete());
         assertTrue(taskService.get(assigned.id(), fixture.memberC()).permissions().canChangeStatus());
         taskService.changeStatus(assigned.id(), fixture.memberC(), new UpdateTaskStatusRequest(TaskStatus.IN_PROGRESS));
+        assertNotification(fixture.owner(), "TASK_STATUS_CHANGED", "TASK", "TASK", assigned.id(), fixture.activityId);
+        assertNotificationCount(fixture.memberC(), "TASK_STATUS_CHANGED", assigned.id(), 0);
         assertCode(ErrorCode.TASK_UPDATE_NOT_ALLOWED,
                 () -> taskService.changeStatus(assigned.id(), fixture.memberD(), new UpdateTaskStatusRequest(TaskStatus.DONE)));
         TaskResponse adminUpdated = taskService.update(assigned.id(), fixture.admin(),
@@ -113,6 +134,27 @@ class M8MultiAccountIntegrationTest extends AbstractPostgresIntegrationTest {
 
         taskService.delete(assigned.id(), fixture.owner());
         assertFalse(tasks.existsById(assigned.id()));
+    }
+
+    @Test
+    void confirmedActivityScheduleChangesNotifyOnlyGoingAndMaybeParticipants() {
+        Fixture fixture = fixture();
+        participants.save(new ActivityParticipantEntity(UUID.randomUUID(), fixture.activityId(), fixture.memberC(),
+                ActivityRsvpStatus.GOING, null, NOW, NOW, NOW));
+        participants.save(new ActivityParticipantEntity(UUID.randomUUID(), fixture.activityId(), fixture.memberD(),
+                ActivityRsvpStatus.MAYBE, null, NOW, NOW, NOW));
+        participants.save(new ActivityParticipantEntity(UUID.randomUUID(), fixture.activityId(), fixture.admin(),
+                ActivityRsvpStatus.NOT_GOING, null, NOW, NOW, NOW));
+
+        activityLifecycle.update(fixture.activityId(), fixture.owner(), new UpdateActivityRequest(
+                null, null, NOW.plusSeconds(86_400), null, "UTC", null, null));
+
+        assertNotification(fixture.memberC(), "ACTIVITY_TIME_CHANGED", "ACTIVITY", "ACTIVITY",
+                fixture.activityId(), fixture.activityId());
+        assertNotification(fixture.memberD(), "ACTIVITY_TIME_CHANGED", "ACTIVITY", "ACTIVITY",
+                fixture.activityId(), fixture.activityId());
+        assertNotificationCount(fixture.admin(), "ACTIVITY_TIME_CHANGED", fixture.activityId(), 0);
+        assertNotificationCount(fixture.owner(), "ACTIVITY_TIME_CHANGED", fixture.activityId(), 0);
     }
 
     @Test
@@ -184,6 +226,24 @@ class M8MultiAccountIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private void assertCode(ErrorCode expected, Runnable call) {
         assertEquals(expected, assertThrows(BusinessException.class, call::run).errorCode());
+    }
+
+    private void assertNotification(UUID recipient, String eventType, String category, String targetType,
+                                    UUID targetId, UUID activityId) {
+        assertEquals(1, jdbc.queryForObject("""
+                SELECT count(*) FROM notifications
+                WHERE user_id = ? AND category = ? AND data->>'eventType' = ?
+                  AND data->>'targetType' = ? AND data->>'targetId' = ?
+                  AND data->>'activityId' = ?
+                """, Integer.class, recipient, category, eventType, targetType, targetId.toString(), activityId.toString()));
+        assertNotificationCount(recipient, eventType, targetId, 1);
+    }
+
+    private void assertNotificationCount(UUID recipient, String eventType, UUID targetId, int expected) {
+        assertEquals(expected, jdbc.queryForObject("""
+                SELECT count(*) FROM notifications
+                WHERE user_id = ? AND data->>'eventType' = ? AND data->>'targetId' = ?
+                """, Integer.class, recipient, eventType, targetId.toString()));
     }
 
     private record Persona(UUID id, String name) { }

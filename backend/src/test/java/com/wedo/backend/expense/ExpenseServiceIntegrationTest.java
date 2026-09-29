@@ -7,6 +7,7 @@ import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.common.test.AbstractPostgresIntegrationTest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseDetail;
 import com.wedo.backend.expense.dto.ExpenseDtos.ExpenseRequest;
+import com.wedo.backend.expense.dto.ExpenseDtos.CreateSettlementRequest;
 import com.wedo.backend.expense.dto.ExpenseDtos.ShareRequest;
 import com.wedo.backend.expense.service.ExpenseService;
 import com.wedo.backend.group.entity.GroupEntity;
@@ -129,6 +130,21 @@ class ExpenseServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         membership.endAsLeft(Instant.now());
         memberships.save(membership);
         assertEquals(new BigDecimal("16.00"), expenses.myBalances(f.groupId(), f.owner()).totalOwedToMe());
+    }
+
+    @Test
+    void settlementRequestAndConfirmationPersistOneCorrectRecipientNotificationEach() {
+        Fixture f = fixture();
+        expenses.create(f.groupId(), f.owner(), request("EQUAL", "20.00", f.owner(), List.of(f.owner(), f.member()), null));
+
+        var request = expenses.createSettlement(f.groupId(), f.member(),
+                new CreateSettlementRequest(f.owner(), new BigDecimal("5.00"), "I_PAID"));
+        assertNotification(f.owner(), "SETTLEMENT_REQUESTED", request.id(), false);
+        assertNotificationCount(f.member(), "SETTLEMENT_REQUESTED", request.id(), 0);
+
+        expenses.confirmSettlement(request.id(), f.owner());
+        assertNotification(f.member(), "SETTLEMENT_CONFIRMED", request.id(), true);
+        assertNotificationCount(f.owner(), "SETTLEMENT_CONFIRMED", request.id(), 0);
     }
 
     @Test
@@ -265,6 +281,22 @@ class ExpenseServiceIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private BigDecimal share(ExpenseDetail detail, UUID userId) {
         return detail.shares().stream().filter(s -> s.userId().equals(userId)).findFirst().orElseThrow().amount();
+    }
+
+    private void assertNotification(UUID recipient, String eventType, UUID targetId, boolean critical) {
+        assertEquals(1, jdbc.queryForObject("""
+                SELECT count(*) FROM notifications
+                WHERE user_id = ? AND category = 'FINANCE' AND priority = 'HIGH'
+                  AND data->>'eventType' = ? AND data->>'targetType' = 'SETTLEMENT'
+                  AND data->>'targetId' = ? AND data->>'critical' = ?
+                """, Integer.class, recipient, eventType, targetId.toString(), Boolean.toString(critical)));
+    }
+
+    private void assertNotificationCount(UUID recipient, String eventType, UUID targetId, int expected) {
+        assertEquals(expected, jdbc.queryForObject("""
+                SELECT count(*) FROM notifications
+                WHERE user_id = ? AND data->>'eventType' = ? AND data->>'targetId' = ?
+                """, Integer.class, recipient, eventType, targetId.toString()));
     }
 
     private ExpenseRequest request(String split, String amount, UUID payer, List<UUID> participants, List<ShareRequest> shares) {

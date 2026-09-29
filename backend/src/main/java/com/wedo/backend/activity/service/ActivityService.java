@@ -40,6 +40,12 @@ public class ActivityService {
     private final GroupActivityLogRepository groupActivityLogRepository;
     private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.group.repository.GroupMembershipRepository groupMembershipRepository;
+
     public ActivityService(ActivityRepository activityRepository,
                            ActivityStatusHistoryRepository statusHistoryRepository,
                            ActivityChangeLogRepository changeLogRepository,
@@ -76,6 +82,33 @@ public class ActivityService {
         persistStatusHistory(activity.getId(), null, ActivityStatus.PLANNING, creatorId, null, now);
         groupActivityLogRepository.save(new GroupActivityLogEntity(
                 UUID.randomUUID(), groupId, creatorId, GroupActivityAction.ACTIVITY_CREATED, now));
+        if (eventPublisher != null && groupMembershipRepository != null) {
+            java.util.List<UUID> recipients = groupMembershipRepository
+                    .findActiveMemberResponsesByGroupId(groupId)
+                    .stream()
+                    .map(com.wedo.backend.group.repository.GroupMemberProjection::getUserId)
+                    .filter(id -> !id.equals(creatorId))
+                    .toList();
+            if (!recipients.isEmpty()) {
+                eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                        "ACTIVITY_CREATED:" + activity.getId(),
+                        "ACTIVITY_CREATED",
+                        "ACTIVITY",
+                        "NORMAL",
+                        false,
+                        creatorId,
+                        groupId,
+                        recipients,
+                        "Hoạt động mới: " + activity.getTitle(),
+                        "Nhóm " + access.group().getName() + " vừa có hoạt động mới: " + activity.getTitle(),
+                        "ACTIVITY",
+                        activity.getId(),
+                        "/activities/detail",
+                        java.util.Map.of("groupId", groupId.toString(), "activityId", activity.getId().toString()),
+                        now
+                ));
+            }
+        }
         return responses.detail(activity, creatorId, access);
     }
 

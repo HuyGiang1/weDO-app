@@ -45,6 +45,16 @@ class CollectionDetailResponse { collectionId: UUID\nfundId: UUID\ntitle: String
 class FundExpenseResponse { expenseId: UUID\nfundId: UUID\ntitle: String\namount: BigDecimal\ntransactionId: UUID\nreversed: boolean }
 class ReimbursementResponse { reimbursementId: UUID\nfundId: UUID\namount: BigDecimal\nstatus: PENDING | COMPLETED | REJECTED | CANCELLED\ntransactionId: UUID?\nreversed: boolean }
 class FundTransactionResponse { transactionId: UUID\nfundId: UUID\ntransactionType: CONTRIBUTION | FUND_EXPENSE | REIMBURSEMENT | REVERSAL\ndirection: IN | OUT\namount: BigDecimal\nreversed: boolean\noriginalTransactionId: UUID? }
+class NotificationController
+class NotificationService
+class NotificationDomainEventListener
+class NotificationDomainEvent { eventKey: String\neventType: String\ncategory: String\npriority: String\ncritical: boolean\nrecipientUserIds: UUID[] }
+class NotificationItemResponse { notificationId: UUID\nuserId: UUID\ncategory: String\npriority: String\ncritical: boolean\nisRead: boolean\ntarget: NotificationTargetInfo\npushDecision: String }
+class UserNotificationSettingsResponse { userId: UUID\npushEnabled: boolean\nsocialEnabled: boolean\ngroupEnabled: boolean\nchatEnabled: boolean\nactivityEnabled: boolean\npollEnabled: boolean\ntaskEnabled: boolean\nfinanceEnabled: boolean\nfundEnabled: boolean }
+class GroupNotificationSettingsResponse { groupId: UUID\nuserId: UUID\nisMuted: boolean\nmuteDuration: String?\nmuteUntil: Instant? }
+class UserDeviceResponse { id: UUID\nuserId: UUID\ndeviceId: String\nplatform: ANDROID | IOS | WEB\npushToken: String\nactive: boolean }
+interface PushGateway
+class FcmPushGateway
 UserEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupMembershipEntity
 GroupEntity "1" -- "0..*" GroupInviteLinkEntity
@@ -113,4 +123,14 @@ ChatRealtimeTransactionalBridge --> ChatRealtimeCoordinator : dispatches committ
 ChatWebSocketConfig --> ChatWebSocketHandler : registers /ws, /api/v1/ws
 ChatWebSocketConfig --> ChatWebSocketHandshakeInterceptor : enforces JWT handshake
 ChatWebSocketHandler --> ChatRealtimeCoordinator : manages sessions, typing, presence
+NotificationController --> NotificationService
+NotificationDomainEventListener --> NotificationService : AFTER_COMMIT inbox + push dispatch
+NotificationService ..> NotificationDomainEvent : deduplicates by eventKey
+NotificationService ..> NotificationItemResponse : persists inbox and resolves target actionability
+NotificationService ..> UserNotificationSettingsResponse : evaluates category push policy
+NotificationService ..> GroupNotificationSettingsResponse : evaluates server-side muteUntil and critical bypass
+NotificationService ..> UserDeviceResponse : registers/deactivates device push tokens
+NotificationService --> PushGateway : dispatches push outside DB transaction
+NotificationService --> ChatRealtimeCoordinator : suppresses push on open conversation
+FcmPushGateway ..|> PushGateway : isolates provider errors and invalid tokens
 @enduml

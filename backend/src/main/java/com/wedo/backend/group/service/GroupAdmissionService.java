@@ -67,6 +67,9 @@ public class GroupAdmissionService {
     private final GroupPermissionService groupPermissionService;
     private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     public GroupAdmissionService(
             GroupRepository groupRepository,
             GroupSettingsRepository groupSettingsRepository,
@@ -191,6 +194,26 @@ public class GroupAdmissionService {
 
         UserEntity inviter = userRepository.findById(callerUserId).orElse(null);
         String inviterName = inviter != null ? inviter.getDisplayName() : null;
+
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "GROUP_INVITATION_CREATED:" + invitation.getId(),
+                    "GROUP_INVITATION_CREATED",
+                    "GROUP",
+                    "NORMAL",
+                    false,
+                    callerUserId,
+                    groupId,
+                    List.of(inviteeId),
+                    "Lời mời tham gia nhóm " + access.group().getName(),
+                    (inviterName != null ? inviterName : "Một thành viên") + " đã mời bạn tham gia nhóm " + access.group().getName() + ".",
+                    "GROUP_INVITATION",
+                    invitation.getId(),
+                    "/groups/invitations",
+                    java.util.Map.of("groupId", groupId.toString(), "invitationId", invitation.getId().toString()),
+                    now
+            ));
+        }
 
         return GroupInvitationResponse.of(invitation, access.group().getName(), access.group().getAvatarStorageKey(), inviterName);
     }
@@ -483,6 +506,28 @@ public class GroupAdmissionService {
         Instant now = clock.instant();
         admitMemberUnderGroupLock(request.getGroupId(), request.getUserId());
         request.approve(callerUserId, now);
+
+        if (eventPublisher != null) {
+            GroupEntity group = groupRepository.findById(request.getGroupId()).orElse(null);
+            String groupName = group != null ? group.getName() : "nhóm";
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "GROUP_JOIN_REQUEST_APPROVED:" + request.getId(),
+                    "GROUP_JOIN_REQUEST_APPROVED",
+                    "GROUP",
+                    "HIGH",
+                    false,
+                    callerUserId,
+                    request.getGroupId(),
+                    List.of(request.getUserId()),
+                    "Yêu cầu tham gia nhóm được duyệt",
+                    "Yêu cầu tham gia " + groupName + " của bạn đã được chấp thuận.",
+                    "GROUP",
+                    request.getGroupId(),
+                    "/groups/detail",
+                    java.util.Map.of("groupId", request.getGroupId().toString()),
+                    now
+            ));
+        }
     }
 
     @Transactional

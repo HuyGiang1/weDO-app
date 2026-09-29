@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import 'app/app.dart';
 import 'core/network/access_token_holder.dart';
@@ -25,9 +30,19 @@ import 'features/qr/data/personal_qr_repository.dart';
 import 'features/chat/data/chat_api.dart';
 import 'features/chat/data/chat_realtime_client.dart';
 import 'features/chat/data/chat_repository.dart';
+import 'features/notification/application/notification_push_service.dart';
+import 'features/notification/data/notification_api.dart';
+import 'features/notification/data/notification_models.dart';
+import 'features/notification/data/notification_repository.dart';
+import 'features/notification/presentation/notification_target_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
 
   final apiConfig = ApiConfig();
   GroupAvatar.defaultBaseUrl = apiConfig.baseUrl;
@@ -87,6 +102,107 @@ void main() async {
 
   await sessionController.restoreSession();
 
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  final NotificationRepository notificationRepository = NotificationRepository(
+    NotificationApi(dio.dio),
+  );
+  NotificationPushService? pushService;
+
+  Future<void> openPushNotification(FcmPushEvent event) async {
+    final NavigatorState? navigator = navigatorKey.currentState;
+    if (navigator == null) {
+      if (kDebugMode) debugPrint('FCM tap: navigator unavailable');
+      return;
+    }
+    final int sessionGeneration = sessionController.sessionGeneration;
+    if (!sessionController.isAuthenticated) return;
+    final String? notificationId = event.notificationId;
+    try {
+      if (notificationId != null && notificationId.isNotEmpty) {
+        final NotificationItemModel item = await notificationRepository
+            .markReadForTap(notificationId);
+        if (!sessionController.isAuthenticated ||
+            sessionController.sessionGeneration != sessionGeneration) {
+          return;
+        }
+        if (kDebugMode) debugPrint('FCM tap: recipient target resolved');
+        if (navigator.mounted) {
+          await NotificationTargetRouter.open(
+            context: navigator.context,
+            item: item,
+            groupRepository: groupRepository,
+          );
+          return;
+        }
+      }
+    } catch (_) {
+      // The notification center remains available if live target resolution fails.
+    }
+    if (!sessionController.isAuthenticated ||
+        sessionController.sessionGeneration != sessionGeneration) {
+      return;
+    }
+    if (!navigator.mounted) return;
+    if (kDebugMode) debugPrint('FCM tap: falling back to notification center');
+    navigator.pushNamed(
+      AppRoutes.notifications,
+      arguments: GroupsRouteArgs(repository: groupRepository),
+    );
+  }
+
+  void showForegroundNotification(FcmPushEvent event) {
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(
+          [event.title, event.body]
+              .whereType<String>()
+              .where((String text) => text.trim().isNotEmpty)
+              .join('\n'),
+        ),
+        action: SnackBarAction(
+          label: 'Mở',
+          onPressed: () => unawaited(openPushNotification(event)),
+        ),
+      ),
+    );
+  }
+
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    pushService = NotificationPushService(
+      messaging: FirebasePushMessagingClient(FirebaseMessaging.instance),
+      storage: storage,
+      registerDevice: ({required deviceId, required pushToken}) async {
+        await notificationRepository.registerDevice(
+          deviceId: deviceId,
+          platform: 'ANDROID',
+          pushToken: pushToken,
+        );
+      },
+      deactivateDevice: notificationRepository.deactivateDevice,
+      onForegroundMessage: (event) async => showForegroundNotification(event),
+      onNotificationTap: openPushNotification,
+    );
+    await pushService.start(authenticated: sessionController.isAuthenticated);
+    sessionController.addListener(() {
+      unawaited(
+        pushService?.setAuthenticated(sessionController.isAuthenticated),
+      );
+    });
+  }
+
+  Future<void> logout() async {
+    await sessionController.logout(
+      beforeLogout: pushService?.deactivateForLogout,
+    );
+  }
+
+  Future<bool> endSessionAfterPasswordChange() async {
+    await pushService?.deactivateForLogout();
+    return sessionController.endSessionAfterPasswordChange();
+  }
+
   void handleAuthenticated(BuildContext context) {
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.groups,
@@ -109,11 +225,16 @@ void main() async {
       updateProfile: profileRepository.updateProfile,
       updateUsername: profileRepository.updateUsername,
       changePassword: repository.changePassword,
-      endSessionAfterPasswordChange:
-          sessionController.endSessionAfterPasswordChange,
+      endSessionAfterPasswordChange: endSessionAfterPasswordChange,
+      logout: pushService == null ? null : logout,
       loadPrivacySettings: privacyRepository.getPrivacySettings,
       updatePrivacySettings: privacyRepository.updatePrivacySettings,
       loadPersonalQr: personalQrRepository.getPersonalQr,
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
     ),
   );
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(pushService?.markAppReady());
+  });
 }

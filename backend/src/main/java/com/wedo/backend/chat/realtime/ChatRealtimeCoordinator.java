@@ -431,6 +431,26 @@ public class ChatRealtimeCoordinator {
         return "presence:session:" + sessionId;
     }
 
+    public boolean isUserSubscribedToConversation(UUID userId, UUID conversationId) {
+        if (userId == null || conversationId == null) {
+            return false;
+        }
+        Set<String> sessionIds = sessionIdsByUser.get(userId);
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return false;
+        }
+        for (String sessionId : sessionIds) {
+            SessionState state = sessionsById.get(sessionId);
+            if (state != null
+                    && state.session() != null
+                    && state.session().isOpen()
+                    && state.subscribedConversations().contains(conversationId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private ChatResponses.User safeUserSummary(UUID userId) {
         try {
             return chatService.userSummary(userId);

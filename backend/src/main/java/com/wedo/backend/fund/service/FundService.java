@@ -72,6 +72,9 @@ public class FundService {
     private final JdbcTemplate jdbc;
     private final GroupPermissionService groupPermissions;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     public FundService(JdbcTemplate jdbc, GroupPermissionService groupPermissions) {
         this.jdbc = jdbc;
         this.groupPermissions = groupPermissions;
@@ -314,6 +317,30 @@ public class FundService {
         }
 
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
+        if (eventPublisher != null) {
+            List<UUID> recipients = obligationsMap.keySet().stream()
+                    .filter(uid -> !uid.equals(callerUserId))
+                    .toList();
+            if (!recipients.isEmpty()) {
+                eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                        "FUND_COLLECTION_CREATED:" + collectionId,
+                        "FUND_COLLECTION_CREATED",
+                        "FUND",
+                        "NORMAL",
+                        false,
+                        callerUserId,
+                        fund.groupId(),
+                        recipients,
+                        "Đợt thu quỹ mới: " + title,
+                        "Nhóm có đợt thu quỹ mới \"" + title + "\".",
+                        "FUND",
+                        fund.id(),
+                        "/groups/fund",
+                        Map.of("groupId", fund.groupId().toString(), "fundId", fund.id().toString(), "collectionId", collectionId.toString()),
+                        now.toInstant()
+                ));
+            }
+        }
         CollectionRow created = requireCollectionRow(collectionId);
         return buildCollectionDetailResponse(fund, created, access, callerUserId);
     }
@@ -512,6 +539,25 @@ public class FundService {
                 txId, fund.id(), contribution.amount(), contribution.id(), txNote, callerUserId, now
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
+        if (eventPublisher != null && !callerUserId.equals(contribution.userId())) {
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "FUND_CONTRIBUTION_CONFIRMED:" + contribution.id(),
+                    "FUND_CONTRIBUTION_CONFIRMED",
+                    "FUND",
+                    "HIGH",
+                    true,
+                    callerUserId,
+                    fund.groupId(),
+                    List.of(contribution.userId()),
+                    "Đóng góp quỹ đã được xác nhận",
+                    "Khoản đóng góp " + contribution.amount().toPlainString() + " VND cho đợt thu \"" + collection.title() + "\" đã được xác nhận.",
+                    "FUND",
+                    fund.id(),
+                    "/groups/fund",
+                    Map.of("groupId", fund.groupId().toString(), "fundId", fund.id().toString(), "contributionId", contribution.id().toString()),
+                    now.toInstant()
+            ));
+        }
 
         ContributionRow updated = requireContributionRow(contribution.id());
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), List.of(updated.userId(), callerUserId));
@@ -731,6 +777,25 @@ public class FundService {
                 txId, fund.id(), reimbursement.amount(), reimbursement.id(), reimbursement.reason(), callerUserId, now
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
+        if (eventPublisher != null && !callerUserId.equals(reimbursement.userId())) {
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "FUND_REIMBURSEMENT_APPROVED:" + reimbursement.id(),
+                    "FUND_REIMBURSEMENT_APPROVED",
+                    "FUND",
+                    "HIGH",
+                    true,
+                    callerUserId,
+                    fund.groupId(),
+                    List.of(reimbursement.userId()),
+                    "Yêu cầu hoàn tiền quỹ được duyệt",
+                    "Yêu cầu hoàn tiền " + reimbursement.amount().toPlainString() + " VND của bạn đã được chấp thuận.",
+                    "FUND",
+                    fund.id(),
+                    "/groups/fund",
+                    Map.of("groupId", fund.groupId().toString(), "fundId", fund.id().toString(), "reimbursementId", reimbursement.id().toString()),
+                    now.toInstant()
+            ));
+        }
 
         return listReimbursementsInternal(fund, access, callerUserId, null).stream()
                 .filter(r -> r.reimbursementId().equals(reimbursement.id()))

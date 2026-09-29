@@ -18,6 +18,10 @@ public class ActivityRsvpService {
     private final ActivityRepository activities; private final ActivityParticipantRepository participants;
     private final ActivityWaitlistSequenceRepository sequences; private final ActivityRsvpHistoryRepository histories;
     private final GroupParticipationService participation; private final Clock clock;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     public ActivityRsvpService(ActivityRepository activities, ActivityParticipantRepository participants, ActivityWaitlistSequenceRepository sequences, ActivityRsvpHistoryRepository histories, GroupParticipationService participation, Clock clock) {
         this.activities=activities;this.participants=participants;this.sequences=sequences;this.histories=histories;this.participation=participation;this.clock=clock;
     }
@@ -49,6 +53,25 @@ public class ActivityRsvpService {
             ActivityParticipantEntity participant = next.get();
             participant.changeTo(ActivityRsvpStatus.GOING, null, now);
             history(activity.getId(), participant.getUserId(), ActivityRsvpStatus.WAITLIST, ActivityRsvpStatus.GOING, null, now);
+            if (eventPublisher != null) {
+                eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                        "ACTIVITY_WAITLIST_PROMOTED:" + activity.getId() + ":" + participant.getUserId() + ":" + now.toEpochMilli(),
+                        "ACTIVITY_WAITLIST_PROMOTED",
+                        "ACTIVITY",
+                        "HIGH",
+                        true,
+                        null,
+                        activity.getGroupId(),
+                        java.util.List.of(participant.getUserId()),
+                        "Được chuyển lên danh sách tham gia",
+                        "Bạn đã được chuyển từ danh sách chờ sang tham gia hoạt động \"" + activity.getTitle() + "\".",
+                        "ACTIVITY",
+                        activity.getId(),
+                        "/activities/detail",
+                        java.util.Map.of("groupId", activity.getGroupId().toString(), "activityId", activity.getId().toString()),
+                        now
+                ));
+            }
         }
     }
 

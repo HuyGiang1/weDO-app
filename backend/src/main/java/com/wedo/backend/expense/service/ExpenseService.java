@@ -56,6 +56,9 @@ public class ExpenseService {
     private final JdbcTemplate jdbc;
     private final GroupPermissionService groupPermissions;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     public ExpenseService(JdbcTemplate jdbc, GroupPermissionService groupPermissions) {
         this.jdbc = jdbc;
         this.groupPermissions = groupPermissions;
@@ -79,6 +82,31 @@ public class ExpenseService {
                 """, expenseId, groupId, draft.activityId(), draft.payerId(), actorId, draft.title(),
                 draft.amount(), draft.splitMethod(), draft.occurredAt(), draft.note(), Timestamp.from(now), Timestamp.from(now));
         insertShares(expenseId, draft.shares());
+        if (eventPublisher != null) {
+            List<UUID> recipients = draft.shares().stream()
+                    .map(ShareFact::userId)
+                    .filter(uid -> !uid.equals(actorId))
+                    .toList();
+            if (!recipients.isEmpty()) {
+                eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                        "EXPENSE_CREATED:" + expenseId,
+                        "EXPENSE_CREATED",
+                        "FINANCE",
+                        "NORMAL",
+                        false,
+                        actorId,
+                        groupId,
+                        recipients,
+                        "Khoản chi mới: " + draft.title(),
+                        "Khoản chi \"" + draft.title() + "\" (" + draft.amount().toPlainString() + " VND) đã được ghi nhận.",
+                        "EXPENSE",
+                        expenseId,
+                        "/groups/expenses/detail",
+                        Map.of("groupId", groupId.toString(), "expenseId", expenseId.toString()),
+                        now
+                ));
+            }
+        }
         return detail(expenseId, actorId);
     }
 
@@ -555,6 +583,26 @@ public class ExpenseService {
                 """, settlementId, groupId, fromUserId, toUserId, amount, actorId,
                 declarationType, Timestamp.from(now), Timestamp.from(now));
         recordSettlementStatusChange(settlementId, null, "PENDING", actorId, now);
+        if (eventPublisher != null) {
+            UUID counterparty = actorId.equals(fromUserId) ? toUserId : fromUserId;
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "SETTLEMENT_REQUESTED:" + settlementId,
+                    "SETTLEMENT_REQUESTED",
+                    "FINANCE",
+                    "HIGH",
+                    false,
+                    actorId,
+                    groupId,
+                    List.of(counterparty),
+                    "Yêu cầu xác nhận thanh toán",
+                    "Bạn có một yêu cầu xác nhận thanh toán " + amount.toPlainString() + " VND.",
+                    "SETTLEMENT",
+                    settlementId,
+                    "/groups/settlements/detail",
+                    Map.of("groupId", groupId.toString(), "settlementId", settlementId.toString()),
+                    now
+            ));
+        }
         return settlementDetail(settlementId, actorId);
     }
 
@@ -617,6 +665,26 @@ public class ExpenseService {
         jdbc.update("UPDATE settlements SET status='COMPLETED', completed_at=?, updated_at=? WHERE id=?",
                 Timestamp.from(now), Timestamp.from(now), settlementId);
         recordSettlementStatusChange(settlementId, "PENDING", "COMPLETED", actorId, now);
+        if (eventPublisher != null) {
+            UUID notifyRecipient = actorId.equals(current.fromUserId()) ? current.toUserId() : current.fromUserId();
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "SETTLEMENT_CONFIRMED:" + settlementId,
+                    "SETTLEMENT_CONFIRMED",
+                    "FINANCE",
+                    "HIGH",
+                    true,
+                    actorId,
+                    current.groupId(),
+                    List.of(notifyRecipient),
+                    "Xác nhận thanh toán hoàn tất",
+                    "Khoản thanh toán " + current.amount().toPlainString() + " VND đã được xác nhận.",
+                    "SETTLEMENT",
+                    settlementId,
+                    "/groups/settlements/detail",
+                    Map.of("groupId", current.groupId().toString(), "settlementId", settlementId.toString()),
+                    now
+            ));
+        }
         return settlementDetail(settlementId, actorId);
     }
 

@@ -234,3 +234,35 @@
      - `fund_transactions` rows are never updated or deleted. Reversing a `CONTRIBUTION`, `FUND_EXPENSE`, or `REIMBURSEMENT` transaction creates an opposite-direction `REVERSAL` row and links `fund_transaction_reversals(original_transaction_id, reversal_transaction_id)` (`UNIQUE(original_transaction_id)` prevents double reversal). Reversing an `IN` contribution requires `availableBalance >= amount` so the fund never drops below zero or violates pending reimbursement reservations.
 - **Reason / Source**: `docs/BA_CONSOLIDATED_SPECIFICATION_v1.0.md` §16 (`FUND-01`..`FUND-17`), `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §20, `docs/ERD_DATABASE_DESIGN_v1.0.md` §15 (`V8__fund.sql`).
 - **Consequences**: Complete auditability, zero cross-contamination between pairwise expense splits and pooled group treasury, and race-free balance/obligation enforcement.
+
+---
+
+### ADR-018 — M14 Notification & FCM Runtime Architecture (`NOTI-01`..`NOTI-06`)
+- **Date**: 2026-09-28
+- **Status**: Accepted & Enforced (`M14`)
+- **Decision**:
+  1. **Schema Reuse (`V1`, `V9`, `V10`)**:
+     - Reuses `user_devices` (`V1`), `notifications`, `user_notification_settings`, `group_notification_settings` (`V9`), and `uq_user_devices_active_push_token` (`V10`). Zero new Flyway migrations (`V13+`) required.
+  2. **Always-Persist In-App Inbox vs Push Policy Evaluation**:
+     - Every committed domain event (`NotificationDomainEvent` + `ChatRealtimeEvents.DomainMutationEvent`) is handled in `NotificationDomainEventListener` with `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` and persisted to `notifications` inside an isolated `Propagation.REQUIRES_NEW` transaction (`NotificationService`), deduplicated per recipient via `data->>'eventKey'`.
+     - User settings (`pushEnabled` + category toggles) and group mute settings (`1h`, `8h`, `1d`, `until_unmuted` evaluated dynamically against server `clock.instant()`) control **push delivery only**; in-app inbox rows are always persisted with their computed `pushDecision`.
+     - Critical business events (`critical = true`: waitlist promotion, settlement confirmation, fund contribution confirmation, fund reimbursement approval) bypass group mute when user-level push + category toggles are enabled.
+  3. **Open-Conversation Suppression & Push Failure Isolation**:
+     - Chat notifications check `ChatRealtimeCoordinator.isUserSubscribedToConversation(recipientId, conversationId)`: actively subscribed recipients receive `SUPPRESSED_OPEN_CONVERSATION` while unsubscribed recipients receive push with `collapseKey = "chat:" + conversationId`.
+     - `PushGateway` (`FcmPushGateway`) runs strictly outside database transactions; provider exceptions record `PROVIDER_FAILED` and invalid token errors (`UNREGISTERED` / `INVALID_ARGUMENT`) automatically deactivate the stale `user_devices` row without rolling back business or inbox state.
+  4. **Dynamic Deep-Link Actionability**:
+     - `NotificationService` resolves `target.actionable` and Vietnamese `target.nonActionableReason` at read time against live group membership and resource status (`CANCELLED` activities/expenses/settlements, handled invitations, removed/banned members).
+- **Reason / Source**: `docs/BA_CONSOLIDATED_SPECIFICATION_v1.0.md` §18 (`NOTI-01`..`NOTI-06`), `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md` §20, `docs/ERD_DATABASE_DESIGN_v1.0.md` §16 (`V9__notifications.sql`).
+- **Consequences**: Business transactions never fail due to push provider errors, duplicate notifications are prevented, and stale deep links fail safely with clear Vietnamese explanations.
+
+---
+
+### ADR-019 — Honest FCM Delivery State and Atomic Notification Deduplication
+- **Date**: 2026-09-29
+- **Status**: Accepted (`M14`)
+- **Decision**:
+  1. Until a real Firebase Admin provider and approved project credentials are available, production push returns `REAL_FCM_EXTERNAL_CONFIG_BLOCKED`; local/fabricated device tokens must never be reported as sent or delivered.
+  2. `GATEWAY_ACCEPTED` means only that a configured gateway accepted a handoff; it is not proof of device delivery. Internal push-policy/provider diagnostics are not part of the public Notification response.
+  3. Inbox deduplication serializes the event-key check and insert with a PostgreSQL transaction-scoped advisory lock, avoiding a new migration or distributed-lock service.
+- **Reason / Source**: M14 FCM/provider audit, V9/V10 schema, concurrent listener delivery analysis, and absence of Firebase SDK/configuration in the current build.
+- **Consequences**: M14 does not claim cloud delivery until a real provider is configured; concurrent retries cannot create duplicate inbox rows, while a post-commit database failure can still lose an event because no durable outbox exists.

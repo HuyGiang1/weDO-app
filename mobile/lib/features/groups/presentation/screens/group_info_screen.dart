@@ -15,6 +15,7 @@ class GroupInfoScreen extends StatefulWidget {
   final VoidCallback? onExpenses;
   final VoidCallback? onSettlements;
   final VoidCallback? onFund;
+  final VoidCallback? onNotificationMute;
   final VoidCallback? onChat;
   final VoidCallback? onChatHome;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
@@ -33,6 +34,7 @@ class GroupInfoScreen extends StatefulWidget {
     this.onExpenses,
     this.onSettlements,
     this.onFund,
+    this.onNotificationMute,
     this.onChat,
     this.onChatHome,
     this.onInviteLinks,
@@ -108,6 +110,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             onExpenses: widget.onExpenses,
             onSettlements: widget.onSettlements,
             onFund: widget.onFund,
+            onNotificationMute: widget.onNotificationMute,
             onChat: widget.onChat,
             onInviteLinks: widget.onInviteLinks,
             onJoinRequests: widget.onJoinRequests,
@@ -137,6 +140,7 @@ class _GroupInfoContent extends StatelessWidget {
   final VoidCallback? onExpenses;
   final VoidCallback? onSettlements;
   final VoidCallback? onFund;
+  final VoidCallback? onNotificationMute;
   final VoidCallback? onChat;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
@@ -154,6 +158,7 @@ class _GroupInfoContent extends StatelessWidget {
     this.onExpenses,
     this.onSettlements,
     this.onFund,
+    this.onNotificationMute,
     this.onChat,
     this.onInviteLinks,
     this.onJoinRequests,
@@ -445,6 +450,15 @@ class _GroupInfoContent extends StatelessWidget {
                   iconColor: AppColors.primary,
                   title: 'Quỹ nhóm',
                   onTap: onFund!,
+                ),
+                const Divider(height: 1),
+              ],
+              if (onNotificationMute != null) ...[
+                _ActionTile(
+                  icon: Icons.notifications_off_outlined,
+                  iconColor: AppColors.primary,
+                  title: 'Tắt thông báo nhóm',
+                  onTap: onNotificationMute!,
                 ),
                 const Divider(height: 1),
               ],

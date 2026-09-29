@@ -84,8 +84,8 @@ Reference: `docs/DEVELOPMENT_PLAN_MILESTONES_v1.0_FULL.md` §2.
 | `M10` | Realtime WebSocket (`/ws`) + Redis (Live delivery, Typing, Presence) | Completed |
 | `M11` | Expense + Balance (Equal/Custom split, derived debt) | Completed |
 | `M12` | Settlement (Two-sided confirmation workflow) | Completed |
-| `M13` | Group Fund (Collections, Contributions, Fund Expenses, Reimbursements, Ledger) | Implemented; pre-commit review on `feat/m13-group-fund` |
-| `M14` | Notification + FCM | Planned |
+| `M13` | Group Fund (Collections, Contributions, Fund Expenses, Reimbursements, Ledger) | Completed |
+| `M14` | Notification + FCM | Implemented; pre-commit review on `feat/m14-notification-fcm` |
 | `M15` | Calendar + Reminder | Planned |
 | `M16` | Media + Search | Planned |
 | `M17` | Home Aggregation + Product Completion | Planned |

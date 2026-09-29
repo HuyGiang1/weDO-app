@@ -3,19 +3,16 @@ import 'package:flutter/foundation.dart';
 import '../../../core/network/access_token_holder.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../../../core/auth/session_invalidation_outcome.dart';
-import '../data/auth_repository.dart';
+import '../data/auth_repository.dart' show AuthRepository, LogoutResult;
 
-enum AuthSessionStatus {
-  restoring,
-  unauthenticated,
-  authenticated,
-}
+enum AuthSessionStatus { restoring, unauthenticated, authenticated }
 
 /// Owns global authenticated-session status without holding raw token strings.
 class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
   final SecureStorageService storage;
   final AccessTokenHolder accessTokenHolder;
   final AuthRepository repository;
+  int _sessionGeneration = 0;
 
   AuthSessionController({
     required this.storage,
@@ -27,6 +24,7 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
   AuthSessionStatus get status => value;
   bool get isAuthenticated => value == AuthSessionStatus.authenticated;
   bool get isRestoring => value == AuthSessionStatus.restoring;
+  int get sessionGeneration => _sessionGeneration;
 
   /// Restores session state from durable storage on application bootstrap.
   ///
@@ -34,6 +32,7 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
   /// and sets status to [AuthSessionStatus.authenticated] without network calls.
   /// Any token expiration is resolved on the first protected request.
   Future<AuthSessionStatus> restoreSession() async {
+    _sessionGeneration++;
     value = AuthSessionStatus.restoring;
 
     String? accessToken;
@@ -79,10 +78,12 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
   }
 
   void markAuthenticated() {
+    _sessionGeneration++;
     value = AuthSessionStatus.authenticated;
   }
 
   void markUnauthenticated() {
+    _sessionGeneration++;
     value = AuthSessionStatus.unauthenticated;
   }
 
@@ -95,15 +96,33 @@ class AuthSessionController extends ValueNotifier<AuthSessionStatus> {
     if (accessTokenHolder.revision != expectedRevision) {
       return false;
     }
+    _sessionGeneration++;
     value = AuthSessionStatus.unauthenticated;
     return true;
   }
 
   Future<bool> endSessionAfterPasswordChange() async {
-    final outcome = await repository.invalidateLocalSession(expectedRevision: accessTokenHolder.revision);
+    final outcome = await repository.invalidateLocalSession(
+      expectedRevision: accessTokenHolder.revision,
+    );
     switch (outcome) {
-      case SessionInvalidationSuperseded(): return false;
-      case SessionInvalidationApplied(:final transition): return markUnauthenticatedIfRevision(transition.toRevision);
+      case SessionInvalidationSuperseded():
+        return false;
+      case SessionInvalidationApplied(:final transition):
+        return markUnauthenticatedIfRevision(transition.toRevision);
+    }
+  }
+
+  Future<LogoutResult> logout({Future<void> Function()? beforeLogout}) async {
+    try {
+      await beforeLogout?.call();
+    } catch (_) {
+      // Session revocation must continue even if best-effort device cleanup fails.
+    }
+    try {
+      return await repository.logout();
+    } finally {
+      markUnauthenticated();
     }
   }
 }

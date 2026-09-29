@@ -22,6 +22,7 @@ class ProfileScreen extends StatefulWidget {
   })
   changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
+  final Future<void> Function()? logout;
 
   const ProfileScreen({
     super.key,
@@ -30,6 +31,7 @@ class ProfileScreen extends StatefulWidget {
     required this.updateUsername,
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
+    this.logout,
   });
 
   @override
@@ -107,6 +109,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     widget.endSessionAfterPasswordChange,
               ),
             ),
+            onLogout: widget.logout == null
+                ? null
+                : () async {
+                    await widget.logout!();
+                    if (context.mounted) {
+                      Navigator.of(context).pushNamedAndRemoveUntil(
+                        AppRoutes.login,
+                        (Route<dynamic> route) => false,
+                      );
+                    }
+                  },
           );
         },
       ),
@@ -119,12 +132,14 @@ class _ProfileContent extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onChangeUsername;
   final VoidCallback onChangePassword;
+  final VoidCallback? onLogout;
 
   const _ProfileContent({
     required this.user,
     required this.onEdit,
     required this.onChangeUsername,
     required this.onChangePassword,
+    this.onLogout,
   });
 
   @override
@@ -204,6 +219,14 @@ class _ProfileContent extends StatelessWidget {
                   onTap: () =>
                       Navigator.of(context).pushNamed(AppRoutes.personalQr),
                 ),
+                if (onLogout != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  ProfileActionRow(
+                    icon: Icons.logout_rounded,
+                    label: 'Sign out',
+                    onTap: onLogout!,
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 ProfileSurface(
                   child: Column(

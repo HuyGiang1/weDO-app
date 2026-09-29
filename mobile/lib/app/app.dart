@@ -33,6 +33,9 @@ class WeDoApp extends StatelessWidget {
   updatePrivacySettings;
   final Future<PersonalQr> Function()? loadPersonalQr;
   final Future<PublicUserProfile> Function(String userId)? loadPublicProfile;
+  final Future<void> Function()? logout;
+  final GlobalKey<NavigatorState>? navigatorKey;
+  final GlobalKey<ScaffoldMessengerState>? scaffoldMessengerKey;
 
   const WeDoApp({
     super.key,
@@ -49,11 +52,16 @@ class WeDoApp extends StatelessWidget {
     this.updatePrivacySettings,
     this.loadPersonalQr,
     this.loadPublicProfile,
+    this.logout,
+    this.navigatorKey,
+    this.scaffoldMessengerKey,
   });
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'WeDo',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -90,6 +98,7 @@ class WeDoApp extends StatelessWidget {
                   updateUsername: updateUsername!,
                   changePassword: changePassword!,
                   endSessionAfterPasswordChange: endSessionAfterPasswordChange!,
+                  logout: logout,
                 ),
               )
             : settings.name == AppRoutes.privacy &&

@@ -41,6 +41,22 @@ void main() {
       expect(controller.status, AuthSessionStatus.restoring);
       expect(controller.isRestoring, isTrue);
       expect(controller.isAuthenticated, isFalse);
+      expect(controller.sessionGeneration, 0);
+    });
+
+    test('session generation ignores token rotation but changes with identity state', () async {
+      store.values[SecureStorageService.accessTokenKey] = 'initial-access';
+      store.values[SecureStorageService.refreshTokenKey] = 'initial-refresh';
+
+      await controller.restoreSession();
+      final int restoredGeneration = controller.sessionGeneration;
+      holder.setAccessToken('rotated-access');
+      expect(controller.sessionGeneration, restoredGeneration);
+
+      controller.markUnauthenticated();
+      expect(controller.sessionGeneration, restoredGeneration + 1);
+      controller.markAuthenticated();
+      expect(controller.sessionGeneration, restoredGeneration + 2);
     });
 
     test('both tokens present: populates holder, status authenticated, zero network calls', () async {

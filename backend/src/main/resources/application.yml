@@ -8,6 +8,12 @@ spring:
 server:
   port: 8080
 
+wedo:
+  reminders:
+    scheduler:
+      fixed-delay-ms: ${WEDO_REMINDER_SCHEDULER_FIXED_DELAY_MS:45000}
+      batch-size: ${WEDO_REMINDER_SCHEDULER_BATCH_SIZE:100}
+
 security:
   jwt:
     secret-base64: ${WEDO_JWT_SECRET_BASE64}

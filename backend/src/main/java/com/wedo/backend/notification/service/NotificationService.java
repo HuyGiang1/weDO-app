@@ -49,6 +49,9 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class NotificationService {
@@ -514,6 +517,53 @@ public class NotificationService {
                 // Push or notification failure must NEVER roll back or break the originating business transaction.
             }
         }
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean persistActivityReminder(
+            UUID userId,
+            UUID activityId,
+            UUID groupId,
+            String activityTitle,
+            Instant remindAt
+    ) {
+        String eventKey = "activity-reminder:" + userId + ":" + activityId + ":" + remindAt;
+        NotificationDomainEvent event = new NotificationDomainEvent(
+                eventKey,
+                "ACTIVITY_REMINDER_DUE",
+                "ACTIVITY",
+                "NORMAL",
+                false,
+                null,
+                groupId,
+                List.of(userId),
+                "Sắp đến hoạt động",
+                "Hoạt động “" + activityTitle + "” sắp bắt đầu.",
+                "ACTIVITY",
+                activityId,
+                "/activities/detail",
+                Map.of("activityId", activityId.toString()),
+                remindAt
+        );
+        PersistedDispatchPlan plan = persistInboxAndBuildDispatchPlan(
+                userId,
+                eventKey,
+                event,
+                "ACTIVITY",
+                "NORMAL",
+                clock.instant()
+        );
+        if (plan != null) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    if ("ELIGIBLE".equals(plan.pushDecision()) && !plan.devices().isEmpty()) {
+                        dispatchPushMessagesSafely(plan);
+                    }
+                }
+            });
+        }
+        return true;
     }
 
     public void processChatMutationEvent(ChatRealtimeEvents.DomainMutationEvent chatEvent) {

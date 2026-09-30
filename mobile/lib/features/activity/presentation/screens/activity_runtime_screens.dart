@@ -1142,6 +1142,7 @@ class ActivityDetailRuntimeScreen extends StatefulWidget {
   final VoidCallback? onOpenPolls;
   final VoidCallback? onOpenTasks;
   final Widget? discussion;
+  final Widget? reminder;
 
   const ActivityDetailRuntimeScreen({
     super.key,
@@ -1150,6 +1151,7 @@ class ActivityDetailRuntimeScreen extends StatefulWidget {
     this.onOpenPolls,
     this.onOpenTasks,
     this.discussion,
+    this.reminder,
   });
 
   @override
@@ -1412,6 +1414,10 @@ class _ActivityDetailRuntimeScreenState
                   ],
                 ),
                 const SizedBox(height: 16),
+                if (widget.reminder != null) ...[
+                  widget.reminder!,
+                  const SizedBox(height: 16),
+                ],
 
                 _surfaceCard(
                   children: [

@@ -3,6 +3,7 @@ package com.wedo.backend.activity.service;
 import com.wedo.backend.activity.dto.*;
 import com.wedo.backend.activity.entity.*;
 import com.wedo.backend.activity.repository.*;
+import com.wedo.backend.activity.reminder.ActivityReminderService;
 import com.wedo.backend.common.error.*;
 import com.wedo.backend.group.entity.GroupActivityAction;
 import com.wedo.backend.group.entity.GroupActivityLogEntity;
@@ -29,6 +30,7 @@ public class ActivityLifecycleService {
     private final ActivityRsvpService rsvps;
     private final ActivityResponseFactory responses;
     private final GroupActivityLogRepository groupActivityLogRepository;
+    private final ActivityReminderService reminders;
     private final Clock clock;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -42,6 +44,7 @@ public class ActivityLifecycleService {
                                     ActivityRsvpService rsvps,
                                     ActivityResponseFactory responses,
                                     GroupActivityLogRepository groupActivityLogRepository,
+                                    ActivityReminderService reminders,
                                     Clock clock) {
         this.activities = activities;
         this.participants = participants;
@@ -51,6 +54,7 @@ public class ActivityLifecycleService {
         this.rsvps = rsvps;
         this.responses = responses;
         this.groupActivityLogRepository = groupActivityLogRepository;
+        this.reminders = reminders;
         this.clock = clock;
     }
 
@@ -129,7 +133,9 @@ public class ActivityLifecycleService {
                 changes.save(new ActivityChangeLogEntity(UUID.randomUUID(), id, actor, "location", String.valueOf(a.getLocation()), String.valueOf(loc), now));
             }
         }
+        boolean startChanged = !Objects.equals(a.getStartAt(), start);
         a.update(title, desc, start, end, zone, loc, cap, now);
+        if (startChanged) reminders.rescheduleForActivity(a.getId(), start, now);
         if (confirmedScheduleChanged || confirmedLocationChanged) {
             publishConfirmedDetailsChanged(a, actor, now, confirmedScheduleChanged, confirmedLocationChanged);
         }

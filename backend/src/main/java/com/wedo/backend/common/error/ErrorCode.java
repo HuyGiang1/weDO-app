@@ -65,6 +65,8 @@ public enum ErrorCode {
     ACTIVITY_CLOSED(HttpStatus.CONFLICT, "Activity is closed."),
     ACTIVITY_ALREADY_STARTED(HttpStatus.CONFLICT, "Activity has already started."),
     ACTIVITY_ALREADY_COMPLETED(HttpStatus.CONFLICT, "Activity has already completed."),
+    ACTIVITY_REMINDER_NOT_ALLOWED(HttpStatus.CONFLICT, "A reminder cannot be configured for this activity."),
+    ACTIVITY_REMINDER_OFFSET_INVALID(HttpStatus.BAD_REQUEST, "Reminder offset must be a positive number of minutes."),
     INVALID_ACTIVITY_TIME(HttpStatus.BAD_REQUEST, "Activity time or timezone is invalid."),
     ACTIVITY_CAPACITY_INVALID(HttpStatus.BAD_REQUEST, "Activity capacity is invalid."),
     RSVP_LOCKED(HttpStatus.CONFLICT, "RSVP is locked."),

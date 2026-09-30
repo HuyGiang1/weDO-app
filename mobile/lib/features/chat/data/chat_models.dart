@@ -164,8 +164,36 @@ class ChatReactionDetail {
   }
 }
 
+class ChatMessageAttachment {
+  final String id;
+  final String storageKey;
+  final String? fileName;
+  final String contentType;
+  final int fileSizeBytes;
+  final int sortOrder;
+
+  const ChatMessageAttachment({
+    required this.id,
+    required this.storageKey,
+    required this.contentType,
+    required this.fileSizeBytes,
+    required this.sortOrder,
+    this.fileName,
+  });
+
+  factory ChatMessageAttachment.fromJson(Map<String, dynamic> json) =>
+      ChatMessageAttachment(
+        id: json['id'] as String,
+        storageKey: json['storageKey'] as String,
+        fileName: json['fileName'] as String?,
+        contentType: json['contentType'] as String,
+        fileSizeBytes: (json['fileSizeBytes'] as num).toInt(),
+        sortOrder: (json['sortOrder'] as num).toInt(),
+      );
+}
+
 class ChatMessage {
-  final String id, status;
+  final String id, status, type;
   final bool isMine;
   final int sequence;
   final ChatUser? author;
@@ -173,6 +201,7 @@ class ChatMessage {
   final DateTime createdAt;
   final DateTime? editedAt, unsentAt;
   final List<ChatReaction> reactions;
+  final List<ChatMessageAttachment> attachments;
   final ChatPermissions permissions;
   const ChatMessage({
     required this.id,
@@ -181,6 +210,8 @@ class ChatMessage {
     required this.sequence,
     required this.createdAt,
     required this.reactions,
+    this.type = 'TEXT',
+    this.attachments = const [],
     required this.permissions,
     this.author,
     this.content,
@@ -192,6 +223,9 @@ class ChatMessage {
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
     id: json['id'] as String,
     status: json['status'] as String,
+    type:
+        json['type'] as String? ??
+        ((json['attachments'] as List?)?.isNotEmpty == true ? 'IMAGE' : 'TEXT'),
     sequence: (json['sequence'] as num).toInt(),
     isMine: json['isMine'] == true,
     author: json['author'] is Map
@@ -205,6 +239,13 @@ class ChatMessage {
     myReaction: json['myReaction'] as String?,
     reactions: ((json['reactions'] as List?) ?? const [])
         .map((e) => ChatReaction.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList(),
+    attachments: ((json['attachments'] as List?) ?? const [])
+        .map(
+          (e) => ChatMessageAttachment.fromJson(
+            Map<String, dynamic>.from(e as Map),
+          ),
+        )
         .toList(),
     permissions: ChatPermissions.fromJson(
       Map<String, dynamic>.from(json['permissions'] as Map? ?? const {}),

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../groups/data/models/group_models.dart';
 import '../application/fund_controllers.dart';
 import '../data/fund_models.dart';
 import '../data/fund_repository.dart';
+import '../../media/presentation/media_storage_image.dart';
 
 class GroupFundScreen extends StatefulWidget {
   final String groupId;
@@ -56,6 +58,79 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
           backgroundColor: AppColors.error,
         ),
       );
+    }
+  }
+
+  Widget _mediaPreview(String? storageKey) {
+    if (storageKey == null || storageKey.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: MediaStorageImage(
+          storageKey: storageKey,
+          baseUrl: '',
+          width: 260,
+          height: 180,
+          fallback: (_) => const SizedBox(
+            height: 64,
+            child: Center(child: Icon(Icons.broken_image_outlined)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _optionalMedia(String category) async {
+    if (!mounted) return null;
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 2048,
+      maxHeight: 2048,
+    );
+    if (file == null || !mounted) return null;
+    try {
+      final bytes = await file.readAsBytes();
+      final extension = file.name.split('.').last.toLowerCase();
+      final type = switch ((file.mimeType ?? '').toLowerCase()) {
+        'image/jpeg' => 'image/jpeg',
+        'image/png' => 'image/png',
+        'image/webp' => 'image/webp',
+        _ => switch (extension) {
+          'jpg' || 'jpeg' => 'image/jpeg',
+          'png' => 'image/png',
+          'webp' => 'image/webp',
+          _ => null,
+        },
+      };
+      if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024 || type == null) {
+        throw StateError(
+          'Only JPEG, PNG or WebP images up to 10 MiB are supported.',
+        );
+      }
+      final service = MediaStorageImage.service;
+      if (service == null) throw StateError('Media upload is unavailable');
+      return await service.uploadImage(
+        category: category,
+        contextId: widget.groupId,
+        fileName: file.name,
+        contentType: type,
+        bytes: bytes,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Image upload failed. No finance record was changed.',
+            ),
+          ),
+        );
+      }
+      rethrow;
     }
   }
 
@@ -300,9 +375,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
               TextField(
                 key: const Key('collection-desc-input'),
                 controller: descCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Mô tả / Ghi chú',
-                ),
+                decoration: const InputDecoration(labelText: 'Mô tả / Ghi chú'),
               ),
             ],
           ),
@@ -353,6 +426,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
     final titleCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
+    String? receiptStorageKey;
+    bool mediaBusy = false;
+    bool mediaFailed = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -387,8 +463,28 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
               TextField(
                 key: const Key('fund-expense-note-input'),
                 controller: noteCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Ghi chú',
+                decoration: const InputDecoration(labelText: 'Ghi chú'),
+              ),
+              OutlinedButton.icon(
+                onPressed: mediaBusy
+                    ? null
+                    : () async {
+                        mediaBusy = true;
+                        try {
+                          receiptStorageKey = await _optionalMedia(
+                            'FUND_EXPENSE_RECEIPT',
+                          );
+                        } catch (_) {
+                          mediaFailed = true;
+                        } finally {
+                          mediaBusy = false;
+                        }
+                      },
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: Text(
+                  receiptStorageKey == null
+                      ? 'Add receipt image'
+                      : 'Replace receipt image',
                 ),
               ),
             ],
@@ -401,7 +497,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
           ),
           FilledButton(
             key: const Key('confirm-create-fund-expense-btn'),
-            onPressed: () => Navigator.of(ctx).pop(true),
+            onPressed: () {
+              if (!mediaBusy) Navigator.of(ctx).pop(true);
+            },
             child: const Text('Ghi chi quỹ'),
           ),
         ],
@@ -420,11 +518,14 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
         );
         return;
       }
+      if (mediaFailed) return;
+      if (!mounted) return;
       final ok = await _controller.createFundExpense(
         widget.groupId,
         fund.fundId,
         title: titleCtrl.text.trim(),
         amount: parsedAmount.decimal,
+        receiptStorageKey: receiptStorageKey,
         note: noteCtrl.text.trim(),
       );
       if (!ok) {
@@ -438,6 +539,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
   Future<void> _promptCreateReimbursement(FundDetail fund) async {
     final reasonCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
+    String? receiptStorageKey;
+    bool mediaBusy = false;
+    bool mediaFailed = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -468,6 +572,28 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       'Số dư khả dụng: ${fund.availableBalance.formatted}',
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: mediaBusy
+                    ? null
+                    : () async {
+                        mediaBusy = true;
+                        try {
+                          receiptStorageKey = await _optionalMedia(
+                            'FUND_REIMBURSEMENT_RECEIPT',
+                          );
+                        } catch (_) {
+                          mediaFailed = true;
+                        } finally {
+                          mediaBusy = false;
+                        }
+                      },
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: Text(
+                  receiptStorageKey == null
+                      ? 'Add receipt image'
+                      : 'Replace receipt image',
+                ),
+              ),
             ],
           ),
         ),
@@ -478,7 +604,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
           ),
           FilledButton(
             key: const Key('confirm-create-reimbursement-btn'),
-            onPressed: () => Navigator.of(ctx).pop(true),
+            onPressed: () {
+              if (!mediaBusy) Navigator.of(ctx).pop(true);
+            },
             child: const Text('Gửi yêu cầu'),
           ),
         ],
@@ -497,11 +625,14 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
         );
         return;
       }
+      if (mediaFailed) return;
+      if (!mounted) return;
       final ok = await _controller.createReimbursement(
         widget.groupId,
         fund.fundId,
         amount: parsedAmount.decimal,
         reason: reasonCtrl.text.trim(),
+        receiptStorageKey: receiptStorageKey,
       );
       if (!ok) {
         _showFailureSnackBar();
@@ -675,8 +806,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                         if (detail.canContribute)
                           FilledButton.icon(
                             key: const Key('submit-contribution-btn'),
-                            onPressed: () =>
-                                _promptSubmitContribution(detail),
+                            onPressed: () => _promptSubmitContribution(detail),
                             icon: const Icon(Icons.payments_outlined),
                             label: const Text('Đóng quỹ'),
                           ),
@@ -775,6 +905,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                                   const SizedBox(height: 4),
                                   Text('Ghi chú: ${c.note}'),
                                 ],
+                                _mediaPreview(c.proofStorageKey),
                                 if (c.rejectionReason?.trim().isNotEmpty ==
                                     true) ...[
                                   const SizedBox(height: 4),
@@ -819,8 +950,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                                                   widget.groupId,
                                                   detail.collectionId,
                                                   c.contributionId,
-                                                  reason:
-                                                      'Không khớp thông tin chuyển khoản',
+                                                  reason: 'Không khớp thông tin chuyển khoản',
                                                 );
                                             if (!ok) _showFailureSnackBar();
                                           },
@@ -863,6 +993,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
   Future<void> _promptSubmitContribution(FundCollectionDetail detail) async {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
+    String? proofStorageKey;
+    bool mediaBusy = false;
+    bool mediaFailed = false;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -889,6 +1022,28 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                 labelText: 'Ghi chú chuyển khoản',
               ),
             ),
+            OutlinedButton.icon(
+              onPressed: mediaBusy
+                  ? null
+                  : () async {
+                      mediaBusy = true;
+                      try {
+                        proofStorageKey = await _optionalMedia(
+                          'FUND_CONTRIBUTION_PROOF',
+                        );
+                      } catch (_) {
+                        mediaFailed = true;
+                      } finally {
+                        mediaBusy = false;
+                      }
+                    },
+              icon: const Icon(Icons.image_outlined),
+              label: Text(
+                proofStorageKey == null
+                    ? 'Add proof image'
+                    : 'Replace proof image',
+              ),
+            ),
           ],
         ),
         actions: [
@@ -898,7 +1053,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
           ),
           FilledButton(
             key: const Key('confirm-submit-contribution-btn'),
-            onPressed: () => Navigator.of(ctx).pop(true),
+            onPressed: () {
+              if (!mediaBusy) Navigator.of(ctx).pop(true);
+            },
             child: const Text('Gửi xác nhận'),
           ),
         ],
@@ -913,10 +1070,13 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
         );
         return;
       }
+      if (mediaFailed) return;
+      if (!mounted) return;
       final ok = await _controller.submitContribution(
         widget.groupId,
         detail.collectionId,
         amount: parsedAmount.decimal,
+        proofStorageKey: proofStorageKey,
         note: noteCtrl.text.trim(),
       );
       if (!ok) _showFailureSnackBar();
@@ -1062,8 +1222,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
       return const _EmptySectionCard(
         icon: Icons.all_inbox_outlined,
         title: 'Chưa có đợt thu quỹ nào',
-        subtitle:
-            'Thủ quỹ hoặc Trưởng nhóm có thể tạo đợt thu để theo dõi nghĩa vụ đóng quỹ của từng thành viên.',
+        subtitle: 'Thủ quỹ hoặc Trưởng nhóm có thể tạo đợt thu để theo dõi nghĩa vụ đóng quỹ của từng thành viên.',
       );
     }
     return Column(
@@ -1150,10 +1309,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.errorContainer,
-                  child: const Icon(
-                    Icons.call_made,
-                    color: AppColors.error,
-                  ),
+                  child: const Icon(Icons.call_made, color: AppColors.error),
                 ),
                 title: Text(
                   e.title,
@@ -1162,10 +1318,16 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                     decoration: e.reversed ? TextDecoration.lineThrough : null,
                   ),
                 ),
-                subtitle: Text(
-                  'Người chi: ${e.createdBy.displayLabel}'
-                  '${e.note?.trim().isNotEmpty == true ? ' • ${e.note}' : ''}'
-                  '${e.reversed ? ' • [Đã đảo bút toán]' : ''}',
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Người chi: ${e.createdBy.displayLabel}'
+                      '${e.note?.trim().isNotEmpty == true ? ' • ${e.note}' : ''}'
+                      '${e.reversed ? ' • [Đã đảo bút toán]' : ''}',
+                    ),
+                    _mediaPreview(e.receiptStorageKey),
+                  ],
                 ),
                 trailing: Text(
                   '-${e.amount.formatted}',
@@ -1186,8 +1348,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
       return const _EmptySectionCard(
         icon: Icons.request_quote_outlined,
         title: 'Chưa có yêu cầu hoàn ứng nào',
-        subtitle:
-            'Thành viên ứng tiền chi cho nhóm có thể gửi yêu cầu hoàn ứng từ quỹ chung.',
+        subtitle: 'Thành viên ứng tiền chi cho nhóm có thể gửi yêu cầu hoàn ứng từ quỹ chung.',
       );
     }
     return Column(
@@ -1219,6 +1380,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       'Người yêu cầu: ${r.user.displayLabel} • Số tiền: ${r.amount.formatted}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
+                    _mediaPreview(r.receiptStorageKey),
                     if (r.rejectionReason?.trim().isNotEmpty == true) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -1294,8 +1456,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
       return const _EmptySectionCard(
         icon: Icons.account_balance_outlined,
         title: 'Sổ giao dịch đang trống',
-        subtitle:
-            'Mọi bút toán thu quỹ, chi quỹ, hoàn ứng và đảo giao dịch đều được ghi nhận bất biến tại đây.',
+        subtitle: 'Mọi bút toán thu quỹ, chi quỹ, hoàn ứng và đảo giao dịch đều được ghi nhận bất biến tại đây.',
       );
     }
     return Column(
@@ -1314,7 +1475,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                           tx.isInflow
                               ? Icons.south_west_rounded
                               : Icons.north_east_rounded,
-                          color: tx.isInflow ? Colors.green.shade700 : AppColors.error,
+                          color: tx.isInflow
+                              ? Colors.green.shade700
+                              : AppColors.error,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -1423,10 +1586,7 @@ class _EmptyFundView extends StatelessWidget {
             const SizedBox(height: 16),
             const Text(
               'Nhóm chưa có quỹ chung',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -1628,10 +1788,7 @@ class _MetricTile extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
       ],
     );

@@ -36,12 +36,14 @@ class EditGroupController extends ValueNotifier<GroupAsyncState<GroupDetail>> {
   }
 
   Future<String?> uploadAvatar({
+    required String groupId,
     required List<int> bytes,
     required String filename,
     required String contentType,
   }) async {
     try {
       return await repository.uploadGroupAvatar(
+        groupId: groupId,
         bytes: bytes,
         filename: filename,
         contentType: contentType,

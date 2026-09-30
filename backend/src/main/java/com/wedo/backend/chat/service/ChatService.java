@@ -12,6 +12,8 @@ import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
+import com.wedo.backend.media.dto.UploadCategory;
+import com.wedo.backend.media.service.MediaReferenceService;
 import com.wedo.backend.social.repository.FriendshipRepository;
 import com.wedo.backend.social.repository.UserBlockRepository;
 import com.wedo.backend.user.entity.DmPolicy;
@@ -21,6 +23,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
@@ -43,6 +46,9 @@ public class ChatService {
     private final UserBlockRepository blocks;
     private final UserPrivacySettingsRepository privacy;
     private final org.springframework.context.ApplicationEventPublisher events;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MediaReferenceService mediaReferences;
 
     public ChatService(JdbcTemplate jdbc, GroupMembershipRepository memberships,
                        GroupRepository groups, GroupSettingsRepository settings,
@@ -181,7 +187,7 @@ public class ChatService {
         String joinCutoff = access.groupId == null || access.historyPolicy == ChatHistoryPolicy.FULL_HISTORY
                 ? "" : " AND m.created_at >= (SELECT gm.created_at FROM group_memberships gm WHERE gm.group_id=? AND gm.user_id=? AND gm.status='ACTIVE' ORDER BY gm.created_at DESC LIMIT 1)";
         String sql = """
-                SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,
+                SELECT m.id,m.conversation_id,m.sequence,m.type,m.sender_id,u.display_name,u.avatar_storage_key,
                        m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at
                 FROM messages m LEFT JOIN users u ON u.id=m.sender_id
                 WHERE m.conversation_id=? AND (?::bigint IS NULL OR m.sequence < ?)
@@ -212,9 +218,22 @@ public class ChatService {
     public ChatResponses.Message send(UUID conversationId, UUID userId, ChatRequests.SendMessage request) {
         Access access = access(conversationId,userId,true);
         ensureSendAllowed(access,userId);
-        String content = request.content().trim();
-        if (content.isEmpty()) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        String content = request.content() == null ? "" : request.content().trim();
+        List<String> attachmentKeys = request.attachmentStorageKeys() == null
+                ? List.of() : new java.util.ArrayList<>(request.attachmentStorageKeys());
+        if (attachmentKeys.size() > 4 || (content.isEmpty() && attachmentKeys.isEmpty())
+                || attachmentKeys.stream().anyMatch(key -> key == null || key.isBlank())
+                || new LinkedHashSet<>(attachmentKeys).size() != attachmentKeys.size()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (!attachmentKeys.isEmpty()) {
+            if (mediaReferences == null) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            for (String key : attachmentKeys) {
+                mediaReferences.validate(key, UploadCategory.CHAT_IMAGE, conversationId, userId);
+            }
+        }
         if (access.type.equals("DIRECT") && "REQUEST_PENDING".equals(access.accessStatus)) {
+            if (!attachmentKeys.isEmpty()) throw new BusinessException(ErrorCode.ACCESS_DENIED);
             long sent = jdbc.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=? AND sender_id=? AND status='ACTIVE'",Long.class,conversationId,userId);
             if (sent >= 3) throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
@@ -224,8 +243,16 @@ public class ChatService {
         }
         Long sequence = jdbc.queryForObject("UPDATE conversation_sequences SET current_sequence=current_sequence+1,updated_at=now() WHERE conversation_id=? RETURNING current_sequence",Long.class,conversationId);
         UUID id=UUID.randomUUID();
-        jdbc.update("INSERT INTO messages(id,conversation_id,sender_id,sequence,type,content,reply_to_message_id) VALUES (?,?,?,?,'TEXT',?,?)",
-                id,conversationId,userId,sequence,content,request.replyToMessageId());
+        String messageType = attachmentKeys.isEmpty() ? "TEXT" : "IMAGE";
+        jdbc.update("INSERT INTO messages(id,conversation_id,sender_id,sequence,type,content,reply_to_message_id) VALUES (?,?,?,?,?,?,?)",
+                id,conversationId,userId,sequence,messageType,content,request.replyToMessageId());
+        for (int i = 0; i < attachmentKeys.size(); i++) {
+            jdbc.update("""
+                    INSERT INTO message_attachments(id,message_id,storage_key,file_name,content_type,file_size_bytes,sort_order)
+                    VALUES (?,?,?,?,?,?,?)
+                    """, UUID.randomUUID(), id, attachmentKeys.get(i), mediaReferences.originalFileName(attachmentKeys.get(i)),
+                    mediaReferences.contentType(attachmentKeys.get(i)), mediaReferences.fileSize(attachmentKeys.get(i)), i);
+        }
         jdbc.update("UPDATE conversations SET updated_at=now() WHERE id=?",conversationId);
         ChatResponses.Message created = messageById(id,userId);
         events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
@@ -352,7 +379,7 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<ChatResponses.Message> pins(UUID conversationId, UUID userId) {
         Access access=access(conversationId,userId,false);
-        List<MessageRow> rows=jdbc.query("SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM message_pins p JOIN messages m ON m.id=p.message_id LEFT JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY p.pinned_at DESC",this::messageRow,conversationId);
+        List<MessageRow> rows=jdbc.query("SELECT m.id,m.conversation_id,m.sequence,m.type,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM message_pins p JOIN messages m ON m.id=p.message_id LEFT JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY p.pinned_at DESC",this::messageRow,conversationId);
         return toMessages(rows,userId,access);
     }
 
@@ -364,7 +391,7 @@ public class ChatService {
                 ? " AND m.created_at >= (SELECT gm.created_at FROM group_memberships gm WHERE gm.group_id=? AND gm.user_id=? AND gm.status='ACTIVE' ORDER BY gm.created_at DESC LIMIT 1)" : "";
         List<Object> args=new java.util.ArrayList<>(List.of(conversationId,"%"+query.trim()+"%",userId));
         if(!cutoff.isEmpty()){args.add(access.groupId);args.add(userId);}
-        List<MessageRow> rows=jdbc.query("SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? AND m.status='ACTIVE' AND m.content ILIKE ? AND NOT EXISTS(SELECT 1 FROM message_hidden_users h WHERE h.message_id=m.id AND h.user_id=?)"+cutoff+" ORDER BY m.sequence DESC LIMIT 100",this::messageRow,args.toArray());
+        List<MessageRow> rows=jdbc.query("SELECT m.id,m.conversation_id,m.sequence,m.type,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? AND m.status='ACTIVE' AND m.content ILIKE ? AND NOT EXISTS(SELECT 1 FROM message_hidden_users h WHERE h.message_id=m.id AND h.user_id=?)"+cutoff+" ORDER BY m.sequence DESC LIMIT 100",this::messageRow,args.toArray());
         return toMessages(rows,userId,access);
     }
 
@@ -415,7 +442,7 @@ public class ChatService {
 
     private MessageRow messageRow(ResultSet rs,int row) throws SQLException {
         return new MessageRow(rs.getObject("id",UUID.class),rs.getObject("conversation_id",UUID.class),
-                rs.getLong("sequence"),rs.getObject("sender_id",UUID.class),rs.getString("display_name"),
+                rs.getLong("sequence"),rs.getString("type"),rs.getObject("sender_id",UUID.class),rs.getString("display_name"),
                 rs.getString("avatar_storage_key"),rs.getString("content"),rs.getString("status"),
                 rs.getObject("reply_to_message_id",UUID.class),rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("edited_at")==null?null:rs.getTimestamp("edited_at").toInstant(),
@@ -429,6 +456,7 @@ public class ChatService {
         rows.forEach(row->args.add(row.id()));
         Map<UUID,List<ChatResponses.Reaction>> reactions=new java.util.HashMap<>();
         Map<UUID,String> myReactions=new java.util.HashMap<>();
+        Map<UUID,List<ChatResponses.MessageAttachment>> attachments = new java.util.HashMap<>();
         jdbc.query("SELECT message_id,emoji,count(*) AS reaction_count,bool_or(user_id=?) AS mine FROM message_reactions WHERE message_id IN ("+marks+") GROUP BY message_id,emoji ORDER BY message_id,emoji",rs->{
             UUID messageId=rs.getObject("message_id",UUID.class); String emoji=rs.getString("emoji");
             boolean mine=rs.getBoolean("mine");
@@ -436,6 +464,15 @@ public class ChatService {
                     .add(new ChatResponses.Reaction(emoji,rs.getLong("reaction_count"),mine));
             if(mine) myReactions.put(messageId,emoji);
         },args.toArray());
+        jdbc.query("""
+                SELECT id,message_id,storage_key,file_name,content_type,file_size_bytes,sort_order
+                FROM message_attachments WHERE message_id IN (""" + marks + ") ORDER BY message_id,sort_order,id", rs -> {
+            UUID messageId = rs.getObject("message_id", UUID.class);
+            attachments.computeIfAbsent(messageId, ignored -> new java.util.ArrayList<>()).add(
+                    new ChatResponses.MessageAttachment(rs.getObject("id", UUID.class), rs.getString("storage_key"),
+                            rs.getString("file_name"), rs.getString("content_type"), rs.getLong("file_size_bytes"),
+                            rs.getInt("sort_order")));
+        }, rows.stream().map(MessageRow::id).toArray());
         boolean writable=permissions(access.type,access.groupId,userId,access.accessStatus,true);
         boolean canPin=writable&&access.groupId!=null&&membership(access.groupId,userId).getRole()!=GroupRole.MEMBER;
         if(writable&&access.groupId!=null&&!canPin) canPin=settings.findById(access.groupId)
@@ -449,10 +486,11 @@ public class ChatService {
             boolean within=Duration.between(row.createdAt(),now).compareTo(MESSAGE_WINDOW)<0;
             ChatResponses.User author=row.senderId()==null?null:new ChatResponses.User(
                     row.senderId(),row.displayName()==null?"Người dùng":row.displayName(),row.avatarStorageKey());
-            return new ChatResponses.Message(row.id(),row.sequence(),owner,author,
+            return new ChatResponses.Message(row.id(),row.sequence(),row.type(),owner,author,
                     active?row.content():null,row.status(),row.replyToMessageId(),row.createdAt(),
                     row.editedAt(),row.unsentAt(),myReactions.get(row.id()),
                     reactions.getOrDefault(row.id(),List.of()),
+                    active ? attachments.getOrDefault(row.id(),List.of()) : List.of(),
                     new ChatResponses.Permissions(writable&&owner&&active&&within,
                             writable&&owner&&active&&within,writable&&owner&&active&&within,
                             writable,writable&&active,canPinMessages&&active,readOnly));
@@ -460,7 +498,7 @@ public class ChatService {
     }
 
     private ChatResponses.Message messageById(UUID id,UUID userId) {
-        MessageRow row=jdbc.queryForObject("SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.id=?",this::messageRow,id);
+        MessageRow row=jdbc.queryForObject("SELECT m.id,m.conversation_id,m.sequence,m.type,m.sender_id,u.display_name,u.avatar_storage_key,m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.id=?",this::messageRow,id);
         return toMessages(List.of(row),userId,access(row.conversationId(),userId,false)).get(0);
     }
 
@@ -542,11 +580,21 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public boolean canSendInConversation(UUID conversationId, UUID userId) {
+        return canSendInConversation(conversationId, userId, false);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canSendImageInConversation(UUID conversationId, UUID userId) {
+        return canSendInConversation(conversationId, userId, true);
+    }
+
+    private boolean canSendInConversation(UUID conversationId, UUID userId, boolean image) {
         if (conversationId == null || userId == null) return false;
         try {
             Access access = access(conversationId, userId, true);
             ensureSendAllowed(access, userId);
             if ("DIRECT".equals(access.type) && "REQUEST_PENDING".equals(access.accessStatus)) {
+                if (image) return false;
                 Long sent = jdbc.queryForObject(
                         "SELECT count(*) FROM messages WHERE conversation_id=? AND sender_id=? AND status='ACTIVE'",
                         Long.class, conversationId, userId);
@@ -555,6 +603,40 @@ public class ChatService {
             return true;
         } catch (RuntimeException ex) {
             return false;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void requireAttachmentReadable(String storageKey, UUID userId) {
+        MediaReferenceService.ParsedKey parsed = mediaReferences == null ? null : mediaReferences.parse(storageKey);
+        if (parsed == null || parsed.category() != UploadCategory.CHAT_IMAGE) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT m.conversation_id,m.status,m.created_at,m.id,m.sender_id
+                FROM message_attachments a JOIN messages m ON m.id=a.message_id
+                WHERE a.storage_key=? LIMIT 2
+                """, storageKey);
+        if (rows.size() != 1 || !"ACTIVE".equals(rows.get(0).get("status"))) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        Map<String, Object> row = rows.get(0);
+        UUID conversationId = (UUID) row.get("conversation_id");
+        if (!parsed.contextId().equals(conversationId) || !parsed.uploaderId().equals(row.get("sender_id"))) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        Access access = access(conversationId, userId, false);
+        UUID messageId = (UUID) row.get("id");
+        Integer hidden = jdbc.queryForObject(
+                "SELECT count(*) FROM message_hidden_users WHERE message_id=? AND user_id=?", Integer.class,
+                messageId, userId);
+        if (hidden != null && hidden > 0) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        if (access.groupId() != null && access.historyPolicy() == ChatHistoryPolicy.FROM_JOIN_TIME) {
+            Integer visible = jdbc.queryForObject("""
+                    SELECT count(*) FROM group_memberships
+                    WHERE group_id=? AND user_id=? AND status='ACTIVE' AND created_at <= ?
+                    """, Integer.class, access.groupId(), userId, row.get("created_at"));
+            if (visible == null || visible == 0) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
     }
 
@@ -614,7 +696,7 @@ public class ChatService {
     public java.util.Optional<ChatResponses.Message> messageForViewer(UUID messageId, UUID viewerUserId) {
         try {
             List<MessageRow> rows = jdbc.query("""
-                    SELECT m.id,m.conversation_id,m.sequence,m.sender_id,u.display_name,u.avatar_storage_key,
+                    SELECT m.id,m.conversation_id,m.sequence,m.type,m.sender_id,u.display_name,u.avatar_storage_key,
                            m.content,m.status,m.reply_to_message_id,m.created_at,m.edited_at,m.unsent_at
                     FROM messages m LEFT JOIN users u ON u.id=m.sender_id WHERE m.id=?
                     """, this::messageRow, messageId);
@@ -665,7 +747,7 @@ public class ChatService {
     }
 
     private record Access(UUID conversationId,String type,UUID groupId,ChatHistoryPolicy historyPolicy,String accessStatus) { }
-    private record MessageRow(UUID id,UUID conversationId,long sequence,UUID senderId,String displayName,
+    private record MessageRow(UUID id,UUID conversationId,long sequence,String type,UUID senderId,String displayName,
                               String avatarStorageKey,String content,String status,UUID replyToMessageId,
                               Instant createdAt,Instant editedAt,Instant unsentAt) { }
 }

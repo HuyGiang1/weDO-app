@@ -187,6 +187,7 @@ class _MockGroupRepo extends GroupRepository {
 
   @override
   Future<String> uploadGroupAvatar({
+    required String groupId,
     required List<int> bytes,
     required String filename,
     required String contentType,

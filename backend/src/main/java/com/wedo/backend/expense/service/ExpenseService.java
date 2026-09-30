@@ -23,6 +23,8 @@ import com.wedo.backend.group.entity.GroupRole;
 import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.group.service.ReadableGroupAccess;
+import com.wedo.backend.media.dto.UploadCategory;
+import com.wedo.backend.media.service.MediaReferenceService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -59,6 +61,9 @@ public class ExpenseService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MediaReferenceService mediaReferences;
+
     public ExpenseService(JdbcTemplate jdbc, GroupPermissionService groupPermissions) {
         this.jdbc = jdbc;
         this.groupPermissions = groupPermissions;
@@ -68,6 +73,8 @@ public class ExpenseService {
     public ExpenseDetail create(UUID groupId, UUID actorId, ExpenseRequest request) {
         requireMutableGroup(groupId, actorId);
         ExpenseDraft draft = validateRequest(groupId, request);
+        String receiptKey = normalizeStorageKey(request.receiptStorageKey());
+        validateReceiptKey(receiptKey, groupId, actorId);
         Set<PairKey> affected = affectedPairs(draft.payerId(), draft.shares());
         Ledger ledger = loadLedger(groupId, null, null);
         addExpense(ledger, draft.payerId(), draft.shares());
@@ -77,10 +84,10 @@ public class ExpenseService {
         Instant now = Instant.now();
         jdbc.update("""
                 INSERT INTO expenses(id,group_id,activity_id,paid_by,created_by,title,total_amount,
-                    split_type,occurred_at,note,status,created_at,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?, 'ACTIVE', ?, ?)
+                    split_type,occurred_at,note,receipt_storage_key,status,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?, 'ACTIVE', ?, ?)
                 """, expenseId, groupId, draft.activityId(), draft.payerId(), actorId, draft.title(),
-                draft.amount(), draft.splitMethod(), draft.occurredAt(), draft.note(), Timestamp.from(now), Timestamp.from(now));
+                draft.amount(), draft.splitMethod(), draft.occurredAt(), draft.note(), receiptKey, Timestamp.from(now), Timestamp.from(now));
         insertShares(expenseId, draft.shares());
         if (eventPublisher != null) {
             List<UUID> recipients = draft.shares().stream()
@@ -165,7 +172,7 @@ public class ExpenseService {
                 rs.getString("old_value"), rs.getString("new_value"), rs.getTimestamp("created_at").toInstant()), expenseId);
         return new ExpenseDetail(row.id(), row.groupId(), row.activityId(), row.title(), row.amount(), row.splitType(),
                 row.status(), row.occurredAt(), row.note(), user(row.payerId()), user(row.creatorId()), shares, changes,
-                row.createdAt(), row.updatedAt(), permissions(row, actorId, access));
+                row.createdAt(), row.updatedAt(), permissions(row, actorId, access), row.receiptStorageKey());
     }
 
     @Transactional
@@ -176,6 +183,9 @@ public class ExpenseService {
         requireCanModify(current, actorId);
         if (!"ACTIVE".equals(current.status())) throw new BusinessException(ErrorCode.EXPENSE_UPDATE_NOT_ALLOWED);
         ExpenseDraft draft = validateRequest(current.groupId(), request);
+        String requestedReceiptKey = normalizeStorageKey(request.receiptStorageKey());
+        validateReceiptKey(requestedReceiptKey, current.groupId(), actorId);
+        String receiptKey = requestedReceiptKey == null ? current.receiptStorageKey() : requestedReceiptKey;
         List<Share> oldShares = sharesFor(expenseId);
         Set<PairKey> affected = affectedPairs(current.payerId(), oldShares.stream().map(s -> new ShareFact(s.userId(), s.amount())).toList());
         affected.addAll(affectedPairs(draft.payerId(), draft.shares()));
@@ -186,14 +196,19 @@ public class ExpenseService {
         Instant now = Instant.now();
         Map<String, String> before = expenseValues(current, oldShares);
         Map<String, String> after = draftValues(draft);
+        after.put("receiptStorageKey", receiptKey);
         jdbc.update("""
-                UPDATE expenses SET activity_id=?,paid_by=?,title=?,total_amount=?,split_type=?,occurred_at=?,note=?,updated_at=?
+                UPDATE expenses SET activity_id=?,paid_by=?,title=?,total_amount=?,split_type=?,occurred_at=?,note=?,receipt_storage_key=?,updated_at=?
                 WHERE id=?
                 """, draft.activityId(), draft.payerId(), draft.title(), draft.amount(), draft.splitMethod(),
-                draft.occurredAt(), draft.note(), Timestamp.from(now), expenseId);
+                draft.occurredAt(), draft.note(), receiptKey, Timestamp.from(now), expenseId);
         jdbc.update("DELETE FROM expense_shares WHERE expense_id=?", expenseId);
         insertShares(expenseId, draft.shares());
         recordChanges(expenseId, actorId, before, after, now);
+        if (requestedReceiptKey != null && !requestedReceiptKey.equals(current.receiptStorageKey())
+                && mediaReferences != null) {
+            mediaReferences.deleteAfterCommit(current.receiptStorageKey(), requestedReceiptKey);
+        }
         return detail(expenseId, actorId);
     }
 
@@ -362,6 +377,35 @@ public class ExpenseService {
         groupPermissions.requireMutableMembership(groupId, actorId);
     }
 
+    @Transactional(readOnly = true)
+    public void authorizeReceiptPresign(UUID groupId, UUID actorId) {
+        groupPermissions.requireMutableMembership(groupId, actorId);
+    }
+
+    @Transactional(readOnly = true)
+    public void requireReceiptReadable(String storageKey, UUID actorId, UUID expectedGroupId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id,group_id FROM expenses WHERE receipt_storage_key=? LIMIT 2", storageKey);
+        if (rows.size() != 1 || !expectedGroupId.equals(rows.get(0).get("group_id"))) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        ExpenseDetail expense = detail((UUID) rows.get(0).get("id"), actorId);
+        if (!storageKey.equals(expense.receiptStorageKey())) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    private void validateReceiptKey(String storageKey, UUID groupId, UUID actorId) {
+        if (storageKey == null) return;
+        if (mediaReferences == null) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        mediaReferences.validate(storageKey, UploadCategory.EXPENSE_RECEIPT, groupId, actorId);
+    }
+
+    private String normalizeStorageKey(String storageKey) {
+        if (storageKey == null || storageKey.isBlank()) return null;
+        String normalized = storageKey.trim();
+        if (normalized.length() > 255) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        return normalized;
+    }
+
     private ExpenseRow findExpense(UUID expenseId, boolean forUpdate) {
         String sql = expenseSql() + " WHERE e.id=?" + (forUpdate ? " FOR UPDATE OF e" : "");
         try {
@@ -385,7 +429,7 @@ public class ExpenseService {
         return new ExpenseRow(rs.getObject("id", UUID.class), rs.getObject("group_id", UUID.class),
                 rs.getObject("activity_id", UUID.class), rs.getString("title"), rs.getBigDecimal("total_amount"),
                 rs.getString("split_type"), rs.getString("status"), rs.getObject("occurred_at", OffsetDateTime.class),
-                rs.getString("note"), rs.getObject("paid_by", UUID.class), rs.getObject("created_by", UUID.class),
+                rs.getString("note"), rs.getString("receipt_storage_key"), rs.getObject("paid_by", UUID.class), rs.getObject("created_by", UUID.class),
                 created.toInstant(), updated.toInstant());
     }
 
@@ -441,6 +485,7 @@ public class ExpenseService {
         values.put("payerUserId", row.payerId().toString()); values.put("splitMethod", row.splitType());
         values.put("activityId", row.activityId() == null ? null : row.activityId().toString());
         values.put("occurredAt", row.occurredAt().toString()); values.put("note", row.note());
+        values.put("receiptStorageKey", row.receiptStorageKey());
         values.put("shares", shares.stream().map(s -> s.userId() + ":" + s.amount().toPlainString()).sorted().toList().toString());
         return values;
     }
@@ -832,7 +877,7 @@ public class ExpenseService {
     }
 
     private record ExpenseRow(UUID id, UUID groupId, UUID activityId, String title, BigDecimal amount,
-                              String splitType, String status, OffsetDateTime occurredAt, String note,
+                              String splitType, String status, OffsetDateTime occurredAt, String note, String receiptStorageKey,
                               UUID payerId, UUID creatorId, Instant createdAt, Instant updatedAt) { }
     private record SettlementRow(UUID id, UUID groupId, UUID fromUserId, UUID toUserId, UUID createdBy,
                                  BigDecimal amount, String status, String declarationType,

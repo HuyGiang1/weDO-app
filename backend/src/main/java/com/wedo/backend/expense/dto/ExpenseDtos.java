@@ -25,8 +25,16 @@ public final class ExpenseDtos {
             @Valid List<ShareRequest> shares,
             UUID activityId,
             @NotNull OffsetDateTime occurredAt,
-            String note
-    ) { }
+            String note,
+            @Size(max = 255) String receiptStorageKey
+    ) {
+        public ExpenseRequest(String title, BigDecimal amount, UUID payerUserId, String splitMethod,
+                              List<UUID> participantUserIds, List<ShareRequest> shares, UUID activityId,
+                              OffsetDateTime occurredAt, String note) {
+            this(title, amount, payerUserId, splitMethod, participantUserIds, shares, activityId,
+                    occurredAt, note, null);
+        }
+    }
 
     public record UserSummary(UUID id, String displayName, String avatarStorageKey) { }
     public record PermissionProjection(boolean canEdit, boolean canCancel) { }
@@ -44,7 +52,7 @@ public final class ExpenseDtos {
             @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amount,
             String splitMethod, String status, OffsetDateTime occurredAt, String note,
             UserSummary payer, UserSummary creator, List<Share> shares, List<Change> changeHistory,
-            Instant createdAt, Instant updatedAt, PermissionProjection permissions
+            Instant createdAt, Instant updatedAt, PermissionProjection permissions, String receiptStorageKey
     ) { }
     public record UserBalance(UserSummary user, String direction,
                               @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal amount) { }

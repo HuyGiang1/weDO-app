@@ -769,7 +769,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
                 "SvcHuyGiang",
                 "  Huy Giang  ",
                 "  Software engineer & builder  ",
-                "avatars/2026/09/profile_1.png"
+                null
         );
 
         CompleteProfileResponse response = authService.completeProfile(request);
@@ -785,7 +785,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         assertThat(user.getUsername()).isEqualTo("svchuygiang");
         assertThat(user.getDisplayName()).isEqualTo("Huy Giang");
         assertThat(user.getBio()).isEqualTo("Software engineer & builder");
-        assertThat(user.getAvatarStorageKey()).isEqualTo("avatars/2026/09/profile_1.png");
+        assertThat(user.getAvatarStorageKey()).isNull();
         assertThat(user.getUpdatedAt()).isEqualTo(currentInstant);
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
     }
@@ -813,15 +813,17 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("completeProfile avatarStorageKey preserves exact string without trimming or normalization")
-    void completeProfile_avatarStorageKey_preservesExactString() {
+    @DisplayName("completeProfile rejects caller-supplied avatar keys")
+    void completeProfile_rejectsCallerSuppliedAvatarKey() {
         UUID userId = registerAndVerifyUser("avatar.exact@example.com");
         String token = profileCompletionTokenService.generate(userId);
 
         String exactKey = "custom/storage-key/path.jpg";
-        authService.completeProfile(new CompleteProfileRequest(token, "avatar_user", "Avatar User", null, exactKey));
-
-        assertThat(userRepository.findById(userId).orElseThrow().getAvatarStorageKey()).isEqualTo(exactKey);
+        assertThatThrownBy(() -> authService.completeProfile(
+                new CompleteProfileRequest(token, "avatar_user", "Avatar User", null, exactKey)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_FAILED);
+        assertThat(userRepository.findById(userId).orElseThrow().getAvatarStorageKey()).isNull();
     }
 
     @Test

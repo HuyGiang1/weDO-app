@@ -1,6 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, deprecated_member_use
 
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -35,6 +36,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
   bool _seeded = false;
   Uint8List? _previewBytes;
   String? _avatarStorageKey;
+  String? _savedAvatarStorageKey;
   bool _isUploadingAvatar = false;
 
   @override
@@ -60,22 +62,41 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
         maxHeight: 1024,
         imageQuality: 85,
       );
-      if (picked == null) return;
+      if (!mounted || picked == null) return;
 
       final bytes = await picked.readAsBytes();
-      setState(() {
-        _previewBytes = bytes;
-        _isUploadingAvatar = true;
-      });
+      if (!mounted) return;
+      if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choose an image smaller than 5 MiB.')),
+        );
+        return;
+      }
+      setState(() => _isUploadingAvatar = true);
 
       final ext = picked.name.split('.').last.toLowerCase();
-      final contentType = switch (ext) {
-        'png' => 'image/png',
-        'webp' => 'image/webp',
-        _ => 'image/jpeg',
-      };
+      final contentType =
+          picked.mimeType ??
+          switch (ext) {
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'jpg' || 'jpeg' => 'image/jpeg',
+            _ => '',
+          };
+      if (!const {
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+      }.contains(contentType)) {
+        setState(() => _isUploadingAvatar = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choose a JPEG, PNG, or WebP image.')),
+        );
+        return;
+      }
 
       final storageKey = await widget.controller.uploadAvatar(
+        groupId: widget.groupId,
         bytes: bytes,
         filename: picked.name.isEmpty ? 'avatar.jpg' : picked.name,
         contentType: contentType,
@@ -86,23 +107,32 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
       if (storageKey != null) {
         setState(() {
           _avatarStorageKey = storageKey;
+          _previewBytes = bytes;
           _isUploadingAvatar = false;
         });
       } else {
         setState(() {
+          _previewBytes = null;
+          _avatarStorageKey = _savedAvatarStorageKey;
           _isUploadingAvatar = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Không thể tải ảnh lên. Vui lòng thử lại.')),
+          const SnackBar(
+            content: Text('Không thể tải ảnh lên. Vui lòng thử lại.'),
+          ),
         );
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _previewBytes = null;
+        _avatarStorageKey = _savedAvatarStorageKey;
         _isUploadingAvatar = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không thể tải ảnh lên. Vui lòng thử lại.')),
+        const SnackBar(
+          content: Text('Không thể tải ảnh lên. Vui lòng thử lại.'),
+        ),
       );
     }
   }
@@ -119,6 +149,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
           _name.text = group.name;
           _description.text = group.description ?? '';
           _avatarStorageKey = group.avatarStorageKey;
+          _savedAvatarStorageKey = group.avatarStorageKey;
         }
         if (state.loading && group == null)
           return const Center(child: CircularProgressIndicator());
@@ -193,7 +224,9 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                             ),
                             child: const Center(
                               child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             ),
                           ),
@@ -207,10 +240,14 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                       )
                     else
                       TextButton.icon(
-                        onPressed: isArchived ? null : () => _pickAndUploadAvatar(isArchived),
+                        onPressed: isArchived
+                            ? null
+                            : () => _pickAndUploadAvatar(isArchived),
                         icon: const Icon(Icons.photo_camera_outlined, size: 18),
                         label: Text(
-                          (_avatarStorageKey != null || _previewBytes != null) ? 'Đổi ảnh' : 'Chọn ảnh',
+                          (_avatarStorageKey != null || _previewBytes != null)
+                              ? 'Đổi ảnh'
+                              : 'Chọn ảnh',
                         ),
                       ),
                   ],
@@ -238,7 +275,10 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
                     _failureText(state.failure),
-                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               const SizedBox(height: 16),
@@ -257,6 +297,12 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                         );
                         if (r != null && context.mounted)
                           Navigator.of(context).pop(r);
+                        else if (context.mounted) {
+                          setState(() {
+                            _avatarStorageKey = _savedAvatarStorageKey;
+                            _previewBytes = null;
+                          });
+                        }
                       },
                 child: const Text('Lưu thay đổi'),
               ),
@@ -522,7 +568,10 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
               )
             else if (!isOwner)
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                margin: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
@@ -598,7 +647,9 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                       ),
                     )
                     .toList(),
-                decoration: const InputDecoration(labelText: 'Hình thức tham gia nhóm'),
+                decoration: const InputDecoration(
+                  labelText: 'Hình thức tham gia nhóm',
+                ),
               ),
             ),
             Padding(
@@ -608,7 +659,9 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                 onChanged: canMutate
                     ? (v) {
                         if (v != null)
-                          save(UpdateGroupSettingsRequest(chatHistoryPolicy: v));
+                          save(
+                            UpdateGroupSettingsRequest(chatHistoryPolicy: v),
+                          );
                       }
                     : null,
                 items: ChatHistoryPolicy.values
@@ -623,7 +676,9 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                       ),
                     )
                     .toList(),
-                decoration: const InputDecoration(labelText: 'Lịch sử trò chuyện'),
+                decoration: const InputDecoration(
+                  labelText: 'Lịch sử trò chuyện',
+                ),
               ),
             ),
             ListTile(

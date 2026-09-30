@@ -3,10 +3,14 @@ import '../../../core/network/api_exception.dart';
 import 'group_api.dart';
 import 'group_failure.dart';
 import 'models/group_models.dart';
+import '../../media/data/media_upload_service.dart';
+
+import 'dart:typed_data';
 
 class GroupRepository {
   final GroupApi api;
-  GroupRepository({required this.api});
+  final MediaUploadService? mediaUploadService;
+  GroupRepository({required this.api, this.mediaUploadService});
   Future<T> _guard<T>(Future<T> Function() w) async {
     try {
       return await w();
@@ -38,10 +42,21 @@ class GroupRepository {
   Future<GroupDetail> updateGroup(String id, UpdateGroupRequest q) =>
       _guard(() => api.updateGroup(id, q));
   Future<String> uploadGroupAvatar({
+    required String groupId,
     required List<int> bytes,
     required String filename,
     required String contentType,
-  }) => _guard(() => api.uploadAvatar(bytes: bytes, filename: filename, contentType: contentType));
+  }) => _guard(() {
+    final uploader = mediaUploadService;
+    if (uploader == null) throw StateError('Media upload is not configured');
+    return uploader.uploadImage(
+      category: 'GROUP_AVATAR',
+      contextId: groupId,
+      fileName: filename,
+      contentType: contentType,
+      bytes: Uint8List.fromList(bytes),
+    );
+  });
   Future<GroupSettings> getSettings(String id) =>
       _guard(() => api.getSettings(id));
   Future<GroupSettings> updateSettings(
@@ -69,7 +84,9 @@ class GroupRepository {
     int page = 0,
     int size = 20,
     String status = 'PENDING',
-  }) => _guard(() => api.listMyInvitations(page: page, size: size, status: status));
+  }) => _guard(
+    () => api.listMyInvitations(page: page, size: size, status: status),
+  );
 
   Future<void> acceptInvitation(String id) =>
       _guard(() => api.acceptInvitation(id));

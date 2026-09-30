@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/date_time_formatter.dart';
 import '../../groups/data/group_repository.dart';
 import '../../groups/data/models/group_models.dart';
+import '../../media/presentation/media_storage_image.dart';
 import '../../social/presentation/widgets/user_avatar.dart';
 import '../application/expense_controllers.dart';
 import '../data/expense_failure.dart';
@@ -256,6 +258,24 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
               const SizedBox(height: 12),
               Text(expense.note!),
             ],
+            if (expense.receiptStorageKey != null) ...[
+              const SizedBox(height: 16),
+              Text('Biên nhận', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: MediaStorageImage(
+                  storageKey: expense.receiptStorageKey!,
+                  baseUrl: '',
+                  width: double.infinity,
+                  height: 220,
+                  fallback: (_) => const SizedBox(
+                    height: 96,
+                    child: Center(child: Icon(Icons.broken_image_outlined)),
+                  ),
+                ),
+              ),
+            ],
             const Divider(height: 32),
             Text(
               'Người thanh toán',
@@ -386,6 +406,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   late String? _payerId = widget.initial?.payer.id;
   late final Set<String> _participants =
       widget.initial?.shares.map((s) => s.userId).toSet() ?? {};
+  late String? _receiptStorageKey = widget.initial?.receiptStorageKey;
+  bool _receiptUploading = false;
   late Future<List<GroupMember>> _members = widget.groupRepository.getMembers(
     widget.groupId,
   );
@@ -434,6 +456,52 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     );
   }
 
+  Future<void> _chooseReceipt() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 2048,
+      maxHeight: 2048,
+    );
+    if (file == null || !mounted) return;
+    setState(() => _receiptUploading = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final extension = file.name.split('.').last.toLowerCase();
+      final type = switch ((file.mimeType ?? '').toLowerCase()) {
+        'image/jpeg' => 'image/jpeg',
+        'image/png' => 'image/png',
+        'image/webp' => 'image/webp',
+        _ => switch (extension) {
+          'jpg' || 'jpeg' => 'image/jpeg',
+          'png' => 'image/png',
+          'webp' => 'image/webp',
+          _ => null,
+        },
+      };
+      if (bytes.isEmpty || bytes.length > 10 * 1024 * 1024 || type == null) {
+        _show('Only JPEG, PNG or WebP images up to 10 MiB are supported.');
+        return;
+      }
+      final service = MediaStorageImage.service;
+      if (service == null) throw StateError('Media upload is unavailable');
+      final key = await service.uploadImage(
+        category: 'EXPENSE_RECEIPT',
+        contextId: widget.groupId,
+        fileName: file.name,
+        contentType: type,
+        bytes: bytes,
+      );
+      if (mounted) setState(() => _receiptStorageKey = key);
+    } catch (_) {
+      if (mounted) {
+        _show('Receipt upload failed. The current expense was preserved.');
+      }
+    } finally {
+      if (mounted) setState(() => _receiptUploading = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     final amount = ExpenseMoney.parseInput(_amount.text);
@@ -473,6 +541,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       activityId: widget.initial?.activityId,
       occurredAt: _occurredAt,
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+      receiptStorageKey: _receiptStorageKey,
     );
     final result = await _controller.save(
       widget.groupId,
@@ -664,6 +733,32 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                   labelText: 'Ghi chú (không bắt buộc)',
                 ),
               ),
+              const SizedBox(height: 12),
+              if (_receiptStorageKey != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: MediaStorageImage(
+                    storageKey: _receiptStorageKey!,
+                    baseUrl: '',
+                    width: double.infinity,
+                    height: 180,
+                    fallback: (_) => const SizedBox.shrink(),
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: _receiptUploading ? null : _chooseReceipt,
+                icon: _receiptUploading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.receipt_long_outlined),
+                label: Text(
+                  _receiptStorageKey == null
+                      ? 'Add receipt'
+                      : 'Replace receipt',
+                ),
+              ),
               const SizedBox(height: 24),
               ListenableBuilder(
                 listenable: _controller,
@@ -793,9 +888,8 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
         ),
       );
     } else if (_controller.state.failure != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_controller.state.failure!)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_controller.state.failure!)));
     }
   }
 
@@ -806,13 +900,11 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
     final result = await action();
     if (!mounted) return;
     if (result != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(successMessage)));
     } else if (_controller.state.failure != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_controller.state.failure!)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_controller.state.failure!)));
     }
   }
 
@@ -901,9 +993,9 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
                                       entry.direction == 'OWES_YOU'
                                           ? 'Bạn được nhận'
                                           : 'Bạn đang nợ',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                   ],
                                 ),
@@ -1034,14 +1126,12 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
       setState(() {
         _future = Future<SettlementItem>.value(updated);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(successMessage)));
     } on ExpenseFailure catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -1072,9 +1162,8 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
           children: [
             Text(
               '${settlement.fromUser.displayName} → ${settlement.toUser.displayName}',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1087,7 +1176,9 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
-              child: Chip(label: Text(_settlementStatusLabel(settlement.status))),
+              child: Chip(
+                label: Text(_settlementStatusLabel(settlement.status)),
+              ),
             ),
             const Divider(height: 28),
             _DetailRow(
@@ -1210,9 +1301,8 @@ class _DetailRow extends StatelessWidget {
           flex: 2,
           child: Text(
             label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: AppColors.onSurfaceVariant),
           ),
         ),
         const SizedBox(width: 12),

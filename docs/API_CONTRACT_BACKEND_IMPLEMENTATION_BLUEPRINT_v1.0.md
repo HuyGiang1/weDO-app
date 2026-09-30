@@ -443,7 +443,7 @@ Uses Redis rate limiting to prevent abuse.
 - `avatarStorageKey`:
   - Optional.
   - Max 255 characters (`@Size(max = 255)`).
-  - Preserved exactly as supplied (no normalization in M2.6).
+  - Must be `null` during onboarding. Avatar objects can only be attached later through the authenticated, owner-scoped media upload and profile update flow.
 
 **Business Flow:**
 1. Validate incoming request fields via declarative Bean Validation.
@@ -452,7 +452,7 @@ Uses Redis rate limiting to prevent abuse.
 4. Verify user status is `ACTIVE` (return 403 `ACCESS_DENIED` if not).
 5. Verify user has not already completed profile (`username == null`; return 409 `PROFILE_ALREADY_COMPLETED` if already populated).
 6. Check case-insensitive username availability; return 409 `USERNAME_ALREADY_EXISTS` if taken.
-7. Persist canonical profile fields (`username`, `displayName`, `bio`, `avatarStorageKey`) and handle potential concurrent unique constraint violation gracefully.
+7. Persist canonical profile fields (`username`, `displayName`, `bio`) with no avatar key, and handle potential concurrent unique constraint violation gracefully.
 8. Return completed profile response.
 
 **Response DTO:** `CompleteProfileResponse` (HTTP 200 OK)
@@ -473,7 +473,7 @@ Uses Redis rate limiting to prevent abuse.
 - `400 VALIDATION_FAILED`:
   - Missing/blank token.
   - Invalid username format (length not 3..30, invalid characters, whitespace).
-  - Invalid DTO fields (`displayName` missing/blank or >100, `bio` >500, `avatarStorageKey` >255).
+  - Invalid DTO fields (`displayName` missing/blank or >100, `bio` >500, `avatarStorageKey` >255 or non-null).
 - `401 UNAUTHORIZED`:
   - Malformed profile completion token.
   - Invalid signature.
@@ -2521,9 +2521,55 @@ Stale deep-link target actions must become non-actionable rather than causing in
 
 ### SEARCH-01 Global Search
 
-`GET /api/v1/search?q={query}&type={optional}`
+`GET /api/v1/search?q={query}&type={optional}&page={optional}&size={optional}`
 
-MVP categories: PEOPLE, joined GROUPS, ACTIVITIES, CONVERSATIONS.
+Categories are exactly `PEOPLE`, `GROUPS`, `ACTIVITIES`, and `CONVERSATIONS`.
+`q` is required, trimmed at both ends, and must contain 2..100 characters;
+blank or out-of-range queries return `400`. `type`, when present, must be one
+of the four category names. Without `type`, `page` and `size` are forbidden;
+all categories are searched with at most five visible results each. Each
+returned section has `items` and `hasMore`. With `type`, `page` defaults to 0
+and must be nonnegative; `size` defaults to 20 and must be 1..50. The server
+reads `size + 1` visible rows to compute `hasMore`. No totals are returned,
+and only the requested section is serialized in typed mode.
+
+Matching uses PostgreSQL case-insensitive `ILIKE` substring semantics. Query
+internal whitespace is unchanged and Vietnamese accents remain significant;
+`%` and `_` are escaped and match literally. Ranking is exact, then prefix,
+then substring. Ties use display name/username for people, group name for
+groups, Activity start time descending (title before description before
+location), and newest matching message sequence/time for conversations.
+No unaccent/trigram extension, search engine, or migration is part of this
+contract.
+
+Typed result projections are deliberately small:
+
+- `PEOPLE`: `id`, `username`, `displayName`, `avatarAvailable`. Only active
+  targets discoverable under their username/display-name, email, and phone
+  preferences are searchable. The caller and either-direction blocked users
+  are excluded. Email, phone, keys, URLs, and permissions are never returned.
+- `GROUPS`: `id`, `name`, `status`, `avatarAvailable`. Only groups readable by
+  current active members are eligible; ACTIVE and ARCHIVED are included,
+  deleted and inaccessible groups are excluded.
+- `ACTIVITIES`: `id`, `groupId`, `title`, `startAt`, `status`, `location`.
+  Visibility follows Activity detail authorization and includes readable
+  completed/cancelled history; deleted or inaccessible rows are excluded.
+- `CONVERSATIONS`: `id`, `kind`, nullable `groupId`, `title`,
+  `matchedTextSnippet`, `matchedAt`. A result is the conversation's newest
+  matching visible textual message, not a global Message result. Direct
+  participant/block rules and current group membership, archive, and
+  FROM_JOIN_TIME history rules apply. Hidden, UNSENT, out-of-history, and
+  empty/image-only content is excluded. No attachment metadata, storage keys,
+  signed URLs, or internal permissions are returned.
+
+Visibility predicates are applied in bounded category database queries
+before pagination, so inaccessible rows cannot affect page structure or
+`hasMore`. One query per category is acceptable. Search is text-only. Tapping a
+conversation result opens that exact conversation; no message-anchor behavior
+is defined. Flutter exposes `Tất cả`, `Mọi người`, `Nhóm`, `Hoạt động`, and
+`Trò chuyện`; it debounces approximately 300 ms, does not call the API below
+two characters, shows up to five items per category in All mode, and uses
+typed size-20 pagination with duplicate/stale-result protection.
 
 ### MEDIA-01 Request Upload Target
 
@@ -2531,16 +2577,80 @@ MVP categories: PEOPLE, joined GROUPS, ACTIVITIES, CONVERSATIONS.
 
 ```json
 {
-  "category": "CHAT_IMAGE",
+  "category": "AVATAR",
   "fileName": "photo.jpg",
   "contentType": "image/jpeg",
-  "fileSize": 1234567
+  "fileSize": 1234567,
+  "contextId": null
 }
 ```
 
-Backend validates auth, category, content type and size. Response returns upload target and `storageKey`. Business endpoints store only validated references/metadata, not Base64 blobs.
+`contextId` is optional at the request-schema level and category-dependent:
+- `AVATAR`: must be absent or `null`; the authenticated user is always the target profile.
+- `GROUP_AVATAR`: required and must be the exact group UUID. The backend authorizes the caller to modify group information before signing.
 
-Categories: AVATAR, GROUP_AVATAR, CHAT_IMAGE, EXPENSE_RECEIPT, CONTRIBUTION_PROOF, FUND_EXPENSE_RECEIPT, REIMBURSEMENT_RECEIPT.
+The backend validates authentication, category, context, MIME type and size, then generates an opaque purpose/context-scoped key. Clients never choose a bucket or object key. Original filenames are metadata only and are not used in object-key paths.
+
+Response (`200 OK`):
+
+```json
+{
+  "storageKey": "avatar/<current-user-uuid>/<object-uuid>",
+  "uploadUrl": "<10-minute presigned PUT URL>",
+  "expiresAt": "2026-09-30T12:00:00Z",
+  "requiredHeaders": {
+    "Content-Type": "image/jpeg",
+    "x-amz-meta-declared-size": "1234567"
+  }
+}
+```
+
+`uploadUrl` is transport-only and must never be persisted or logged. The mobile client sends the returned `requiredHeaders` and bytes directly to object storage without backend authorization headers. Profile/group mutation endpoints accept only a storage key scoped to the authenticated profile or exact group and verify object metadata before persistence. The bucket remains private; authorized media reads exchange the durable key for a short-lived signed GET URL. Database entities store only durable storage keys, never signed URLs or Base64 blobs.
+
+Categories supported by M16:
+
+- Phase A1: `AVATAR`, `GROUP_AVATAR`.
+- Phase A2: `CHAT_IMAGE`, `EXPENSE_RECEIPT`, `FUND_CONTRIBUTION_PROOF`, `FUND_EXPENSE_RECEIPT`, `FUND_REIMBURSEMENT_RECEIPT`.
+- Settlement media is not supported.
+
+New groups and onboarding profiles are created without caller-supplied avatar keys. Upload and attach the avatar only after the profile is active or the group has been created, so the key can be authorized against its final owner/context.
+
+A1 permits `image/jpeg`, `image/png`, and `image/webp`, with a maximum of 5 MiB for each avatar category. Avatar replacement persists the new reference before best-effort deletion of the old object after database commit. A cleanup failure does not roll back the avatar update.
+
+### MEDIA-02 M16 Phase A2 Categories and Limits
+
+All A2 categories accept only `image/jpeg`, `image/png`, and `image/webp`, up to 10 MiB per file. The backend generates opaque random keys encoding category, owning context, and uploader; clients cannot choose keys. Upload URLs are transport-only, never persisted or logged. The durable reference is always the storage key.
+
+| Category | `contextId` | Owning reference / mutation |
+| --- | --- | --- |
+| `CHAT_IMAGE` | Exact `conversationId` | `message_attachments`; created atomically with the message |
+| `EXPENSE_RECEIPT` | Exact `groupId` | Existing Expense create/update; `expenses.receipt_storage_key` |
+| `FUND_CONTRIBUTION_PROOF` | Exact `groupId` | Existing contribution submit; `fund_contributions.proof_storage_key` |
+| `FUND_EXPENSE_RECEIPT` | Exact `groupId` | Existing Fund expense create; `fund_expenses.receipt_storage_key` |
+| `FUND_REIMBURSEMENT_RECEIPT` | Exact `groupId` | Existing reimbursement create; `fund_reimbursements.receipt_storage_key` |
+
+Finance presign may precede the concrete record. Finalization binds the key to the concrete record and rechecks category, group, uploader, object existence, MIME, size, and the owning business mutation's authorization. No new finance mutation is introduced for media. Finance records have one storage reference each. Existing owning-entity mutability governs whether a reference may be set or replaced; there is no standalone media delete endpoint. Replacement writes the new reference, commits, then best-effort deletes the prior object.
+
+### MEDIA-03 Chat Image Messages
+
+`CHAT_IMAGE` presign requires current permission to send in the exact conversation. Message creation rechecks that permission and validates every key's category, conversation, uploader, object existence, actual MIME/size, and declared-size metadata. A previous presign does not preserve permission after access is revoked.
+
+Pending stranger message requests remain text-only: image presign and image message creation are denied until the request is accepted.
+
+The send request retains `content` as the optional caption and adds `attachmentStorageKeys` (ordered list, maximum four). Rules:
+
+- no attachments requires nonblank text and creates `TEXT`;
+- one to four images with blank/absent text creates `IMAGE` with `content = ""` for V4 compatibility;
+- one to four images with text creates `IMAGE` with the caption;
+- blank text with no images, or more than four images, is invalid.
+
+Message and attachment rows persist atomically. Attachment `sort_order` follows request order; attachments are immutable after send. Responses and the single existing M10 `MESSAGE_CREATED` event include ordered metadata (`id`, `storageKey`, `fileName`, `contentType`, `fileSizeBytes`, `sortOrder`). No separate media event is emitted. Existing unsend/delete semantics govern attachment retention; objects are cleaned up only after commit when durable references are actually removed, and cleanup is best effort.
+
+Image notification delivery remains category `CHAT`, uses existing exact-open-conversation suppression and conversation deep links, and never exposes a key or URL. For image-only messages the fallback body is `Đã gửi một ảnh` or `Đã gửi <n> ảnh`; captions use the existing safe Chat notification behavior.
+
+### MEDIA-04 A2 Private Reads
+
+Media visibility inherits owning-entity visibility. Chat media reads require current access to the conversation and visibility of the owning message under Chat history/deletion rules. Finance reads use the existing concrete Expense/Fund read authorization. A key alone is never authorization. Authorized reads return short-lived signed GET URLs; these URLs are ephemeral and must not replace storage keys in durable client state.
 
 ### HOME-01 Home Dashboard
 

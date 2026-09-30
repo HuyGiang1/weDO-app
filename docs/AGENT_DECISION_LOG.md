@@ -316,3 +316,50 @@
 - **Reschedule**: A UI edit changed an enabled 5-minute reminder from a 23:15 local due instant to 23:25 local without changing its offset. The old instant passed with no inbox row or system notification. The new instant produced one inbox row and a `GATEWAY_ACCEPTED` provider result; one Samsung system notification was visible and the inbox count stayed one after two further scheduler intervals.
 - **Interpretation**: `sent_at` represented durable inbox persistence, not FCM/device delivery. Provider handoff (`GATEWAY_ACCEPTED`) and physical notification appearance were verified separately. No scheduler timestamps were manually edited.
 - **Other checks**: Host/device/PostgreSQL clocks agreed within about one second. Bounded last-3000-line logcat counts were zero for `FATAL EXCEPTION`, `AndroidRuntime`, `FirebaseMessaging`, and `FirebaseApp`. Physical disable-before-due was not run; automated disable/scheduler race coverage passed.
+
+### DEC-M16-01 — Private S3-Compatible Avatar Uploads and Replacement
+- **ID**: `DEC-M16-01`
+- **Milestone**: `M16-A1`
+- **Date**: 2026-09-30
+- **Status**: Accepted
+- **Decision**:
+  1. Use a provider-neutral S3-compatible `ObjectStorageService`; local development uses MinIO and production provider/endpoint is configuration-driven. The bucket is private. Profile and group avatars upload directly from Flutter using a backend-authorized presigned PUT expiring after 10 minutes.
+  2. Preserve canonical category names `AVATAR` and `GROUP_AVATAR`. `AVATAR` has no context and is owned by the authenticated user. `GROUP_AVATAR` requires `contextId` equal to the exact group UUID and the current group-information modification permission. The backend alone generates scoped opaque keys (`avatar/<userId>/<uuid>` and `group-avatar/<groupId>/<uuid>`).
+  3. A1 accepts only `image/jpeg`, `image/png`, and `image/webp`, maximum 5 MiB for each avatar category. Presigned PUT signs MIME type and declared-size metadata; finalization verifies namespace/context, stored MIME, actual size, and signed declared size before persisting the key. No upload-session table is added; abandoned direct-upload orphan cleanup is deferred.
+  4. Entities persist durable storage keys only. Authenticated callers obtain a five-minute signed GET after validating the owning profile/group exists and is not inactive/deleted; the object bucket remains private. Future chat and finance media require their own access rules and are not enabled by this decision.
+  5. Avatar replacement commits the new database reference first, then best-effort deletes the previous M16 object after commit. Cleanup failure does not roll back the committed update. Legacy filesystem avatar keys remain readable during compatibility transition.
+  6. Uploads themselves do not generate notifications. Future chat-image messages reuse normal `MESSAGE_CREATED` behavior.
+- **Reason / Source**: Resolved M16-A1 authorization; canonical MEDIA-01 in `docs/API_CONTRACT_BACKEND_IMPLEMENTATION_BLUEPRINT_v1.0.md`; existing V1/V3 avatar key columns; user-approved A1 constraints.
+- **Consequences**: Business code has no MinIO-specific dependency, client-supplied arbitrary keys cannot be finalized as avatars, device upload URLs are separated from internal S3 access, and no new database migration is required for A1.
+
+### DEC-M16-02 — Explicit Private Bucket Bootstrap
+- **ID**: `DEC-M16-02`
+- **Milestone**: `M16-A1`
+- **Date**: 2026-09-30
+- **Status**: Accepted
+- **Decision**: Local development opts into idempotent bucket existence/create through the S3-compatible backend adapter. It performs HEAD first, creates only when missing, tolerates a concurrent create only after the follow-up HEAD succeeds, and never changes an existing bucket's policy or contents. The application-wide and production default is disabled; automated test contexts disable real bucket access and exercise bootstrap logic in focused unit tests.
+- **Reason / Source**: M16-A1 local MinIO startup closeout; startup must not depend on a separate `minio/mc` image, and production must not unexpectedly provision infrastructure.
+- **Consequences**: MinIO remains private, failed enabled bootstrap fails application startup without printing credentials, and local Samsung traffic uses the separately configured client-reachable presign endpoint through ADB reverse on port 9000 only.
+
+### DEC-M16-03 -- A2 Chat and Finance Media Authorization
+- **ID**: `DEC-M16-03`
+- **Milestone**: `M16-A2`
+- **Date**: `2026-09-30`
+- **Status**: Accepted
+- **Decision**:
+  1. Add exactly `CHAT_IMAGE`, `EXPENSE_RECEIPT`, `FUND_CONTRIBUTION_PROOF`, `FUND_EXPENSE_RECEIPT`, and `FUND_REIMBURSEMENT_RECEIPT`; do not add Settlement media. A2 images accept JPEG/PNG/WebP up to 10 MiB; a Chat message supports at most four attachments.
+  2. Chat upload context is the exact conversation UUID. Finance upload context is the exact group UUID because presigning may precede creation of the owning record. Server-generated keys encode category, context, uploader, and random object ID; finalization binds each key to a concrete record and rechecks its business permission.
+  3. V4 `message_attachments` and the existing V7/V8 finance key columns are sufficient; no V13 is required. A message with attachments is type `IMAGE`; image-only content is stored as an empty string. Message and attachments are atomic and immutable after creation.
+  4. Media mutation authorization, read visibility, and mutability inherit the owning Chat/Finance operation. Signed GET URLs are ephemeral. No standalone delete endpoint is added; object cleanup is best-effort after commit only when a durable reference is actually removed.
+  5. Image messages reuse exactly one `MESSAGE_CREATED`, current Chat notification policy, open-conversation suppression, and conversation deep link. Image-only notification copy is `Đã gửi một ảnh` or `Đã gửi <n> ảnh`.
+- **Reason / Source**: User-approved M16 Phase A2 specification; existing V4, V7, and V8 schema.
+- **Consequences**: Search and Settlement media remain out of scope. Existing finance create/update operations remain the only media finalization paths; categories do not create new business mutations.
+
+### DEC-M16-04 -- Global Search Contract
+- **ID**: `DEC-M16-04`
+- **Milestone**: `M16-B`
+- **Date**: `2026-09-30`
+- **Status**: Accepted
+- **Decision**: Global Search has exactly `PEOPLE`, `GROUPS`, `ACTIVITIES`, and `CONVERSATIONS`. Queries are trimmed, length 2..100, case-insensitive PostgreSQL substring matches with accent-sensitive semantics and literal `%`/`_`. All mode returns up to five results per category with independent `hasMore`; typed mode uses page/size (0/20 defaults, size 1..50) and no totals. Typed projections contain no email, phone, storage key, signed URL, or internal permission. Each category inherits its existing domain visibility rules in the database query before pagination. A conversation hit is its newest visible matching textual message; hidden, UNSENT, outside-history, and empty image-only messages do not match. Opening a hit opens its conversation without message anchoring. No migration, text extension/index, or external search engine is added.
+- **Reason / Source**: User-approved M16 Phase B implementation contract; current V1-V12 schema and established user/group/activity/chat authorization.
+- **Consequences**: Search behavior is bounded and privacy-preserving under current domain rules. Ranking is deterministic (exact, prefix, substring; category-specific tie-breakers); Flutter debounces 300 ms, uses five-result All sections and typed size-20 pagination, and ignores stale responses.

@@ -35,6 +35,7 @@ import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
 import com.wedo.backend.group.service.GroupService;
 import com.wedo.backend.group.service.GroupBanService;
+import com.wedo.backend.media.storage.InMemoryObjectStorageService;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
 import com.wedo.backend.user.repository.UserRepository;
@@ -63,6 +64,7 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired GroupMembershipRepository memberships;
     @Autowired GroupSettingsRepository settings;
     @Autowired JdbcTemplate jdbc;
+    @Autowired InMemoryObjectStorageService objectStorage;
 
     @Test
     void ownerCreatesFundEnforcesSingleActiveFundAndDelegatesAdminManagersOnly() {
@@ -153,7 +155,7 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         ContributionResponse c1 = fundService.submitContribution(
                 collection.collectionId(),
                 f.member(),
-                new CreateContributionRequest(null, new BigDecimal("80000.00"), "proof-1.jpg", "Nộp đợt 1", null)
+                        new CreateContributionRequest(null, new BigDecimal("80000.00"), mediaKey("fund-contribution-proof", f.groupId(), f.member()), "Nộp đợt 1", null)
         );
         assertEquals("PENDING", c1.status());
         assertEquals(ErrorCode.FUND_ACCESS_DENIED, assertThrows(BusinessException.class,
@@ -194,7 +196,7 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         ContributionResponse c2 = fundService.submitContribution(
                 collection.collectionId(),
                 f.member(),
-                new CreateContributionRequest(null, new BigDecimal("120000.00"), "proof-2.jpg", "Nộp đủ", null)
+                new CreateContributionRequest(null, new BigDecimal("120000.00"), mediaKey("fund-contribution-proof", f.groupId(), f.member()), "Nộp đủ", null)
         );
         fundService.confirmContribution(c2.contributionId(), f.owner());
 
@@ -247,7 +249,7 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         FundExpenseResponse exp = fundService.createFundExpense(
                 fund.fundId(),
                 f.owner(),
-                new CreateFundExpenseRequest("Mua nước uống", new BigDecimal("100000.00"), null, null, "receipt-1.png", "Chi sự kiện")
+                new CreateFundExpenseRequest("Mua nước uống", new BigDecimal("100000.00"), null, null, mediaKey("fund-expense-receipt", f.groupId(), f.owner()), "Chi sự kiện")
         );
         assertNotNull(exp.transactionId());
         FundDetailResponse afterExpense = fundService.getGroupFund(f.groupId(), f.owner());
@@ -258,7 +260,7 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         ReimbursementResponse reimb = fundService.createReimbursement(
                 fund.fundId(),
                 f.member(),
-                new CreateReimbursementRequest(new BigDecimal("150000.00"), "Ứng tiền mua bánh", "bill-1.png")
+                new CreateReimbursementRequest(new BigDecimal("150000.00"), "Ứng tiền mua bánh", mediaKey("fund-reimbursement-receipt", f.groupId(), f.member()))
         );
         assertEquals("PENDING", reimb.status());
         assertEquals(ErrorCode.FUND_ACCESS_DENIED, assertThrows(BusinessException.class,
@@ -666,6 +668,12 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         memberships.save(new GroupMembershipEntity(UUID.randomUUID(), groupId, member, GroupRole.MEMBER, GroupMembershipStatus.ACTIVE, now, null));
         settings.save(GroupSettingsEntity.createDefault(groupId, now));
         return new Fixture(groupId, owner, admin, member, outsider, group);
+    }
+
+    private String mediaKey(String namespace, UUID groupId, UUID uploaderId) {
+        String key = namespace + "/" + groupId + "/" + uploaderId + "/" + UUID.randomUUID();
+        objectStorage.putForTest(key, "image/jpeg", 128);
+        return key;
     }
 
     private void saveUser(UUID id, String label, Instant now) {

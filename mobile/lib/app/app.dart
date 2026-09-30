@@ -17,9 +17,16 @@ class WeDoApp extends StatelessWidget {
   final AuthSessionController authSessionController;
   final GroupRepository? groupRepository;
   final ChatRepository? chatRepository;
+  final SearchRouteArgs? searchRouteArgs;
   final Future<CurrentUser> Function()? loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)?
   updateProfile;
+  final Future<String> Function({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  })?
+  uploadAvatar;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)?
   updateUsername;
   final Future<void> Function({
@@ -43,8 +50,10 @@ class WeDoApp extends StatelessWidget {
     required this.authSessionController,
     this.groupRepository,
     this.chatRepository,
+    this.searchRouteArgs,
     this.loadCurrentUser,
     this.updateProfile,
+    this.uploadAvatar,
     this.updateUsername,
     this.changePassword,
     this.endSessionAfterPasswordChange,
@@ -82,7 +91,10 @@ class WeDoApp extends StatelessWidget {
                 settings.arguments == null
             ? RouteSettings(
                 name: settings.name,
-                arguments: GroupsRouteArgs(repository: groupRepository!),
+                arguments: GroupsRouteArgs(
+                  repository: groupRepository!,
+                  searchArgs: searchRouteArgs,
+                ),
               )
             : settings.name == AppRoutes.profile &&
                   loadCurrentUser != null &&
@@ -95,6 +107,7 @@ class WeDoApp extends StatelessWidget {
                 arguments: ProfileRouteArgs(
                   loadCurrentUser: loadCurrentUser!,
                   updateProfile: updateProfile!,
+                  uploadAvatar: uploadAvatar,
                   updateUsername: updateUsername!,
                   changePassword: changePassword!,
                   endSessionAfterPasswordChange: endSessionAfterPasswordChange!,

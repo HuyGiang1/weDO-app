@@ -17,6 +17,7 @@ import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
+import com.wedo.backend.media.storage.InMemoryObjectStorageService;
 import com.wedo.backend.social.service.BlockService;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
@@ -24,6 +25,7 @@ import com.wedo.backend.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +39,58 @@ class ChatServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired GroupSettingsRepository settings;
     @Autowired BlockService blockService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired InMemoryObjectStorageService objectStorage;
+
+    @Test
+    void imageMessagePersistsOrderedAttachmentsAndPrivateVisibility() {
+        Fixture f = fixture();
+        UUID conversationId = chat.openGroup(f.groupId, f.owner).id();
+        String first = chatImageKey(conversationId, f.member);
+        String second = chatImageKey(conversationId, f.member);
+
+        ChatResponses.Message image = chat.send(conversationId, f.member,
+                new ChatRequests.SendMessage("  ", null, null, List.of(first, second)));
+
+        assertEquals("IMAGE", image.type());
+        assertEquals("", image.content());
+        assertEquals(List.of(first, second), image.attachments().stream()
+                .map(ChatResponses.MessageAttachment::storageKey).toList());
+        assertEquals(List.of(0, 1), image.attachments().stream()
+                .map(ChatResponses.MessageAttachment::sortOrder).toList());
+        assertEquals(2, jdbc.queryForObject(
+                "SELECT count(*) FROM message_attachments WHERE message_id=?", Integer.class, image.id()));
+        assertDoesNotThrow(() -> chat.requireAttachmentReadable(first, f.owner));
+        assertThrows(BusinessException.class, () -> chat.requireAttachmentReadable(first, f.outsider));
+
+        String crossConversation = chatImageKey(UUID.randomUUID(), f.member);
+        assertThrows(BusinessException.class, () -> chat.send(conversationId, f.member,
+                new ChatRequests.SendMessage("caption", null, null, List.of(crossConversation))));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=?",
+                Integer.class, conversationId));
+    }
+
+    @Test
+    void imagePresignPermissionRevocationIsRecheckedAtMessageCreation() {
+        Fixture f = fixture();
+        UUID conversationId = chat.openGroup(f.groupId, f.owner).id();
+        String key = chatImageKey(conversationId, f.member);
+        assertTrue(chat.canSendInConversation(conversationId, f.member));
+        var membership = memberships.findFirstByGroupIdAndUserIdAndStatus(
+                f.groupId, f.member, GroupMembershipStatus.ACTIVE).orElseThrow();
+        membership.endAsLeft(Instant.now());
+        memberships.save(membership);
+        assertFalse(chat.canSendInConversation(conversationId, f.member));
+        assertThrows(BusinessException.class, () -> chat.send(conversationId, f.member,
+                new ChatRequests.SendMessage(null, null, null, List.of(key))));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM messages WHERE conversation_id=?",
+                Integer.class, conversationId));
+    }
+
+    private String chatImageKey(UUID conversationId, UUID uploaderId) {
+        String key = "chat/" + conversationId + "/" + uploaderId + "/" + UUID.randomUUID();
+        objectStorage.putForTest(key, "image/jpeg", 128);
+        return key;
+    }
 
     @Test
     void groupChatUsesOneConversationAndEnforcesMembershipAndLifecycle() {
@@ -146,12 +200,18 @@ class ChatServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         Fixture f=fixture();
         ChatResponses.DirectOpen direct=chat.openDirect(f.owner,f.outsider);
         assertEquals("REQUEST_PENDING",direct.accessStatus());
+        String imageKey = chatImageKey(direct.conversation().id(), f.owner);
+        assertTrue(chat.canSendInConversation(direct.conversation().id(), f.owner));
+        assertFalse(chat.canSendImageInConversation(direct.conversation().id(), f.owner));
+        assertThrows(BusinessException.class, () -> chat.send(direct.conversation().id(), f.owner,
+                new ChatRequests.SendMessage("caption", null, null, List.of(imageKey))));
         for(int i=0;i<3;i++) chat.send(direct.conversation().id(),f.owner,new ChatRequests.SendMessage("hello "+i,null));
         assertThrows(BusinessException.class,()->chat.send(direct.conversation().id(),f.owner,new ChatRequests.SendMessage("fourth",null)));
         assertTrue(chat.requests(f.outsider).size()>0);
         UUID request=chat.requests(f.outsider).get(0).id();
         chat.resolveRequest(request,f.outsider,true);
         assertEquals("OPEN",chat.openDirect(f.owner,f.outsider).accessStatus());
+        assertTrue(chat.canSendImageInConversation(direct.conversation().id(), f.owner));
         assertEquals(4,chat.send(direct.conversation().id(),f.outsider,new ChatRequests.SendMessage("accepted",null)).sequence());
     }
 

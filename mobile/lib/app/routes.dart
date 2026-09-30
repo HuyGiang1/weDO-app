@@ -64,6 +64,10 @@ import '../features/fund/presentation/fund_screens.dart';
 import '../features/notification/data/notification_api.dart';
 import '../features/notification/data/notification_repository.dart';
 import '../features/notification/presentation/notification_screens.dart';
+import '../features/calendar/data/calendar_api.dart';
+import '../features/calendar/data/calendar_repository.dart';
+import '../features/calendar/presentation/calendar_screen.dart';
+import '../features/calendar/presentation/activity_reminder_panel.dart';
 
 export 'auth_route_guard.dart';
 
@@ -204,6 +208,11 @@ class ChatHomeRouteArgs {
   const ChatHomeRouteArgs(this.chatRepository, this.groupRepository);
 }
 
+class CalendarRouteArgs {
+  final GroupRepository groupRepository;
+  const CalendarRouteArgs(this.groupRepository);
+}
+
 class ActivityDetailRouteArgs {
   final ActivityRepository repository;
   final String activityId;
@@ -290,6 +299,7 @@ abstract final class AppRoutes {
   static const String groupSettlements = '/groups/settlements';
   static const String groupFund = '/groups/fund';
   static const String notifications = '/notifications';
+  static const String calendar = '/calendar';
   static const String notificationSettings = '/notifications/settings';
   static const String activityDetail = '/activities/detail';
   static const String polls = '/activities/polls';
@@ -618,6 +628,10 @@ abstract final class AppRoutes {
                   args.repository,
                 ),
               ),
+              onCalendar: () => Navigator.of(context).pushNamed(
+                calendar,
+                arguments: CalendarRouteArgs(args.repository),
+              ),
             );
           },
           settings: settings,
@@ -680,6 +694,10 @@ abstract final class AppRoutes {
                   ),
                   groupId: args.groupId,
                 ),
+              ),
+              onCalendar: () => Navigator.of(context).pushNamed(
+                calendar,
+                arguments: CalendarRouteArgs(args.repository),
               ),
               onExpenses: () => Navigator.of(context).pushNamed(
                 groupExpenses,
@@ -955,6 +973,11 @@ abstract final class AppRoutes {
           settings: settings,
           builder: (context) => ChatHomeScreen(
             repository: args.chatRepository,
+            onCalendar: () => Navigator.of(context).pushNamed(
+              calendar,
+              arguments: CalendarRouteArgs(args.groupRepository),
+            ),
+            onProfile: () => Navigator.of(context).pushNamed(profile),
             onGroups: () => Navigator.of(context).pushReplacementNamed(
               groups,
               arguments: GroupsRouteArgs(repository: args.groupRepository),
@@ -968,6 +991,44 @@ abstract final class AppRoutes {
                     groupRepository: args.groupRepository,
                   ),
                 ),
+          ),
+        );
+      },
+    ),
+    calendar: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! CalendarRouteArgs) return null;
+        final activityRepository = ActivityRepository(
+          api: ActivityApi(args.groupRepository.api.dio),
+        );
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => CalendarScreen(
+            repository: CalendarRepository(
+              CalendarApi(args.groupRepository.api.dio),
+            ),
+            groups: args.groupRepository,
+            onOpenActivity: (id) => Navigator.of(context).pushNamed(
+              activityDetail,
+              arguments: ActivityDetailRouteArgs(
+                repository: activityRepository,
+                activityId: id,
+              ),
+            ),
+            onGroups: () => Navigator.of(context).pushReplacementNamed(
+              groups,
+              arguments: GroupsRouteArgs(repository: args.groupRepository),
+            ),
+            onChat: () => Navigator.of(context).pushReplacementNamed(
+              chatHome,
+              arguments: ChatHomeRouteArgs(
+                ChatRepository(ChatApi(args.groupRepository.api.dio)),
+                args.groupRepository,
+              ),
+            ),
+            onProfile: () => Navigator.of(context).pushNamed(profile),
           ),
         );
       },
@@ -1029,6 +1090,12 @@ abstract final class AppRoutes {
           builder: (context) => ActivityDetailRuntimeScreen(
             activityId: args.activityId,
             controller: ActivityDetailController(args.repository),
+            reminder: ActivityReminderPanel(
+              activityId: args.activityId,
+              repository: CalendarRepository(
+                CalendarApi(args.repository.api.dio),
+              ),
+            ),
             onOpenPolls: () => Navigator.of(context).pushNamed(
               polls,
               arguments: ActivityDetailRouteArgs(

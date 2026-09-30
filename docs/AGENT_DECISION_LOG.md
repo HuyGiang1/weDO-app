@@ -266,3 +266,53 @@
   3. Inbox deduplication serializes the event-key check and insert with a PostgreSQL transaction-scoped advisory lock, avoiding a new migration or distributed-lock service.
 - **Reason / Source**: M14 FCM/provider audit, V9/V10 schema, concurrent listener delivery analysis, and absence of Firebase SDK/configuration in the current build.
 - **Consequences**: M14 does not claim cloud delivery until a real provider is configured; concurrent retries cannot create duplicate inbox rows, while a post-commit database failure can still lose an event because no durable outbox exists.
+
+---
+
+### DEC-M15-01 — Personal Activity Reminder Delivery and Rescheduling Policy
+- **ID**: `DEC-M15-01`
+- **Milestone**: `M15`
+- **Date**: 2026-09-29
+- **Status**: Accepted
+- **Decision**:
+  1. When a personal Activity reminder becomes due and remains eligible, it creates a persistent Notification Center item. It may also generate FCM push using category `ACTIVITY`, priority `NORMAL`, and a target to that Activity's detail. Inbox persistence is independent of push suppression.
+  2. Push eligibility follows M14 global `pushEnabled`, `ACTIVITY` category preference, group mute, and active-device policy. Reminder notifications are not critical and never bypass group mute. No realtime delivery is required.
+  3. An Activity start-time change reschedules enabled, unsent reminders in the same business transaction. If the recomputed `remind_at <= now` while the Activity is still future and otherwise eligible, it is due for the next scheduler run. Cancelled, completed, and other terminal Activities are not eligible for due delivery.
+  4. A reminder already sent is not automatically sent again solely because the Activity time changes. Phase A/B implements configuration and rescheduling only; scheduler claiming, idempotency, inbox creation, and FCM dispatch are Phase C.
+- **Reason / Source**: Explicit M15 product decision in the Phase A/B implementation authorization; existing M14 notification policy and V9 `user_activity_reminders` schema.
+- **Consequences**: Phase A/B must not dispatch due reminders. Phase C must keep persistent inbox creation separate from push eligibility, respect M14 preferences/mute, and prevent duplicate delivery after rescheduling.
+
+---
+
+### DEC-M15-02 — Calendar Range Uses Inclusive Activity Overlap
+- **ID**: `DEC-M15-02`
+- **Milestone**: `M15`
+- **Date**: 2026-09-29
+- **Status**: Accepted
+- **Decision**: Calendar `from`/`to` filters use inclusive overlap semantics. A scheduled Activity is included when `start_at <= to` (when `to` is supplied) and `COALESCE(end_at, start_at) >= from` (when `from` is supplied). Activities without `end_at` are point events at `start_at`; unscheduled Activities are excluded from dated Calendar results.
+- **Reason / Source**: The canonical Calendar contract defines instant range filters but does not state start-within-range versus overlap. Inclusive overlap is consistent with displaying a multi-day Activity on every intersected date and avoids hiding an event spanning the selected range boundary.
+- **Consequences**: Backend query and tests use this rule; Month and Agenda group returned instants after conversion to the device timezone. `from > to` is rejected.
+
+### DEC-M15-03 — Atomic Due Activity Reminder Delivery
+- **ID**: `DEC-M15-03`
+- **Milestone**: `M15`
+- **Date**: 2026-09-29
+- **Status**: Accepted
+- **Decision**:
+  1. Poll due reminders at a configurable 45-second default cadence in bounded batches of 100. Candidate reads use the V9 partial due index; each candidate is processed in its own PostgreSQL transaction.
+  2. Serialize reminder delivery against Activity edits and reminder changes by locking the Activity row first with `FOR UPDATE SKIP LOCKED`, then locking/rechecking its due reminder row with `FOR UPDATE SKIP LOCKED`. Activity edits and reminder PUT use the same Activity-first order.
+  3. Persist/dedupe the ordinary ACTIVITY inbox row and set `user_activity_reminders.sent_at` in that same transaction. `sent_at` means the durable inbox exists or was idempotently confirmed; it does not represent provider/device delivery.
+  4. The internal key is `activity-reminder:<userId>:<activityId>:<normalized-remindAt-instant>`. Push uses the existing NotificationService policy and is handed off after commit. Global/category suppression, group mute, missing devices, and provider failures do not roll back inbox or sent state. Reminders are NORMAL and non-critical.
+  5. Terminal, started, archived-group, removed-member, disabled, and already-sent reminders remain stored but are excluded from delivery; changing an Activity schedule does not rearm a sent reminder. A changed user-configured offset can explicitly rearm a new schedule instance.
+- **Reason / Source**: M15 Phase C approval, existing V9 reminder index and fields, M14 inbox idempotency and push preference policy, and Activity-first pessimistic locking in the lifecycle service.
+- **Consequences**: No V13 migration or second push subsystem is required. Inbox creation is authoritative; a process failure after commit but before push handoff may suppress a push without losing the Notification Center item.
+
+### M15-VER-01 — Phase C Physical Samsung Acceptance Record (Non-decision)
+- **Date**: 2026-09-29
+- **Device**: Samsung `R58M36JQYVY`; device notification shade was used to verify actual provider delivery. No credential or FCM token contents were inspected or recorded.
+- **Due delivery and tap**: A UI-configured reminder created exactly one persistent ACTIVITY inbox row and one visible system push. Tapping the push resumed weDO into the matching Activity detail and marked the notification read; a repeat check after two scheduler intervals found no duplicate inbox or push.
+- **Category suppression**: With global push enabled and ACTIVITY disabled in Flutter Notification Settings, a due reminder still finalized `sent_at` and persisted exactly one inbox row with `SUPPRESSED_CATEGORY_DISABLED`; no matching system notification appeared. ACTIVITY was restored afterward.
+- **Group mute**: With global and ACTIVITY push enabled, muting the group through Flutter caused a due reminder to persist once with `SUPPRESSED_GROUP_MUTED`, with no matching push; the group was unmuted after the test.
+- **Reschedule**: A UI edit changed an enabled 5-minute reminder from a 23:15 local due instant to 23:25 local without changing its offset. The old instant passed with no inbox row or system notification. The new instant produced one inbox row and a `GATEWAY_ACCEPTED` provider result; one Samsung system notification was visible and the inbox count stayed one after two further scheduler intervals.
+- **Interpretation**: `sent_at` represented durable inbox persistence, not FCM/device delivery. Provider handoff (`GATEWAY_ACCEPTED`) and physical notification appearance were verified separately. No scheduler timestamps were manually edited.
+- **Other checks**: Host/device/PostgreSQL clocks agreed within about one second. Bounded last-3000-line logcat counts were zero for `FATAL EXCEPTION`, `AndroidRuntime`, `FirebaseMessaging`, and `FirebaseApp`. Physical disable-before-due was not run; automated disable/scheduler race coverage passed.

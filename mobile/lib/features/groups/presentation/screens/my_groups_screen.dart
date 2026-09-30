@@ -15,6 +15,7 @@ class MyGroupsScreen extends StatefulWidget {
   final VoidCallback? onChatRequests;
   final VoidCallback? onNotifications;
   final VoidCallback? onChat;
+  final VoidCallback? onCalendar;
 
   const MyGroupsScreen({
     super.key,
@@ -26,6 +27,7 @@ class MyGroupsScreen extends StatefulWidget {
     this.onChatRequests,
     this.onNotifications,
     this.onChat,
+    this.onCalendar,
   });
   @override
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
@@ -44,6 +46,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
       bottomNavigationBar: GroupsBottomNavigation(
         onTap: (index) {
           if (index == 2) widget.onChat?.call();
+          if (index == 3) widget.onCalendar?.call();
         },
       ),
       body: SafeArea(

@@ -11,6 +11,12 @@ class GroupActivityLogEntity { id: UUID\nactorUserId: UUID\naction: GroupActivit
 class ActivityEntity { id: UUID\nstatus: ActivityStatus\nstartAt: Instant?\nendAt: Instant?\ntimezone: String?\ncapacity: Integer? }
 class ActivityParticipantEntity { id: UUID\nrsvpStatus: ActivityRsvpStatus\nwaitlistSequence: Long? }
 class ActivityWaitlistSequenceEntity { activityId: UUID\ncurrentSequence: Long }
+class ActivityReminderEntity { id: UUID\nactivityId: UUID\nuserId: UUID\nenabled: boolean\noffsetMinutes: int\nremindAt: Instant\nsentAt: Instant? }
+class ActivityReminderDeliveryScheduler { fixedDelayMs: long\nbatchSize: int }
+class CalendarController
+class CalendarService
+class CalendarRepository
+class CalendarActivityResponse { id: UUID\ngroupId: UUID\ngroupName: String\nstatus: ActivityStatus\nstartAt: Instant\nendAt: Instant?\ntimezone: String?\ncallerRsvpStatus: ActivityRsvpStatus\nreminderEnabled: boolean\nreminderAt: Instant? }
 class PollEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: PollStatus }
 class PollOptionEntity { id: UUID\npollId: UUID\nisDisabled: boolean }
 class PollVoteEntity { id: UUID\npollId: UUID\nuserId: UUID }
@@ -64,6 +70,15 @@ GroupEntity "1" -- "0..*" ActivityEntity
 ActivityEntity "1" -- "0..*" ActivityParticipantEntity
 UserEntity "1" -- "0..*" ActivityParticipantEntity
 ActivityEntity "1" -- "1" ActivityWaitlistSequenceEntity
+ActivityEntity "1" -- "0..*" ActivityReminderEntity
+UserEntity "1" -- "0..*" ActivityReminderEntity
+CalendarController --> CalendarService
+CalendarService --> CalendarRepository
+CalendarRepository ..> CalendarActivityResponse : projects visible scheduled activities
+CalendarController --> ActivityReminderEntity : reads and configures per-user reminders
+ActivityReminderDeliveryScheduler --> ActivityEntity : try-locks eligible Activity first
+ActivityReminderDeliveryScheduler --> ActivityReminderEntity : locks and rechecks due reminder
+ActivityReminderDeliveryScheduler --> NotificationService : atomically persists inbox with sent_at
 ActivityEntity "1" -- "0..*" PollEntity
 PollEntity "1" -- "2..*" PollOptionEntity
 PollEntity "1" -- "0..*" PollVoteEntity

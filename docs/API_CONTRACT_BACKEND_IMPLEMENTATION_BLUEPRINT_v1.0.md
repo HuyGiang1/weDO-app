@@ -2096,6 +2096,10 @@ Aggregates Activities across user's groups. Views may include PLANNING as tentat
 
 There is no Calendar business table; calendar is a read model over Activity + Participant + Reminder.
 
+The response is an ordered JSON array of Activity projections containing `id`, `groupId`, `groupName`, `title`, `status`, `startAt`, `endAt`, `timezone`, `locationName`, `goingCount`, `waitlistCount`, `callerRsvpStatus`, `reminderEnabled`, and `reminderAt`. Only scheduled activities in groups where the caller has active membership are included; deleted groups are excluded. `from` and `to` are offset-aware timestamps and use inclusive overlap: `start_at <= to` and `COALESCE(end_at, start_at) >= from`. An activity without `end_at` is treated as a point. Unscheduled activities are excluded. `from` later than `to` is rejected.
+
+`groupId`, `rsvp`, and `status` are independent optional filters. When more than one is supplied, all are applied together; omitting or clearing one leaves the other filters unaffected.
+
 ### CAL-02 Reminder
 
 `GET /api/v1/activities/{activityId}/reminder`  
@@ -2109,6 +2113,10 @@ There is no Calendar business table; calendar is a read model over Activity + Pa
 ```
 
 Single reminder configuration per user per activity. UI may offer preset offsets (e.g. 1 day = 1440 min, 1 hour = 60 min) or custom offset. Disabling sets `enabled = false`. Activity time changes reschedule affected reminders.
+
+GET returns `{ activityId, configured, enabled, offsetMinutes, remindAt, sentAt, canConfigure, unavailableReason }`; an absent configuration is returned as disabled without inserting a row. PUT returns the same projection. `offsetMinutes` must be positive when supplied. Enabling requires an active group membership and a future scheduled PLANNING or CONFIRMED activity; completed, cancelled, in-progress, unscheduled, started, and archived-group cases are read-only. The server recalculates `remindAt` from the activity start and offset. Changing an activity start reschedules enabled, unsent rows transactionally.
+
+Due reminders are processed by the backend scheduler using the existing V9 due index and bounded PostgreSQL row locking; no reminder schema migration is required. Inbox persistence and `sent_at` transition commit atomically. `sent_at` means the durable inbox row exists (including an idempotently confirmed prior insert), not that FCM or the device acknowledged delivery. A deterministic internal event key includes user, activity, and the normalized `remindAt` instant, so retries deduplicate one schedule while an explicitly re-armed schedule can notify again. The ordinary ACTIVITY notification is non-critical and uses `/activities/detail` with the exact Activity ID. Push is handed to the existing M14 pipeline after commit and remains subject to global, category, group-mute, and active-device policy; suppression or provider failure does not undo the inbox or `sent_at`.
 
 ---
 

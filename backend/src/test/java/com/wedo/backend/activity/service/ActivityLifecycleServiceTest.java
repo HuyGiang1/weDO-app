@@ -8,6 +8,7 @@ import com.wedo.backend.activity.dto.ActivityLocationDto;
 import com.wedo.backend.activity.dto.UpdateActivityRequest;
 import com.wedo.backend.activity.entity.*;
 import com.wedo.backend.activity.repository.*;
+import com.wedo.backend.activity.reminder.ActivityReminderService;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.group.entity.*;
@@ -27,9 +28,10 @@ class ActivityLifecycleServiceTest {
     private final ActivityRsvpService rsvps = mock(ActivityRsvpService.class);
     private final ActivityResponseFactory responses = mock(ActivityResponseFactory.class);
     private final GroupActivityLogRepository groupActivityLogs = mock(GroupActivityLogRepository.class);
+    private final ActivityReminderService reminders = mock(ActivityReminderService.class);
     private final Instant now = Instant.parse("2026-09-15T10:00:00Z");
     private final ActivityLifecycleService service = new ActivityLifecycleService(activities, participants, histories, changes,
-            permissions, rsvps, responses, groupActivityLogs, Clock.fixed(now, ZoneOffset.UTC));
+            permissions, rsvps, responses, groupActivityLogs, reminders, Clock.fixed(now, ZoneOffset.UTC));
 
     @Test void confirm_planningTransitionsAndOtherLifecycleStatesAreRejected() {
         UUID actor = UUID.randomUUID();

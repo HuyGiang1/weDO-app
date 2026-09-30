@@ -16,6 +16,7 @@ class MyGroupsScreen extends StatefulWidget {
   final VoidCallback? onNotifications;
   final VoidCallback? onChat;
   final VoidCallback? onCalendar;
+  final VoidCallback? onSearch;
 
   const MyGroupsScreen({
     super.key,
@@ -28,6 +29,7 @@ class MyGroupsScreen extends StatefulWidget {
     this.onNotifications,
     this.onChat,
     this.onCalendar,
+    this.onSearch,
   });
   @override
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
@@ -123,6 +125,12 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (widget.onSearch != null)
+                        IconButton(
+                          tooltip: 'Tìm kiếm',
+                          onPressed: widget.onSearch,
+                          icon: const Icon(Icons.search),
+                        ),
                       if (widget.onNotifications != null)
                         IconButton(
                           key: const Key('open_notifications_button'),

@@ -77,7 +77,9 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
   Future<void> _refresh() async {
     final request = widget.repository.conversations();
-    setState(() => _conversations = request);
+    setState(() {
+      _conversations = request;
+    });
     await request;
   }
 

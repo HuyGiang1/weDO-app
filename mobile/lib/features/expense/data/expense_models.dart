@@ -169,6 +169,7 @@ class ExpenseSummary {
 class ExpenseDetail extends ExpenseSummary {
   final String? activityId;
   final String? note;
+  final String? receiptStorageKey;
   final List<ExpenseShare> shares;
   final List<ExpenseChange> changeHistory;
   final DateTime createdAt;
@@ -187,6 +188,7 @@ class ExpenseDetail extends ExpenseSummary {
     required super.permissions,
     this.activityId,
     this.note,
+    this.receiptStorageKey,
     required this.shares,
     required this.changeHistory,
     required this.createdAt,
@@ -216,6 +218,7 @@ class ExpenseDetail extends ExpenseSummary {
     ),
     activityId: json['activityId'] as String?,
     note: json['note'] as String?,
+    receiptStorageKey: json['receiptStorageKey'] as String?,
     shares: (json['shares'] as List? ?? const [])
         .map((v) => ExpenseShare.fromJson(Map<String, dynamic>.from(v as Map)))
         .toList(),
@@ -279,6 +282,7 @@ class ExpenseDraft {
   final String? activityId;
   final DateTime occurredAt;
   final String? note;
+  final String? receiptStorageKey;
   const ExpenseDraft({
     required this.title,
     required this.amount,
@@ -289,6 +293,7 @@ class ExpenseDraft {
     this.activityId,
     required this.occurredAt,
     this.note,
+    this.receiptStorageKey,
   });
   Map<String, dynamic> toJson() => {
     'title': title,
@@ -303,6 +308,7 @@ class ExpenseDraft {
     'activityId': activityId,
     'occurredAt': occurredAt.toUtc().toIso8601String(),
     'note': note,
+    if (receiptStorageKey != null) 'receiptStorageKey': receiptStorageKey,
   };
 }
 

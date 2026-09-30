@@ -9,6 +9,7 @@ import com.wedo.backend.common.error.ErrorCode;
 import com.wedo.backend.group.entity.*;
 import com.wedo.backend.group.event.GroupMembershipEndedEvent;
 import com.wedo.backend.group.repository.*;
+import com.wedo.backend.media.service.AvatarReferenceService;
 import com.wedo.backend.user.service.UserService;
 import java.time.*;
 import java.util.*;
@@ -24,8 +25,9 @@ class GroupMembershipEndedEventPublicationTest {
     private final UserService users=mock(UserService.class);
     private final GroupPermissionService permissions=mock(GroupPermissionService.class);
     private final ApplicationEventPublisher events=mock(ApplicationEventPublisher.class);
+    private final AvatarReferenceService avatarReferences=mock(AvatarReferenceService.class);
     private final Instant now=Instant.parse("2026-09-15T10:00:00Z");
-    private final GroupService service=new GroupService(groups,settings,memberships,logs,users,permissions,Clock.fixed(now,ZoneOffset.UTC),events);
+    private final GroupService service=new GroupService(groups,settings,memberships,logs,users,permissions,Clock.fixed(now,ZoneOffset.UTC),events,avatarReferences);
 
     @Test void leaveActiveNonOwnerPublishesExactTerminalEvent() {
         UUID group=UUID.randomUUID(), member=UUID.randomUUID(); GroupMembershipEntity caller=member(group,member,GroupRole.MEMBER);

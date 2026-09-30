@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../groups/presentation/widgets/group_widgets.dart';
+import '../../media/presentation/media_storage_image.dart';
 import '../../social/presentation/widgets/user_avatar.dart';
 import '../data/chat_models.dart';
 import '../data/chat_realtime_event.dart';
@@ -19,12 +21,14 @@ class ChatScreen extends StatefulWidget {
   final ChatConversation? initialConversation;
   final ChatRepository repository;
   final VoidCallback? onOpenGroupInfo;
+  final Future<List<XFile>> Function()? pickImages;
   const ChatScreen({
     super.key,
     required this.groupId,
     this.initialConversation,
     required this.repository,
     this.onOpenGroupInfo,
+    this.pickImages,
   });
 
   @override
@@ -39,6 +43,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<ChatReaderState> _readers = [];
   Object? _failure;
   bool _loading = true, _sending = false;
+  final List<_PendingChatImage> _pendingImages = [];
   bool _hasMore = false, _loadingEarlier = false;
   int? _nextBeforeSequence;
 
@@ -170,9 +175,7 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _onlineUserIds
             ..clear()
-            ..addAll(
-              event.onlineUserIds.where((id) => id != _knownOwnUserId),
-            );
+            ..addAll(event.onlineUserIds.where((id) => id != _knownOwnUserId));
         });
         break;
 
@@ -286,6 +289,7 @@ class _ChatScreenState extends State<ChatScreen> {
       id: msg.id,
       sequence: msg.sequence,
       status: msg.status,
+      type: msg.type,
       content: msg.content,
       replyToMessageId: msg.replyToMessageId,
       myReaction: msg.myReaction,
@@ -295,6 +299,7 @@ class _ChatScreenState extends State<ChatScreen> {
       editedAt: msg.editedAt,
       unsentAt: msg.unsentAt,
       reactions: msg.reactions,
+      attachments: msg.attachments,
       permissions: msg.permissions,
     );
   }
@@ -306,6 +311,7 @@ class _ChatScreenState extends State<ChatScreen> {
       id: incoming.id,
       sequence: incoming.sequence,
       status: incoming.status,
+      type: incoming.type,
       content: incoming.content,
       replyToMessageId: incoming.replyToMessageId,
       myReaction: incoming.myReaction ?? existing.myReaction,
@@ -315,6 +321,9 @@ class _ChatScreenState extends State<ChatScreen> {
       editedAt: incoming.editedAt,
       unsentAt: incoming.unsentAt,
       reactions: incoming.reactions,
+      attachments: incoming.attachments.isEmpty
+          ? existing.attachments
+          : incoming.attachments,
       permissions: withdrawn
           ? const ChatPermissions(
               canSend: true,
@@ -386,18 +395,43 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  bool get _canSend =>
+      !_sending &&
+      _pendingImages.length <= 4 &&
+      (_composer.text.trim().isNotEmpty || _pendingImages.isNotEmpty);
+
   Future<void> _send() async {
     final conversation = _conversation;
     final text = _composer.text.trim();
-    if (conversation == null || text.isEmpty || _sending) return;
+    if (conversation == null ||
+        (text.isEmpty && _pendingImages.isEmpty) ||
+        _sending) {
+      return;
+    }
     setState(() => _sending = true);
     try {
       _lastTypingSentAt = null;
       widget.repository.realtimeClient.sendTypingStop(conversation.id);
-      final message = await widget.repository.send(conversation.id, text);
+      final attachmentKeys = <String>[];
+      for (final image in _pendingImages) {
+        attachmentKeys.add(
+          await widget.repository.uploadChatImage(
+            conversationId: conversation.id,
+            fileName: image.fileName,
+            contentType: image.contentType,
+            bytes: image.bytes,
+          ),
+        );
+      }
+      final message = await widget.repository.send(
+        conversation.id,
+        text,
+        attachmentStorageKeys: attachmentKeys,
+      );
       if (!mounted) return;
       _composer.clear();
       setState(() {
+        _pendingImages.clear();
         final existingIdx = _messages.indexWhere((m) => m.id == message.id);
         if (existingIdx >= 0) {
           _messages[existingIdx] = message;
@@ -421,6 +455,59 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  Future<void> _pickChatImages() async {
+    if (_sending || _pendingImages.length >= 4) return;
+    try {
+      final picked =
+          await (widget.pickImages?.call() ??
+              ImagePicker().pickMultiImage(
+                imageQuality: 88,
+                maxWidth: 2048,
+                maxHeight: 2048,
+              ));
+      if (picked.isEmpty || !mounted) return;
+      if (_pendingImages.length + picked.length > 4) {
+        _notice('Tin nháº¯n chá»‰ cÃ³ thá»ƒ Ä‘Ã­nh kÃ¨m tá»‘i Ä‘a 4 áº£nh.');
+        return;
+      }
+      final selected = <_PendingChatImage>[];
+      for (final file in picked) {
+        final bytes = await file.readAsBytes();
+        final type = _imageContentType(file.name, file.mimeType);
+        if (type == null || bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
+          _notice(
+            'Chá»‰ há»— trá»£ áº£nh JPEG, PNG hoáº·c WebP tá»‘i Ä‘a 10 MiB.',
+          );
+          return;
+        }
+        selected.add(
+          _PendingChatImage(
+            fileName: file.name,
+            contentType: type,
+            bytes: bytes,
+          ),
+        );
+      }
+      if (mounted) setState(() => _pendingImages.addAll(selected));
+    } catch (_) {
+      if (mounted) _notice('KhÃ´ng thá»ƒ chá»n áº£nh. Vui lÃ²ng thá»­ láº¡i.');
+    }
+  }
+
+  String? _imageContentType(String fileName, String? mimeType) {
+    final normalized = mimeType?.toLowerCase();
+    if (const {'image/jpeg', 'image/png', 'image/webp'}.contains(normalized)) {
+      return normalized;
+    }
+    final extension = fileName.split('.').last.toLowerCase();
+    return switch (extension) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => null,
+    };
   }
 
   void _showMessageActions(ChatMessage message) {
@@ -820,44 +907,100 @@ class _ChatScreenState extends State<ChatScreen> {
                 12,
                 MediaQuery.paddingOf(context).bottom + 8,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _composer,
-                      minLines: 1,
-                      maxLines: 5,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Tin nhắn',
-                        filled: true,
-                        fillColor: AppColors.surfaceContainerLowest,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
+                  if (_pendingImages.isNotEmpty)
+                    SizedBox(
+                      height: 76,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _pendingImages.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) => Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                _pendingImages[index].bytes,
+                                width: 72,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              top: -6,
+                              right: -6,
+                              child: IconButton.filledTonal(
+                                tooltip: 'Remove image',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: _sending
+                                    ? null
+                                    : () => setState(
+                                        () => _pendingImages.removeAt(index),
+                                      ),
+                                icon: const Icon(Icons.close, size: 16),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      onSubmitted: (_) => _send(),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox.square(
-                    dimension: 48,
-                    child: IconButton.filled(
-                      tooltip: 'Gửi tin nhắn',
-                      onPressed: _sending ? null : _send,
-                      icon: _sending
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send),
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (_conversation?.accessStatus != 'REQUEST_PENDING')
+                        IconButton(
+                          tooltip: 'Attach image',
+                          onPressed: _sending || _pendingImages.length >= 4
+                              ? null
+                              : _pickChatImages,
+                          icon: const Icon(Icons.image_outlined),
+                        ),
+                      Expanded(
+                        child: TextField(
+                          controller: _composer,
+                          minLines: 1,
+                          maxLines: 5,
+                          textCapitalization: TextCapitalization.sentences,
+                          onChanged: (_) {
+                            if (mounted) setState(() {});
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Tin nhắn',
+                            filled: true,
+                            fillColor: AppColors.surfaceContainerLowest,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onSubmitted: (_) => _send(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox.square(
+                        dimension: 48,
+                        child: IconButton.filled(
+                          tooltip: 'Gửi tin nhắn',
+                          onPressed: _canSend ? _send : null,
+                          key: const ValueKey('chat-send-button'),
+                          icon: _sending
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.send),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1047,19 +1190,64 @@ class _MessageTile extends StatelessWidget {
                                             : AppColors.surfaceContainerLowest,
                                         borderRadius: BorderRadius.circular(18),
                                       ),
-                                      child: Text(
-                                        withdrawn
-                                            ? 'Tin nhắn đã được thu hồi'
-                                            : message.content ?? '',
-                                        style: TextStyle(
-                                          color: own && !withdrawn
-                                              ? Colors.white
-                                              : AppColors.onSurface,
-                                          fontStyle: withdrawn
-                                              ? FontStyle.italic
-                                              : FontStyle.normal,
-                                        ),
-                                      ),
+                                      child: withdrawn
+                                          ? const Text(
+                                              'Tin nhắn đã được thu hồi',
+                                              style: TextStyle(
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            )
+                                          : Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                for (final attachment
+                                                    in message.attachments)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 6,
+                                                        ),
+                                                    child: ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                      child: MediaStorageImage(
+                                                        storageKey: attachment
+                                                            .storageKey,
+                                                        baseUrl: '',
+                                                        width: 240,
+                                                        height: 220,
+                                                        fallback: (_) =>
+                                                            const SizedBox(
+                                                              width: 240,
+                                                              height: 120,
+                                                              child: Center(
+                                                                child: Icon(
+                                                                  Icons
+                                                                      .broken_image_outlined,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                if (message
+                                                        .content
+                                                        ?.isNotEmpty ==
+                                                    true)
+                                                  Text(
+                                                    message.content!,
+                                                    style: TextStyle(
+                                                      color: own
+                                                          ? Colors.white
+                                                          : AppColors.onSurface,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
                                     ),
                                   ),
                                   if (reactionBadge)
@@ -1132,6 +1320,17 @@ class _MessageTile extends StatelessWidget {
       ],
     );
   }
+}
+
+class _PendingChatImage {
+  final String fileName;
+  final String contentType;
+  final Uint8List bytes;
+  const _PendingChatImage({
+    required this.fileName,
+    required this.contentType,
+    required this.bytes,
+  });
 }
 
 class _ReaderStack extends StatelessWidget {

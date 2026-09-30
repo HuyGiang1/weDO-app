@@ -9,6 +9,7 @@ import com.wedo.backend.group.dto.GroupSettingsResponse;
 import com.wedo.backend.group.dto.GroupActivityLogResponse;
 import com.wedo.backend.group.dto.UpdateGroupRequest;
 import com.wedo.backend.group.dto.UpdateGroupSettingsRequest;
+import com.wedo.backend.media.service.AvatarReferenceService;
 import com.wedo.backend.group.entity.GroupActivityAction;
 import com.wedo.backend.group.entity.GroupActivityLogEntity;
 import com.wedo.backend.group.entity.GroupEntity;
@@ -48,6 +49,7 @@ public class GroupService {
     private final GroupPermissionService groupPermissionService;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
+    private final AvatarReferenceService avatarReferenceService;
 
     public GroupService(
             GroupRepository groupRepository,
@@ -56,7 +58,8 @@ public class GroupService {
             GroupActivityLogRepository groupActivityLogRepository,
             UserService userService,
             GroupPermissionService groupPermissionService,
-            Clock clock, ApplicationEventPublisher eventPublisher
+            Clock clock, ApplicationEventPublisher eventPublisher,
+            AvatarReferenceService avatarReferenceService
     ) {
         this.groupRepository = groupRepository;
         this.groupSettingsRepository = groupSettingsRepository;
@@ -66,11 +69,15 @@ public class GroupService {
         this.groupPermissionService = groupPermissionService;
         this.clock = clock;
         this.eventPublisher = eventPublisher;
+        this.avatarReferenceService = avatarReferenceService;
     }
 
     @Transactional
     public GroupResponse createGroup(UUID creatorId, CreateGroupRequest request) {
         userService.requireActiveUser(creatorId);
+        if (request.avatarStorageKey() != null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
         Instant now = clock.instant();
         UUID groupId = UUID.randomUUID();
 
@@ -146,6 +153,13 @@ public class GroupService {
         String name = request.name() == null ? group.getName() : requireNonBlankName(request.name());
         String description = request.description() == null ? group.getDescription() : clearIfBlank(request.description());
         String avatarStorageKey = request.avatarStorageKey() == null ? group.getAvatarStorageKey() : clearIfBlank(request.avatarStorageKey());
+        String previousAvatarKey = group.getAvatarStorageKey();
+        if (!java.util.Objects.equals(previousAvatarKey, avatarStorageKey)) {
+            if (avatarStorageKey != null) avatarReferenceService.validateGroupKey(groupId, avatarStorageKey);
+            if (avatarReferenceService.isOwnedAvatarKey(previousAvatarKey)) {
+                avatarReferenceService.deleteAfterCommit(previousAvatarKey, avatarStorageKey);
+            }
+        }
         group.updateMetadata(name, description, avatarStorageKey, clock.instant());
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_UPDATED, clock.instant()));
         return detailResponse(group, access.membership().getRole());

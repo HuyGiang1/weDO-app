@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../app/theme/app_spacing.dart';
 import '../../../auth/data/models/auth_models.dart';
@@ -9,11 +12,18 @@ class EditProfileScreen extends StatefulWidget {
   final CurrentUser initialUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
+  final Future<String> Function({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  })?
+  uploadAvatar;
 
   const EditProfileScreen({
     super.key,
     required this.initialUser,
     required this.updateProfile,
+    this.uploadAvatar,
   });
 
   @override
@@ -26,6 +36,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _bio;
   late final TextEditingController _phone;
   bool _submitting = false;
+  bool _uploadingAvatar = false;
+  String? _newAvatarStorageKey;
+  Uint8List? _avatarPreview;
   String? _requestError;
 
   @override
@@ -64,7 +77,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _submit() async {
-    if (_submitting || !(_formKey.currentState?.validate() ?? false)) return;
+    if (_submitting ||
+        _uploadingAvatar ||
+        !(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
     setState(() {
       _submitting = true;
       _requestError = null;
@@ -75,6 +92,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           displayName: _displayName.text,
           bio: _bio.text,
           phone: _phone.text,
+          avatarStorageKey: _newAvatarStorageKey,
         ),
       );
       if (mounted) {
@@ -82,14 +100,81 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _requestError =
-              'Unable to update your profile. Please try again.',
-        );
+        setState(() {
+          _newAvatarStorageKey = null;
+          _avatarPreview = null;
+          _requestError = 'Unable to update your profile. Please try again.';
+        });
       }
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_uploadingAvatar || widget.uploadAvatar == null) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 85,
+    );
+    if (!mounted || picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
+      if (mounted) {
+        setState(() => _requestError = 'Choose an image smaller than 5 MiB.');
+      }
+      return;
+    }
+    final extension = picked.name.split('.').last.toLowerCase();
+    final contentType =
+        picked.mimeType ??
+        switch (extension) {
+          'png' => 'image/png',
+          'webp' => 'image/webp',
+          'jpg' || 'jpeg' => 'image/jpeg',
+          _ => '',
+        };
+    if (!const {
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    }.contains(contentType)) {
+      if (mounted) {
+        setState(() => _requestError = 'Choose a JPEG, PNG, or WebP image.');
+      }
+      return;
+    }
+    setState(() {
+      _uploadingAvatar = true;
+      _requestError = null;
+    });
+    try {
+      final key = await widget.uploadAvatar!(
+        bytes: bytes,
+        fileName: picked.name,
+        contentType: contentType,
+      );
+      if (mounted) {
+        setState(() {
+          _newAvatarStorageKey = key;
+          _avatarPreview = bytes;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _requestError =
+              'Unable to upload your photo. Your current photo is unchanged.',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingAvatar = false);
       }
     }
   }
@@ -111,13 +196,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         widget.initialUser.displayName ??
                         widget.initialUser.username ??
                         widget.initialUser.email,
+                    avatarStorageKey:
+                        _newAvatarStorageKey ??
+                        widget.initialUser.avatarStorageKey,
+                    imageBytes: _avatarPreview,
                   ),
-                  const Positioned(
+                  Positioned(
                     right: 0,
                     bottom: 0,
-                    child: CircleAvatar(
-                      radius: 16,
-                      child: Icon(Icons.edit, size: 16),
+                    child: IconButton.filled(
+                      tooltip: 'Change profile photo',
+                      onPressed: _uploadingAvatar || widget.uploadAvatar == null
+                          ? null
+                          : _pickAvatar,
+                      icon: _uploadingAvatar
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.edit, size: 18),
                     ),
                   ),
                 ],
@@ -162,7 +260,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ],
             const SizedBox(height: AppSpacing.xl),
             ElevatedButton(
-              onPressed: _submitting ? null : _submit,
+              onPressed: _submitting || _uploadingAvatar ? null : _submit,
               style: profilePrimaryButtonStyle(),
               child: _submitting
                   ? const CircularProgressIndicator()

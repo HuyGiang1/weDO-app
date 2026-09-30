@@ -618,7 +618,7 @@ class AuthControllerTest extends AbstractPostgresIntegrationTest {
                     "username": "HuyGiang",
                     "displayName": "  Huy Giang  ",
                     "bio": "  Building awesome software  ",
-                    "avatarStorageKey": "avatars/2026/09/user_profile.jpg"
+                    "avatarStorageKey": null
                 }
                 """, token);
 

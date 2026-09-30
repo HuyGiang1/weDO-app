@@ -14,6 +14,12 @@ class ProfileScreen extends StatefulWidget {
   final Future<CurrentUser> Function() loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
+  final Future<String> Function({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  })?
+  uploadAvatar;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
   final Future<void> Function({
@@ -28,6 +34,7 @@ class ProfileScreen extends StatefulWidget {
     super.key,
     required this.loadCurrentUser,
     required this.updateProfile,
+    this.uploadAvatar,
     required this.updateUsername,
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
@@ -77,6 +84,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   builder: (_) => EditProfileScreen(
                     initialUser: user,
                     updateProfile: widget.updateProfile,
+                    uploadAvatar: widget.uploadAvatar,
                   ),
                 ),
               );
@@ -161,7 +169,12 @@ class _ProfileContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(child: ProfileAvatar(label: initial)),
+                Center(
+                  child: ProfileAvatar(
+                    label: initial,
+                    avatarStorageKey: user.avatarStorageKey,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   title,

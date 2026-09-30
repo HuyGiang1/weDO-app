@@ -16,10 +16,13 @@ public final class ChatResponses {
                                User peer, String accessStatus, long lastSequence,
                                String lastMessagePreview, Instant lastMessageAt,
                                long unreadCount, Permissions permissions) { }
-    public record Message(UUID id, long sequence, boolean isMine, User author, String content,
+    public record Message(UUID id, long sequence, String type, boolean isMine, User author, String content,
                           String status, UUID replyToMessageId, Instant createdAt,
                           Instant editedAt, Instant unsentAt, String myReaction,
-                          List<Reaction> reactions, Permissions permissions) { }
+                          List<Reaction> reactions, List<MessageAttachment> attachments,
+                          Permissions permissions) { }
+    public record MessageAttachment(UUID id, String storageKey, String fileName,
+                                    String contentType, long fileSizeBytes, int sortOrder) { }
     public record Reaction(String emoji, long count, boolean reactedByMe) { }
     public record Reactor(UUID id, String displayName, String avatarUrl) { }
     public record ReactionDetail(Reactor user, String emoji) { }

@@ -28,6 +28,8 @@ import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.event.GroupMembershipEndedEvent;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.group.service.ReadableGroupAccess;
+import com.wedo.backend.media.dto.UploadCategory;
+import com.wedo.backend.media.service.MediaReferenceService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -71,6 +73,9 @@ public class FundService {
 
     private final JdbcTemplate jdbc;
     private final GroupPermissionService groupPermissions;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MediaReferenceService mediaReferences;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
@@ -466,6 +471,7 @@ public class FundService {
         Timestamp now = Timestamp.from(Instant.now());
         Timestamp paymentTs = request.paymentTime() == null ? now : Timestamp.from(request.paymentTime().toInstant());
         String proofKey = normalizeOptionalText(request.proofStorageKey(), 255);
+        validateMediaKey(proofKey, UploadCategory.FUND_CONTRIBUTION_PROOF, fund.groupId(), callerUserId);
         String note = normalizeOptionalText(request.note(), 500);
 
         jdbc.update("""
@@ -634,6 +640,7 @@ public class FundService {
         String title = normalizeRequiredText(request.title(), 160, "Expense title is required.");
         BigDecimal amount = validatePositiveAmount(request.amount());
         String receiptKey = normalizeOptionalText(request.receiptStorageKey(), 255);
+        validateMediaKey(receiptKey, UploadCategory.FUND_EXPENSE_RECEIPT, fund.groupId(), callerUserId);
         String note = normalizeOptionalText(request.note(), 1000);
 
         if (request.activityId() != null) {
@@ -707,6 +714,7 @@ public class FundService {
         BigDecimal amount = validatePositiveAmount(request.amount());
         String reason = normalizeRequiredText(request.reason(), 500, "Reimbursement reason is required.");
         String receiptKey = normalizeOptionalText(request.receiptStorageKey(), 255);
+        validateMediaKey(receiptKey, UploadCategory.FUND_REIMBURSEMENT_RECEIPT, fund.groupId(), callerUserId);
 
         BalanceSnapshot balances = computeBalanceSnapshot(fund.id(), null);
         if (amount.compareTo(balances.availableBalance()) > 0) {
@@ -1739,6 +1747,80 @@ public class FundService {
         if (!"ACTIVE".equals(fund.status())) {
             throw new BusinessException(ErrorCode.FUND_CLOSED);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public void authorizeMediaPresign(UploadCategory category, UUID groupId, UUID callerUserId) {
+        switch (category) {
+            case FUND_CONTRIBUTION_PROOF -> {
+                ReadableGroupAccess access = groupPermissions.requireMutableMembership(groupId, callerUserId);
+                FundRow fund = activeFundForGroup(groupId);
+                requireActiveFund(fund);
+                boolean manager = canManageFund(fund.id(), access, callerUserId);
+                Boolean eligible = jdbc.queryForObject("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM fund_collections fc
+                            JOIN fund_collection_obligations o ON o.collection_id=fc.id
+                            WHERE fc.fund_id=? AND fc.status='OPEN' AND (? OR o.user_id=?)
+                              AND o.amount_due >
+                                COALESCE((SELECT SUM(c.amount) FROM fund_contributions c
+                                          WHERE c.collection_id=fc.id AND c.user_id=o.user_id AND c.status='CONFIRMED'),0)
+                                + COALESCE((SELECT SUM(c.amount) FROM fund_contributions c
+                                            WHERE c.collection_id=fc.id AND c.user_id=o.user_id AND c.status='PENDING'),0)
+                        )
+                        """, Boolean.class, fund.id(), manager, callerUserId);
+                if (!Boolean.TRUE.equals(eligible)) throw new BusinessException(ErrorCode.FUND_ACCESS_DENIED);
+                if (access.group().getStatus() != GroupStatus.ACTIVE) throw new BusinessException(ErrorCode.GROUP_ARCHIVED);
+            }
+            case FUND_EXPENSE_RECEIPT -> {
+                FundRow fund = activeFundForGroup(groupId);
+                requireActiveFund(fund);
+                ReadableGroupAccess access = groupPermissions.requireMutableMembership(groupId, callerUserId);
+                if (!canManageFund(fund.id(), access, callerUserId)) {
+                    throw new BusinessException(ErrorCode.FUND_ACCESS_DENIED);
+                }
+            }
+            case FUND_REIMBURSEMENT_RECEIPT -> {
+                groupPermissions.requireMutableMembership(groupId, callerUserId);
+                FundRow fund = activeFundForGroup(groupId);
+                if (computeBalanceSnapshot(fund.id(), null).availableBalance().compareTo(CENT) < 0) {
+                    throw new BusinessException(ErrorCode.FUND_INSUFFICIENT_BALANCE);
+                }
+            }
+            default -> throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void requireMediaReadable(UploadCategory category, String storageKey, UUID expectedGroupId, UUID callerUserId) {
+        String table = switch (category) {
+            case FUND_CONTRIBUTION_PROOF -> "fund_contributions";
+            case FUND_EXPENSE_RECEIPT -> "fund_expenses";
+            case FUND_REIMBURSEMENT_RECEIPT -> "fund_reimbursements";
+            default -> throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        };
+        String column = category == UploadCategory.FUND_CONTRIBUTION_PROOF
+                ? "proof_storage_key" : "receipt_storage_key";
+        List<UUID> groups = jdbc.query("SELECT gf.group_id FROM " + table
+                        + " x JOIN group_funds gf ON gf.id=x.fund_id WHERE x." + column + "=? LIMIT 2",
+                (rs, n) -> rs.getObject(1, UUID.class), storageKey);
+        if (groups.size() != 1 || !expectedGroupId.equals(groups.get(0))) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        groupPermissions.requireReadableMembership(groups.get(0), callerUserId);
+    }
+
+    private FundRow activeFundForGroup(UUID groupId) {
+        List<FundRow> funds = jdbc.query("SELECT * FROM group_funds WHERE group_id=? AND status='ACTIVE' LIMIT 1",
+                FUND_ROW, groupId);
+        if (funds.isEmpty()) throw new BusinessException(ErrorCode.FUND_NOT_FOUND);
+        return funds.get(0);
+    }
+
+    private void validateMediaKey(String storageKey, UploadCategory category, UUID groupId, UUID uploaderId) {
+        if (storageKey == null) return;
+        if (mediaReferences == null) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        mediaReferences.validate(storageKey, category, groupId, uploaderId);
     }
 
     private Map<UUID, FundUserSummary> loadUserSummaries(UUID groupId, Collection<UUID> userIds) {

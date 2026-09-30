@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import '../../../core/network/api_exception.dart';
+import '../../media/data/media_upload_service.dart';
 import 'chat_api.dart';
 import 'chat_models.dart';
 import 'chat_realtime_client.dart';
@@ -6,13 +9,17 @@ import 'chat_realtime_client.dart';
 class ChatRepository {
   static ChatRealtimeClient defaultRealtimeClient =
       const NoopChatRealtimeClient();
+  static MediaUploadService? defaultMediaUploadService;
 
   final ChatApi api;
   final ChatRealtimeClient realtimeClient;
+  final MediaUploadService? mediaUploadService;
   ChatRepository(
     this.api, {
     ChatRealtimeClient? realtimeClient,
-  }) : realtimeClient = realtimeClient ?? defaultRealtimeClient;
+    MediaUploadService? mediaUploadService,
+  }) : realtimeClient = realtimeClient ?? defaultRealtimeClient,
+       mediaUploadService = mediaUploadService ?? defaultMediaUploadService;
   Future<ChatConversation> openGroup(String id) => api.openGroup(id);
   Future<ChatDirectOpen> openDirect(String userId) => api.openDirect(userId);
   Future<List<ChatMessageRequest>> messageRequests() => api.messageRequests();
@@ -28,7 +35,30 @@ class ChatRepository {
     String id,
     String content, {
     String? clientMessageId,
-  }) => api.send(id, content, clientMessageId: clientMessageId);
+    List<String> attachmentStorageKeys = const [],
+  }) => api.send(
+    id,
+    content,
+    clientMessageId: clientMessageId,
+    attachmentStorageKeys: attachmentStorageKeys,
+  );
+  Future<String> uploadChatImage({
+    required String conversationId,
+    required String fileName,
+    required String contentType,
+    required Uint8List bytes,
+  }) {
+    final service = mediaUploadService;
+    if (service == null) throw StateError('Media upload is unavailable');
+    return service.uploadImage(
+      category: 'CHAT_IMAGE',
+      contextId: conversationId,
+      fileName: fileName,
+      contentType: contentType,
+      bytes: bytes,
+    );
+  }
+
   Future<ChatMessage> edit(String id, String content) => api.edit(id, content);
   Future<ChatMessage> unsend(String id) => api.unsend(id);
   Future<void> deleteForMe(String id) => api.deleteForMe(id);

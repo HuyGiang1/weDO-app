@@ -67,7 +67,7 @@ class GroupUpdateSettingsControllerTest extends AbstractPostgresIntegrationTest 
         addMembership(groupId, leftId, GroupRole.MEMBER, GroupMembershipStatus.LEFT);
 
         mockMvc.perform(patch("/api/v1/groups/{groupId}", groupId).header("Authorization", bearer(ownerId))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" Exact Name \",\"description\":\"Owner description\",\"avatarStorageKey\":\"group/avatar\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\" Exact Name \",\"description\":\"Owner description\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value(" Exact Name "))
                 .andExpect(jsonPath("$.description").value("Owner description"));

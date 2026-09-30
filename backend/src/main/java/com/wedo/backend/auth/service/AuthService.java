@@ -397,6 +397,9 @@ public class AuthService {
         if (user.getUsername() != null) {
             throw new BusinessException(ErrorCode.PROFILE_ALREADY_COMPLETED);
         }
+        if (request.avatarStorageKey() != null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
 
         String canonicalUsername = request.username().toLowerCase(Locale.ROOT);
 
@@ -412,7 +415,7 @@ public class AuthService {
                 bio = trimmedBio;
             }
         }
-        String avatarStorageKey = request.avatarStorageKey();
+        String avatarStorageKey = null;
 
         Instant now = clock.instant();
         user.setUsername(canonicalUsername);

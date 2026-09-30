@@ -5,6 +5,8 @@ import '../../data/models/group_models.dart';
 
 import 'dart:typed_data';
 
+import '../../../media/presentation/media_storage_image.dart';
+
 class GroupAvatar extends StatelessWidget {
   final String name;
   final double radius;
@@ -76,18 +78,26 @@ class GroupAvatar extends StatelessWidget {
       );
     }
 
-    final url = resolvedUrl;
-    if (url != null) {
+    final key = avatarStorageKey?.trim();
+    final url = avatarUrl;
+    if ((key != null && key.isNotEmpty) || (url != null && url.isNotEmpty)) {
       return CircleAvatar(
         radius: radius,
         backgroundColor: const Color(0xFFEDE9FE),
         child: ClipOval(
-          child: Image.network(
-            url,
+          child: MediaStorageImage(
+            storageKey: url ?? key!,
+            baseUrl:
+                baseUrl ??
+                defaultBaseUrl ??
+                const String.fromEnvironment(
+                  'WEDO_API_BASE_URL',
+                  defaultValue: 'http://localhost:8080',
+                ),
             width: radius * 2,
             height: radius * 2,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildFallback(),
+            fallback: (_) => _buildFallback(),
           ),
         ),
       );

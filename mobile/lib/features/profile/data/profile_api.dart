@@ -9,6 +9,17 @@ class ProfileApi {
 
   ProfileApi(this.dio);
 
+  Future<CurrentUser> getCurrentUser() async {
+    try {
+      final response = await dio.get('/api/v1/me');
+      final data = response.data;
+      if (data is! Map) throw const FormatException('Expected JSON object');
+      return CurrentUser.fromJson(Map<String, dynamic>.from(data));
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   Future<CurrentUser> updateProfile(UpdateProfileRequest request) async {
     try {
       final response = await dio.patch(

@@ -60,11 +60,11 @@ class GroupControllerTest extends AbstractPostgresIntegrationTest {
         String body = mockMvc.perform(post("/api/v1/groups")
                         .header("Authorization", bearer(creatorId))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"Da Nang 2026\",\"description\":\"Summer trip\",\"avatarStorageKey\":\"groups/da-nang.png\",\"ownerUserId\":\"" + UUID.randomUUID() + "\",\"status\":\"DELETED\"}"))
+                        .content("{\"name\":\"Da Nang 2026\",\"description\":\"Summer trip\",\"ownerUserId\":\"" + UUID.randomUUID() + "\",\"status\":\"DELETED\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Da Nang 2026"))
                 .andExpect(jsonPath("$.description").value("Summer trip"))
-                .andExpect(jsonPath("$.avatarStorageKey").value("groups/da-nang.png"))
+                .andExpect(jsonPath("$.avatarStorageKey").doesNotExist())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.createdBy").value(creatorId.toString()))
                 .andReturn().getResponse().getContentAsString();

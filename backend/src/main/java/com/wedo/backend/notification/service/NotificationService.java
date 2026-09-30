@@ -1039,6 +1039,8 @@ public class NotificationService {
                        dc.user_id_1 AS user_a_id,
                        dc.user_id_2 AS user_b_id,
                        m.content AS msg_content,
+                       m.type AS msg_type,
+                       (SELECT count(*) FROM message_attachments a WHERE a.message_id=m.id) AS attachment_count,
                        u.display_name AS sender_name,
                        u.username AS sender_username
                 FROM conversations c
@@ -1063,7 +1065,13 @@ public class NotificationService {
         String senderName = row.get("sender_name") != null
                 ? String.valueOf(row.get("sender_name"))
                 : (row.get("sender_username") != null ? String.valueOf(row.get("sender_username")) : "Thành viên");
-        String content = row.get("msg_content") != null ? String.valueOf(row.get("msg_content")) : "Tin nhắn mới";
+        String content = row.get("msg_content") != null ? String.valueOf(row.get("msg_content")) : "";
+        if (content.isBlank() && "IMAGE".equals(row.get("msg_type"))) {
+            int imageCount = ((Number) row.get("attachment_count")).intValue();
+            content = imageCount == 1 ? "Đã gửi một ảnh" : "Đã gửi " + imageCount + " ảnh";
+        } else if (content.isBlank()) {
+            content = "Tin nhắn mới";
+        }
         if (content.length() > 120) {
             content = content.substring(0, 117) + "...";
         }

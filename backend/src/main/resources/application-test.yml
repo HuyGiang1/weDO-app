@@ -15,6 +15,10 @@ management:
     redis:
       enabled: false
 
+media:
+  s3:
+    bootstrap-bucket: false
+
 security:
   jwt:
     secret-base64: HtYDoxLoUE6DB2ghGul6hVTMTMpg0ysFkJPvuDWf8aU=

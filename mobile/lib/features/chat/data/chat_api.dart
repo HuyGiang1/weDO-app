@@ -101,6 +101,7 @@ class ChatApi {
     String content, {
     String? replyToMessageId,
     String? clientMessageId,
+    List<String> attachmentStorageKeys = const [],
   }) => _object(
     () => dio.post(
       '/api/v1/conversations/${Uri.encodeComponent(conversationId)}/messages',
@@ -108,6 +109,8 @@ class ChatApi {
         'content': content,
         'replyToMessageId': replyToMessageId,
         'clientMessageId': ?clientMessageId,
+        if (attachmentStorageKeys.isNotEmpty)
+          'attachmentStorageKeys': attachmentStorageKeys,
       },
     ),
     ChatMessage.fromJson,

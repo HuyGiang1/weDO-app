@@ -20,6 +20,41 @@ Stop backend and infrastructure:
 .\scripts\dev-stop.cmd -StopInfra
 ```
 
+## Private Media Storage (M16-A1)
+
+The local Compose stack starts single-node AIStor Free from
+`quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z`. It does not require a
+`minio/mc` helper container. `scripts/dev-run.ps1` uses the process-scoped
+`WEDO_AISTOR_LICENSE_PATH` variable (defaulting to the external
+`D:\secrets\minio.license`) and mounts that file read-only at `/minio.license`;
+the license must remain outside the repository and must not be added to `.env`.
+When Spring Boot starts with the `local` profile, it checks for the private
+`wedo-media` bucket and creates it only when missing. An existing bucket and
+its contents/policy are left untouched. Set `WEDO_MEDIA_BOOTSTRAP_BUCKET=false`
+to disable this behavior. The application-wide and production default is
+`false`; production must opt in explicitly if infrastructure provisioning is
+intended. MinIO's S3 API is bound to host loopback port `9000`; its admin console
+is bound to host loopback port `9001` and must not be exposed to the network.
+The local Compose defaults are development-only. Override credentials through
+`WEDO_MEDIA_ACCESS_KEY` and `WEDO_MEDIA_SECRET_KEY`; never reuse these local
+values in production.
+
+Backend storage configuration uses `WEDO_MEDIA_S3_ENDPOINT`,
+`WEDO_MEDIA_PUBLIC_ENDPOINT`, `WEDO_MEDIA_BUCKET`, `WEDO_MEDIA_REGION`,
+`WEDO_MEDIA_ACCESS_KEY`, and `WEDO_MEDIA_SECRET_KEY`. The backend endpoint is
+for container/host-side S3 operations. The public signing endpoint must be
+reachable by the mobile device. For the USB-connected Samsung used by the
+local runner, configure `WEDO_MEDIA_PUBLIC_ENDPOINT=http://127.0.0.1:9000`
+and add `adb reverse tcp:9000 tcp:9000` alongside the existing backend reverse
+on port 8080. The local runner installs this reverse for the configured device;
+never reverse or expose the admin console on port 9001. Do not send backend
+bearer tokens to the S3 endpoint.
+
+Presigned avatar PUT requests expire after 10 minutes. The private bucket is
+not made public; Flutter requests an authorized short-lived read URL through
+the backend. Only `image/jpeg`, `image/png`, and `image/webp` are accepted for
+profile/group avatars, up to 5 MiB per image.
+
 ## Local QA Accounts
 
 LOCAL DEVELOPMENT ONLY. `dev-run.cmd` enables the idempotent local QA seed for

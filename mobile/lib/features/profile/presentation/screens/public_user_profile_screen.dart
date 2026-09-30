@@ -73,7 +73,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    ProfileAvatar(label: title),
+                    ProfileAvatar(label: title, avatarStorageKey: profile.avatarStorageKey),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       title,

@@ -71,6 +71,14 @@ try {
         throw 'Docker CLI was not found. Install Docker Desktop and retry.'
     }
 
+    if (-not $env:WEDO_AISTOR_LICENSE_PATH) {
+        $defaultAistorLicense = 'D:\secrets\minio.license'
+        if (-not (Test-Path -LiteralPath $defaultAistorLicense -PathType Leaf)) {
+            throw 'Set WEDO_AISTOR_LICENSE_PATH to an external AIStor license file.'
+        }
+        $env:WEDO_AISTOR_LICENSE_PATH = $defaultAistorLicense
+    }
+
     $dockerReady = $false
     try { docker info --format '{{.ServerVersion}}' | Out-Null; $dockerReady = $LASTEXITCODE -eq 0 } catch { }
     if (-not $dockerReady) {
@@ -87,6 +95,10 @@ try {
     Push-Location $repoRoot
     try { docker compose -f infra/docker-compose.yml up -d } finally { Pop-Location }
     Wait-Until { (docker inspect --format '{{.State.Health.Status}}' wedo-postgres 2>$null) -eq 'healthy' } 60 'PostgreSQL did not become healthy within 60 seconds.'
+    Wait-Until {
+        try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 'http://127.0.0.1:9000/minio/health/ready').StatusCode -eq 200 }
+        catch { $false }
+    } 60 'MinIO did not become ready within 60 seconds.'
 
     if (-not (Test-BackendHealth)) {
         $listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
@@ -124,6 +136,8 @@ try {
 
     & $adb -s $DeviceId reverse tcp:8080 tcp:8080
     if ($LASTEXITCODE -ne 0) { throw 'ADB reverse for tcp:8080 failed.' }
+    & $adb -s $DeviceId reverse tcp:9000 tcp:9000
+    if ($LASTEXITCODE -ne 0) { throw 'ADB reverse for tcp:9000 failed.' }
 
     Push-Location (Join-Path $repoRoot 'mobile')
     try {

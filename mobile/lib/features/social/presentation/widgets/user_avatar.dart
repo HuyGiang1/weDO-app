@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
+import '../../../media/presentation/media_storage_image.dart';
 
 /// Reusable circular avatar widget displaying initials or storage image fallback.
 class UserAvatar extends StatelessWidget {
@@ -16,20 +17,10 @@ class UserAvatar extends StatelessWidget {
     this.radius = 24.0,
   });
 
-  String? get _resolvedUrl {
-    final key = avatarStorageKey?.trim();
-    if (key == null || key.isEmpty) return null;
-    if (key.startsWith('http://') || key.startsWith('https://')) return key;
-    const base = String.fromEnvironment(
-      'WEDO_API_BASE_URL',
-      defaultValue: 'http://localhost:8080',
-    );
-    final cleanBase = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
-    final cleanKey = key.startsWith('/') ? key.substring(1) : key;
-    return cleanKey.startsWith('api/v1/media/')
-        ? '$cleanBase/$cleanKey'
-        : '$cleanBase/api/v1/media/$cleanKey';
-  }
+  String get _baseUrl => const String.fromEnvironment(
+    'WEDO_API_BASE_URL',
+    defaultValue: 'http://localhost:8080',
+  );
 
   String _getInitials() {
     final trimmed = displayName.trim();
@@ -43,19 +34,20 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = _resolvedUrl;
+    final key = avatarStorageKey?.trim();
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.surfaceContainerHigh,
-      child: imageUrl == null
+      child: key == null || key.isEmpty
           ? _fallback()
           : ClipOval(
-              child: Image.network(
-                imageUrl,
+              child: MediaStorageImage(
+                storageKey: key,
+                baseUrl: _baseUrl,
                 width: radius * 2,
                 height: radius * 2,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _fallback(),
+                fallback: (_) => _fallback(),
               ),
             ),
     );

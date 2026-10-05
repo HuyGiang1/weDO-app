@@ -8,6 +8,7 @@ import com.wedo.backend.user.dto.UpdateProfileRequest;
 import com.wedo.backend.user.dto.UpdateUsernameRequest;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
+import com.wedo.backend.media.service.AvatarReferenceService;
 import com.wedo.backend.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,10 +27,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final Clock clock;
+    private final AvatarReferenceService avatarReferenceService;
 
-    public UserService(UserRepository userRepository, Clock clock) {
+    public UserService(UserRepository userRepository, Clock clock, AvatarReferenceService avatarReferenceService) {
         this.userRepository = userRepository;
         this.clock = clock;
+        this.avatarReferenceService = avatarReferenceService;
     }
 
     public MyProfileResponse getCurrentUser(UUID userId) {
@@ -62,7 +65,15 @@ public class UserService {
             user.setPhone(normalizeClearableTrimmedValue(request.phone()));
         }
         if (request.avatarStorageKey() != null) {
-            user.setAvatarStorageKey(request.avatarStorageKey().isBlank() ? null : request.avatarStorageKey());
+            String avatarStorageKey = request.avatarStorageKey().isBlank() ? null : request.avatarStorageKey();
+            String previousKey = user.getAvatarStorageKey();
+            if (!java.util.Objects.equals(previousKey, avatarStorageKey)) {
+                if (avatarStorageKey != null) avatarReferenceService.validateProfileKey(userId, avatarStorageKey);
+                user.setAvatarStorageKey(avatarStorageKey);
+                if (avatarReferenceService.isOwnedAvatarKey(previousKey)) {
+                    avatarReferenceService.deleteAfterCommit(previousKey, avatarStorageKey);
+                }
+            }
         }
         user.setUpdatedAt(clock.instant());
         return MyProfileResponse.from(user);

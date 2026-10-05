@@ -159,9 +159,8 @@ class GroupApi {
   );
 
   Future<void> acceptInvitation(String id) => _empty(
-    () => dio.post(
-      '/api/v1/group-invitations/${Uri.encodeComponent(id)}/accept',
-    ),
+    () =>
+        dio.post('/api/v1/group-invitations/${Uri.encodeComponent(id)}/accept'),
   );
 
   Future<void> declineInvitation(String id) => _empty(
@@ -171,9 +170,8 @@ class GroupApi {
   );
 
   Future<void> cancelInvitation(String id) => _empty(
-    () => dio.post(
-      '/api/v1/group-invitations/${Uri.encodeComponent(id)}/cancel',
-    ),
+    () =>
+        dio.post('/api/v1/group-invitations/${Uri.encodeComponent(id)}/cancel'),
   );
 
   // M6: Invite Links
@@ -196,9 +194,8 @@ class GroupApi {
   );
 
   Future<List<InviteLinkResponse>> listInviteLinks(String groupId) => _list(
-    () => dio.get(
-      '/api/v1/groups/${Uri.encodeComponent(groupId)}/invite-links',
-    ),
+    () =>
+        dio.get('/api/v1/groups/${Uri.encodeComponent(groupId)}/invite-links'),
     InviteLinkResponse.fromJson,
   );
 
@@ -291,27 +288,4 @@ class GroupApi {
   Future<void> deleteGroup(String groupId) => _empty(
     () => dio.delete('/api/v1/groups/${Uri.encodeComponent(groupId)}'),
   );
-
-  Future<String> uploadAvatar({
-    required List<int> bytes,
-    required String filename,
-    required String contentType,
-  }) async {
-    try {
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-          contentType: DioMediaType.parse(contentType),
-        ),
-      });
-      final res = await dio.post<Map<String, dynamic>>(
-        '/api/v1/media/avatar',
-        data: formData,
-      );
-      return res.data!['storageKey'] as String;
-    } on DioException catch (e) {
-      throw ApiException.fromDio(e);
-    }
-  }
 }

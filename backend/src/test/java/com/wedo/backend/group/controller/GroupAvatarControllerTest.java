@@ -10,6 +10,7 @@ import com.wedo.backend.group.entity.GroupStatus;
 import com.wedo.backend.group.repository.GroupMembershipRepository;
 import com.wedo.backend.group.repository.GroupRepository;
 import com.wedo.backend.group.repository.GroupSettingsRepository;
+import com.wedo.backend.media.storage.InMemoryObjectStorageService;
 import com.wedo.backend.security.jwt.JwtService;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
@@ -38,6 +39,7 @@ class GroupAvatarControllerTest extends AbstractPostgresIntegrationTest {
     @Autowired private GroupRepository groupRepository;
     @Autowired private GroupSettingsRepository groupSettingsRepository;
     @Autowired private GroupMembershipRepository groupMembershipRepository;
+    @Autowired private InMemoryObjectStorageService objectStorage;
 
     private UUID ownerId;
     private UUID adminId;
@@ -103,28 +105,32 @@ class GroupAvatarControllerTest extends AbstractPostgresIntegrationTest {
     @Test
     void ownerUpdatesAvatar_succeedsAndReturnsAvatarStorageKey() throws Exception {
         UUID groupId = createGroupWithMembers(false, GroupStatus.ACTIVE);
+        String avatarKey = "group-avatar/" + groupId + "/" + UUID.randomUUID();
+        objectStorage.putForTest(avatarKey, "image/png", 12);
 
         mockMvc.perform(patch("/api/v1/groups/{groupId}", groupId)
                         .header("Authorization", bearer(ownerId))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"avatarStorageKey\":\"avatars/owner-avatar.png\"}"))
+                        .content("{\"avatarStorageKey\":\"" + avatarKey + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.avatarStorageKey").value("avatars/owner-avatar.png"));
+                .andExpect(jsonPath("$.avatarStorageKey").value(avatarKey));
 
         GroupEntity group = groupRepository.findById(groupId).orElseThrow();
-        assertEquals("avatars/owner-avatar.png", group.getAvatarStorageKey());
+        assertEquals(avatarKey, group.getAvatarStorageKey());
     }
 
     @Test
     void adminUpdatesAvatar_succeeds() throws Exception {
         UUID groupId = createGroupWithMembers(false, GroupStatus.ACTIVE);
+        String avatarKey = "group-avatar/" + groupId + "/" + UUID.randomUUID();
+        objectStorage.putForTest(avatarKey, "image/jpeg", 12);
 
         mockMvc.perform(patch("/api/v1/groups/{groupId}", groupId)
                         .header("Authorization", bearer(adminId))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"avatarStorageKey\":\"avatars/admin-avatar.jpg\"}"))
+                        .content("{\"avatarStorageKey\":\"" + avatarKey + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.avatarStorageKey").value("avatars/admin-avatar.jpg"));
+                .andExpect(jsonPath("$.avatarStorageKey").value(avatarKey));
     }
 
     @Test
@@ -142,13 +148,15 @@ class GroupAvatarControllerTest extends AbstractPostgresIntegrationTest {
     @Test
     void memberUpdatesAvatar_whenAllowed_succeeds() throws Exception {
         UUID groupId = createGroupWithMembers(true, GroupStatus.ACTIVE);
+        String avatarKey = "group-avatar/" + groupId + "/" + UUID.randomUUID();
+        objectStorage.putForTest(avatarKey, "image/webp", 12);
 
         mockMvc.perform(patch("/api/v1/groups/{groupId}", groupId)
                         .header("Authorization", bearer(memberId))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"avatarStorageKey\":\"avatars/member-allowed.webp\"}"))
+                        .content("{\"avatarStorageKey\":\"" + avatarKey + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.avatarStorageKey").value("avatars/member-allowed.webp"));
+                .andExpect(jsonPath("$.avatarStorageKey").value(avatarKey));
     }
 
     @Test

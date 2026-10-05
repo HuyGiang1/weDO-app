@@ -20,6 +20,8 @@ import 'features/auth/presentation/auth_flow_coordinator.dart';
 import 'app/routes.dart';
 import 'features/profile/data/profile_api.dart';
 import 'features/profile/data/profile_repository.dart';
+import 'features/media/data/media_upload_service.dart';
+import 'features/media/presentation/media_storage_image.dart';
 import 'features/groups/data/group_api.dart';
 import 'features/groups/data/group_repository.dart';
 import 'features/groups/presentation/widgets/group_widgets.dart';
@@ -35,6 +37,7 @@ import 'features/notification/data/notification_api.dart';
 import 'features/notification/data/notification_models.dart';
 import 'features/notification/data/notification_repository.dart';
 import 'features/notification/presentation/notification_target_router.dart';
+import 'features/search/data/search_api.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,22 +52,33 @@ void main() async {
   final holder = AccessTokenHolder();
   final storage = SecureStorageService();
   final dio = DioClient(apiConfig: apiConfig);
+  final mediaUploadService = MediaUploadService(apiDio: dio.dio);
+  MediaStorageImage.service = mediaUploadService;
   final refreshDio = DioClient.raw(apiConfig: apiConfig);
   final repository = AuthRepository(
     api: AuthApi(dio.dio, refreshDio: refreshDio.dio),
     storage: storage,
     accessTokenHolder: holder,
   );
-  final profileRepository = ProfileRepository(api: ProfileApi(dio.dio));
-  final groupRepository = GroupRepository(api: GroupApi(dio.dio));
+  final profileRepository = ProfileRepository(
+    api: ProfileApi(dio.dio),
+    mediaUploadService: mediaUploadService,
+  );
+  final groupRepository = GroupRepository(
+    api: GroupApi(dio.dio),
+    mediaUploadService: mediaUploadService,
+  );
   final chatRepository = ChatRepository(
     ChatApi(dio.dio),
+    mediaUploadService: mediaUploadService,
     realtimeClient: WebSocketChatRealtimeClient(
       baseUrl: apiConfig.baseUrl,
       accessTokenProvider: () => holder.currentAccessToken,
     ),
   );
   ChatRepository.defaultRealtimeClient = chatRepository.realtimeClient;
+  ChatRepository.defaultMediaUploadService = mediaUploadService;
+  final searchRepository = SearchRepository(SearchApi(dio.dio));
   final privacyRepository = PrivacyRepository(api: PrivacyApi(dio.dio));
   final personalQrRepository = PersonalQrRepository(
     api: PersonalQrApi(dio.dio),
@@ -148,7 +162,15 @@ void main() async {
     if (kDebugMode) debugPrint('FCM tap: falling back to notification center');
     navigator.pushNamed(
       AppRoutes.notifications,
-      arguments: GroupsRouteArgs(repository: groupRepository),
+      arguments: GroupsRouteArgs(
+        repository: groupRepository,
+        searchArgs: SearchRouteArgs(
+          searchRepository: searchRepository,
+          profileRepository: profileRepository,
+          groupRepository: groupRepository,
+          chatRepository: chatRepository,
+        ),
+      ),
     );
   }
 
@@ -207,7 +229,15 @@ void main() async {
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.groups,
       (route) => false,
-      arguments: GroupsRouteArgs(repository: groupRepository),
+      arguments: GroupsRouteArgs(
+        repository: groupRepository,
+        searchArgs: SearchRouteArgs(
+          searchRepository: searchRepository,
+          profileRepository: profileRepository,
+          groupRepository: groupRepository,
+          chatRepository: chatRepository,
+        ),
+      ),
     );
   }
 
@@ -221,8 +251,15 @@ void main() async {
       authSessionController: sessionController,
       groupRepository: groupRepository,
       chatRepository: chatRepository,
+      searchRouteArgs: SearchRouteArgs(
+        searchRepository: searchRepository,
+        profileRepository: profileRepository,
+        groupRepository: groupRepository,
+        chatRepository: chatRepository,
+      ),
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
+      uploadAvatar: profileRepository.uploadAvatar,
       updateUsername: profileRepository.updateUsername,
       changePassword: repository.changePassword,
       endSessionAfterPasswordChange: endSessionAfterPasswordChange,
@@ -230,6 +267,7 @@ void main() async {
       loadPrivacySettings: privacyRepository.getPrivacySettings,
       updatePrivacySettings: privacyRepository.updatePrivacySettings,
       loadPersonalQr: personalQrRepository.getPersonalQr,
+      loadPublicProfile: profileRepository.getPublicProfile,
       navigatorKey: navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
     ),

@@ -89,7 +89,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest
+@SpringBootTest(properties = "media.s3.bootstrap-bucket=false")
 @Testcontainers
 @Import(NotificationServiceIntegrationTest.FakePushGatewayConfiguration.class)
 class NotificationServiceIntegrationTest {

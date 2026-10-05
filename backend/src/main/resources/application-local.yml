@@ -17,6 +17,17 @@ spring:
       host: ${WEDO_REDIS_HOST:localhost}
       port: ${WEDO_REDIS_PORT:6379}
 
+media:
+  s3:
+    bootstrap-bucket: ${WEDO_MEDIA_BOOTSTRAP_BUCKET:true}
+    endpoint: ${WEDO_MEDIA_S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${WEDO_MEDIA_PUBLIC_ENDPOINT:http://127.0.0.1:9000}
+    bucket: ${WEDO_MEDIA_BUCKET:wedo-media}
+    region: ${WEDO_MEDIA_REGION:us-east-1}
+    access-key: ${WEDO_MEDIA_ACCESS_KEY:wedo_local_access}
+    secret-key: ${WEDO_MEDIA_SECRET_KEY:wedo_local_secret_change_me}
+    path-style: true
+
 management:
   endpoints:
     web:

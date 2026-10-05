@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile/app/routes.dart';
 import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/chat/data/chat_api.dart';
@@ -13,6 +14,7 @@ import 'package:mobile/features/chat/data/chat_realtime_client.dart';
 import 'package:mobile/features/chat/data/chat_realtime_event.dart';
 import 'package:mobile/features/chat/data/chat_repository.dart';
 import 'package:mobile/features/chat/presentation/chat_screen.dart';
+import 'package:mobile/features/media/data/media_upload_service.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
@@ -29,10 +31,234 @@ void main() {
     expect(find.text('Chưa có tin nhắn'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'Chào cả nhóm');
+    await tester.pump();
     await tester.tap(find.byTooltip('Gửi tin nhắn'));
     await tester.pumpAndSettle();
     expect(find.text('Chào cả nhóm'), findsOneWidget);
     expect(adapter.sent, isTrue);
+  });
+
+  testWidgets('empty composer without images cannot send', (tester) async {
+    final adapter = _ChatScreenAdapter();
+    await tester.pumpWidget(_app(adapter));
+    await tester.pumpAndSettle();
+
+    expect(_sendButton(tester).onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pump();
+    expect(adapter.sent, isFalse);
+  });
+
+  testWidgets('text-only composer enables send', (tester) async {
+    final adapter = _ChatScreenAdapter();
+    await tester.pumpWidget(_app(adapter));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Text message');
+    await tester.pump();
+    expect(_sendButton(tester).onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(adapter.sentBody?['content'], 'Text message');
+    expect(adapter.sentBody?.containsKey('attachmentStorageKeys'), isFalse);
+  });
+
+  testWidgets(
+    'image-only send uses the shared route uploader and storage key',
+    (tester) async {
+      final media = _TestMediaUpload();
+      ChatRepository.defaultMediaUploadService = media.service;
+      addTearDown(() => ChatRepository.defaultMediaUploadService = null);
+      final adapter = _ChatScreenAdapter();
+      final images = await _makeImages(1);
+
+      await tester.pumpWidget(
+        _app(adapter, pickImages: () async => images.files),
+      );
+      await tester.pumpAndSettle();
+      await _pickImages(tester);
+      expect(_sendButton(tester).onPressed, isNotNull);
+      expect(find.byTooltip('Remove image'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+      await tester.pumpAndSettle();
+
+      expect(media.presign.requests, hasLength(1));
+      expect(media.presign.requests.single.data['category'], 'CHAT_IMAGE');
+      expect(media.presign.requests.single.data['contextId'], 'conversation-1');
+      expect(media.upload.requests, hasLength(1));
+      expect(adapter.sentBody?['content'], '');
+      expect(adapter.sentBody?['attachmentStorageKeys'], [
+        'chat/conversation-1/user-1/object-1',
+      ]);
+      expect(find.byTooltip('Remove image'), findsNothing);
+    },
+  );
+
+  testWidgets('caption and image uploads before sending caption', (
+    tester,
+  ) async {
+    final media = _TestMediaUpload();
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(1);
+
+    await tester.pumpWidget(
+      _app(
+        adapter,
+        mediaUploadService: media.service,
+        pickImages: () async => images.files,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Caption');
+    await _pickImages(tester);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(media.presign.requests, hasLength(1));
+    expect(media.upload.requests, hasLength(1));
+    expect(adapter.sentBody?['content'], 'Caption');
+    expect(adapter.sentBody?['attachmentStorageKeys'], isNotEmpty);
+  });
+
+  testWidgets('pending message request allows text but hides image attachment', (
+    tester,
+  ) async {
+    final adapter = _ChatScreenAdapter();
+    final pending = ChatConversation.fromJson({
+      'id': 'conversation-1',
+      'type': 'DIRECT',
+      'accessStatus': 'REQUEST_PENDING',
+      'lastSequence': 0,
+      'unreadCount': 0,
+      'permissions': _permissions(),
+    });
+    await tester.pumpWidget(_app(adapter, initialConversation: pending));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Attach image'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Text request');
+    await tester.pump();
+    expect(_sendButton(tester).onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+    expect(adapter.sentBody?['content'], 'Text request');
+    expect(adapter.sentBody?.containsKey('attachmentStorageKeys'), isFalse);
+  });
+
+  testWidgets('accepted direct chat offers image attachment', (tester) async {
+    final adapter = _ChatScreenAdapter();
+    final accepted = ChatConversation.fromJson({
+      'id': 'conversation-1',
+      'type': 'DIRECT',
+      'accessStatus': 'OPEN',
+      'lastSequence': 0,
+      'unreadCount': 0,
+      'permissions': _permissions(),
+    });
+    await tester.pumpWidget(_app(adapter, initialConversation: accepted));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Attach image'), findsOneWidget);
+  });
+
+  testWidgets('upload failure retains draft and prevents message creation', (
+    tester,
+  ) async {
+    final media = _TestMediaUpload(failPresign: true);
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(1);
+
+    await tester.pumpWidget(
+      _app(
+        adapter,
+        mediaUploadService: media.service,
+        pickImages: () async => images.files,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Keep this caption');
+    await _pickImages(tester);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(media.presign.requests, hasLength(1));
+    expect(media.upload.requests, isEmpty);
+    expect(adapter.sent, isFalse);
+    expect(find.text('Keep this caption'), findsOneWidget);
+    expect(find.byTooltip('Remove image'), findsOneWidget);
+    expect(_sendButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('rapid repeated image-send taps submit only once', (
+    tester,
+  ) async {
+    final media = _TestMediaUpload();
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(1);
+
+    await tester.pumpWidget(
+      _app(
+        adapter,
+        mediaUploadService: media.service,
+        pickImages: () async => images.files,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pickImages(tester);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(media.presign.requests, hasLength(1));
+    expect(media.upload.requests, hasLength(1));
+    expect(adapter.sent, isTrue);
+  });
+
+  testWidgets('four images are accepted and sent in picker order', (
+    tester,
+  ) async {
+    final media = _TestMediaUpload();
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(4);
+
+    await tester.pumpWidget(
+      _app(
+        adapter,
+        mediaUploadService: media.service,
+        pickImages: () async => images.files,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _pickImages(tester);
+    expect(find.byTooltip('Remove image'), findsNWidgets(4));
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+
+    expect(media.presign.requests, hasLength(4));
+    expect(media.upload.requests, hasLength(4));
+    expect(adapter.sentBody?['attachmentStorageKeys'], [
+      'chat/conversation-1/user-1/object-1',
+      'chat/conversation-1/user-1/object-2',
+      'chat/conversation-1/user-1/object-3',
+      'chat/conversation-1/user-1/object-4',
+    ]);
+  });
+
+  testWidgets('picker result over four images is rejected', (tester) async {
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(5);
+
+    await tester.pumpWidget(
+      _app(adapter, pickImages: () async => images.files),
+    );
+    await tester.pumpAndSettle();
+    await _pickImages(tester);
+
+    expect(find.byTooltip('Remove image'), findsNothing);
+    expect(_sendButton(tester).onPressed, isNull);
+    expect(adapter.sent, isFalse);
   });
 
   testWidgets('renders each author and places reader avatar only once', (
@@ -576,49 +802,59 @@ void main() {
     },
   );
 
-  testWidgets('30-minute separator renders only on >=30m gaps and breaks author runs', (
-    tester,
-  ) async {
-    final adapter = _ChatScreenAdapter(
-      messages: [
-        _message(
-          id: 'm1',
-          sequence: 1,
-          authorId: 'peer',
-          name: 'Lan Anh',
-          content: 'Tin 1',
-          mine: false,
-          createdAt: '2026-09-27T01:00:00Z',
-        ),
-        _message(
-          id: 'm2',
-          sequence: 2,
-          authorId: 'peer',
-          name: 'Lan Anh',
-          content: 'Tin 2 trong 5 phút',
-          mine: false,
-          createdAt: '2026-09-27T01:05:00Z',
-        ),
-        _message(
-          id: 'm3',
-          sequence: 3,
-          authorId: 'peer',
-          name: 'Lan Anh',
-          content: 'Tin 3 sau 31 phút',
-          mine: false,
-          createdAt: '2026-09-27T01:36:00Z',
-        ),
-      ],
-    );
-    await tester.pumpWidget(_app(adapter));
-    await tester.pumpAndSettle();
+  testWidgets(
+    '30-minute separator renders only on >=30m gaps and breaks author runs',
+    (tester) async {
+      final adapter = _ChatScreenAdapter(
+        messages: [
+          _message(
+            id: 'm1',
+            sequence: 1,
+            authorId: 'peer',
+            name: 'Lan Anh',
+            content: 'Tin 1',
+            mine: false,
+            createdAt: '2026-09-27T01:00:00Z',
+          ),
+          _message(
+            id: 'm2',
+            sequence: 2,
+            authorId: 'peer',
+            name: 'Lan Anh',
+            content: 'Tin 2 trong 5 phút',
+            mine: false,
+            createdAt: '2026-09-27T01:05:00Z',
+          ),
+          _message(
+            id: 'm3',
+            sequence: 3,
+            authorId: 'peer',
+            name: 'Lan Anh',
+            content: 'Tin 3 sau 31 phút',
+            mine: false,
+            createdAt: '2026-09-27T01:36:00Z',
+          ),
+        ],
+      );
+      await tester.pumpWidget(_app(adapter));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('chat-time-separator-m1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('chat-time-separator-m2')), findsNothing);
-    expect(find.byKey(const ValueKey('chat-time-separator-m3')), findsOneWidget);
-    // Separator breaks author run so Lan Anh header/avatar appears on m1 and m3
-    expect(find.text('Lan Anh'), findsNWidgets(2));
-  });
+      expect(
+        find.byKey(const ValueKey('chat-time-separator-m1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('chat-time-separator-m2')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('chat-time-separator-m3')),
+        findsOneWidget,
+      );
+      // Separator breaks author run so Lan Anh header/avatar appears on m1 and m3
+      expect(find.text('Lan Anh'), findsNWidgets(2));
+    },
+  );
 
   testWidgets(
     'M10 realtime updates message create/dedupe, edit, reaction, unsend, read state, typing, and presence',
@@ -652,7 +888,10 @@ void main() {
         }),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('chat-presence-online')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('chat-presence-online')),
+        findsOneWidget,
+      );
       expect(find.text('Đang hoạt động'), findsOneWidget);
 
       // 2. Live typing indicator
@@ -668,7 +907,10 @@ void main() {
         }),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('chat-typing-indicator')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('chat-typing-indicator')),
+        findsOneWidget,
+      );
       expect(find.text('Lan Anh đang nhập...'), findsOneWidget);
 
       // 3. Live MESSAGE_CREATED clears typing and deduplicates repeated delivery
@@ -797,18 +1039,130 @@ Widget _app(
   _ChatScreenAdapter adapter, {
   VoidCallback? onOpenGroupInfo,
   ChatRealtimeClient? realtimeClient,
+  MediaUploadService? mediaUploadService,
+  Future<List<XFile>> Function()? pickImages,
+  ChatConversation? initialConversation,
 }) => MaterialApp(
   home: ChatScreen(
-    groupId: 'group-1',
+    groupId: initialConversation == null ? 'group-1' : null,
+    initialConversation: initialConversation,
     onOpenGroupInfo: onOpenGroupInfo,
+    pickImages: pickImages,
     repository: ChatRepository(
       ChatApi(
         Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter,
       ),
       realtimeClient: realtimeClient ?? const NoopChatRealtimeClient(),
+      mediaUploadService: mediaUploadService,
     ),
   ),
 );
+
+IconButton _sendButton(WidgetTester tester) =>
+    tester.widget<IconButton>(find.byKey(const ValueKey('chat-send-button')));
+
+Future<void> _pickImages(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Attach image'));
+  await tester.pumpAndSettle();
+}
+
+Future<_ImageFixture> _makeImages(int count) async {
+  final bytes = Uint8List.fromList(
+    base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/S7sAAAAASUVORK5CYII=',
+    ),
+  );
+  final files = <XFile>[];
+  for (var index = 0; index < count; index++) {
+    files.add(
+      XFile.fromData(bytes, name: 'image-$index.png', mimeType: 'image/png'),
+    );
+  }
+  return _ImageFixture(files);
+}
+
+class _ImageFixture {
+  final List<XFile> files;
+  const _ImageFixture(this.files);
+}
+
+class _TestMediaUpload {
+  final _PresignAdapter presign;
+  final _UploadAdapter upload;
+  late final MediaUploadService service;
+
+  _TestMediaUpload({bool failPresign = false})
+    : presign = _PresignAdapter(fail: failPresign),
+      upload = _UploadAdapter() {
+    final apiDio = Dio(BaseOptions(baseUrl: 'https://api.test'))
+      ..httpClientAdapter = presign;
+    final directUploadDio = Dio()..httpClientAdapter = upload;
+    service = MediaUploadService(
+      apiDio: apiDio,
+      directUploadDio: directUploadDio,
+    );
+  }
+}
+
+class _PresignAdapter implements HttpClientAdapter {
+  final bool fail;
+  final requests = <RequestOptions>[];
+  _PresignAdapter({this.fail = false});
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? stream,
+    Future<void>? cancel,
+  ) async {
+    requests.add(options);
+    if (fail) {
+      return ResponseBody.fromString(
+        jsonEncode({'code': 'UPLOAD_FAILED'}),
+        503,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+    final request = Map<String, dynamic>.from(options.data as Map);
+    return ResponseBody.fromString(
+      jsonEncode({
+        'storageKey': 'chat/conversation-1/user-1/object-${requests.length}',
+        'uploadUrl': 'https://storage.test/object-${requests.length}',
+        'expiresAt': '2030-01-01T00:10:00Z',
+        'requiredHeaders': {
+          'Content-Type': request['contentType'],
+          'x-amz-meta-declared-size': request['fileSize'].toString(),
+        },
+      }),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _UploadAdapter implements HttpClientAdapter {
+  final requests = <RequestOptions>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? stream,
+    Future<void>? cancel,
+  ) async {
+    requests.add(options);
+    return ResponseBody.fromString('', 200);
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
 
 Map<String, dynamic> _message({
   required String id,
@@ -905,6 +1259,7 @@ class _ChatScreenAdapter implements HttpClientAdapter {
   bool detailsFail;
   String? detailsMessagePath;
   bool sent = false;
+  Map<String, dynamic>? sentBody;
   String? lastReaction;
 
   _ChatScreenAdapter({
@@ -950,13 +1305,14 @@ class _ChatScreenAdapter implements HttpClientAdapter {
       status = 204;
     } else if (options.path.endsWith('/messages') && options.method == 'POST') {
       sent = true;
+      sentBody = Map<String, dynamic>.from(options.data as Map);
       status = 201;
       body = _message(
         id: 'sent-message',
         sequence: messages.length + 1,
         authorId: 'me',
         name: 'Minh',
-        content: options.data['content'] as String,
+        content: sentBody!['content'] as String,
         mine: true,
       );
     } else if (options.path.endsWith('/reactions')) {

@@ -1,6 +1,7 @@
 package com.wedo.backend.media.controller;
 
 import com.wedo.backend.media.dto.MediaUploadResponse;
+import com.wedo.backend.media.dto.MediaAccessResponse;
 import com.wedo.backend.media.service.MediaResource;
 import com.wedo.backend.media.service.MediaService;
 import com.wedo.backend.media.service.MediaUploadResult;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import com.wedo.backend.security.AuthenticatedUserPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -34,6 +36,14 @@ public class MediaController {
         MediaUploadResult result = mediaService.uploadAvatar(principal.userId(), file);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new MediaUploadResponse(result.storageKey(), result.contentType(), result.size(), result.url()));
+    }
+
+    @GetMapping("/access")
+    public ResponseEntity<MediaAccessResponse> getAuthorizedMediaAccess(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            @RequestParam String storageKey
+    ) {
+        return ResponseEntity.ok(mediaService.authorizeRead(principal.userId(), storageKey));
     }
 
     @GetMapping("/{category}/{filename}")

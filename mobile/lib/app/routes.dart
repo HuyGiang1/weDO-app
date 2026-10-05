@@ -68,6 +68,11 @@ import '../features/calendar/data/calendar_api.dart';
 import '../features/calendar/data/calendar_repository.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
 import '../features/calendar/presentation/activity_reminder_panel.dart';
+import '../features/search/application/search_controller.dart'
+    as search_feature;
+import '../features/search/data/search_api.dart';
+import '../features/search/presentation/search_screen.dart';
+import '../features/profile/data/profile_repository.dart';
 
 export 'auth_route_guard.dart';
 
@@ -92,6 +97,12 @@ class ProfileRouteArgs {
   final Future<CurrentUser> Function() loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
+  final Future<String> Function({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+  })?
+  uploadAvatar;
   final Future<CurrentUser> Function(UpdateUsernameRequest request)
   updateUsername;
   final Future<void> Function({
@@ -105,6 +116,7 @@ class ProfileRouteArgs {
   const ProfileRouteArgs({
     required this.loadCurrentUser,
     required this.updateProfile,
+    this.uploadAvatar,
     required this.updateUsername,
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
@@ -154,7 +166,21 @@ class PublicUserProfileRouteArgs {
 
 class GroupsRouteArgs {
   final GroupRepository repository;
-  const GroupsRouteArgs({required this.repository});
+  final SearchRouteArgs? searchArgs;
+  const GroupsRouteArgs({required this.repository, this.searchArgs});
+}
+
+class SearchRouteArgs {
+  final SearchRepository searchRepository;
+  final ProfileRepository profileRepository;
+  final GroupRepository groupRepository;
+  final ChatRepository chatRepository;
+  const SearchRouteArgs({
+    required this.searchRepository,
+    required this.profileRepository,
+    required this.groupRepository,
+    required this.chatRepository,
+  });
 }
 
 class GroupInfoRouteArgs {
@@ -307,6 +333,7 @@ abstract final class AppRoutes {
   static const String groupChat = '/groups/chat';
   static const String chatHome = '/chat';
   static const String chatRequests = '/chat/requests';
+  static const String search = '/search';
 
   static final Map<String, AppRouteDefinition> _routes = {
     welcome: AppRouteDefinition(
@@ -480,6 +507,7 @@ abstract final class AppRoutes {
           builder: (_) => ProfileScreen(
             loadCurrentUser: loader.loadCurrentUser,
             updateProfile: loader.updateProfile,
+            uploadAvatar: loader.uploadAvatar,
             updateUsername: loader.updateUsername,
             changePassword: loader.changePassword,
             endSessionAfterPasswordChange: loader.endSessionAfterPasswordChange,
@@ -589,6 +617,11 @@ abstract final class AppRoutes {
               controller: groupsController,
               onCreate: () =>
                   Navigator.of(context).pushNamed(createGroup, arguments: args),
+              onSearch: args.searchArgs == null
+                  ? null
+                  : () =>
+                        Navigator.of(context)
+                            .pushNamed(search, arguments: args.searchArgs),
               onOpenGroup: (id) => Navigator.of(context)
                   .pushNamed(
                     groupInfo,
@@ -635,6 +668,74 @@ abstract final class AppRoutes {
             );
           },
           settings: settings,
+        );
+      },
+    ),
+    search: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! SearchRouteArgs) return null;
+        final chatRepo = args.chatRepository;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => SearchScreen(
+            controller: search_feature.SearchController(args.searchRepository),
+            profileRepository: args.profileRepository,
+            groupRepository: args.groupRepository,
+            onOpenPerson: (person) =>
+                Navigator.of(context)
+                    .pushNamed(publicUserProfile, arguments: person.id),
+            onOpenGroup: (group) => Navigator.of(context).pushNamed(
+              groupInfo,
+              arguments: GroupInfoRouteArgs(
+                repository: args.groupRepository,
+                groupId: group.id,
+                chatRepository: chatRepo,
+              ),
+            ),
+            onOpenActivity: (activity) => Navigator.of(context).pushNamed(
+              activityDetail,
+              arguments: ActivityDetailRouteArgs(
+                repository: ActivityRepository(
+                  api: ActivityApi(args.groupRepository.api.dio),
+                ),
+                activityId: activity.id,
+              ),
+            ),
+            onOpenConversation: (result) async {
+              try {
+                final conversation = (await chatRepo.conversations())
+                    .where((item) => item.id == result.id)
+                    .firstOrNull;
+                if (!context.mounted) return;
+                if (conversation == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Cuộc trò chuyện không còn khả dụng'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).pushNamed(
+                  groupChat,
+                  arguments: ChatRouteArgs(
+                    repository: chatRepo,
+                    conversation: conversation,
+                    groupRepository: args.groupRepository,
+                  ),
+                );
+              } catch (_) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Không thể mở cuộc trò chuyện'),
+                    ),
+                  );
+                }
+              }
+            },
+          ),
         );
       },
     ),

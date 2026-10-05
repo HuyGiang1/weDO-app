@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'dart:typed_data';
+
 import '../../../../../app/theme/app_colors.dart';
 import '../../../../../app/theme/app_spacing.dart';
 import '../../../../../app/theme/app_text_styles.dart';
+import '../../../media/presentation/media_storage_image.dart';
 
 class ProfileSurface extends StatelessWidget {
   final Widget child;
@@ -39,19 +42,51 @@ class ProfileSurface extends StatelessWidget {
 class ProfileAvatar extends StatelessWidget {
   final String label;
   final double radius;
-  const ProfileAvatar({super.key, required this.label, this.radius = 44});
+  final String? avatarStorageKey;
+  final Uint8List? imageBytes;
+  const ProfileAvatar({
+    super.key,
+    required this.label,
+    this.radius = 44,
+    this.avatarStorageKey,
+    this.imageBytes,
+  });
   @override
   Widget build(BuildContext context) {
     final value = label.trim();
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.backgroundGradientEnd,
-      child: Text(
-        value.isEmpty ? '?' : value.substring(0, 1).toUpperCase(),
-        style: AppTextStyles.headline,
-      ),
+      child: imageBytes != null
+          ? ClipOval(
+              child: Image.memory(
+                imageBytes!,
+                width: radius * 2,
+                height: radius * 2,
+                fit: BoxFit.cover,
+              ),
+            )
+          : avatarStorageKey == null || avatarStorageKey!.isEmpty
+          ? _fallback(value)
+          : ClipOval(
+              child: MediaStorageImage(
+                storageKey: avatarStorageKey!,
+                baseUrl: const String.fromEnvironment(
+                  'WEDO_API_BASE_URL',
+                  defaultValue: 'http://localhost:8080',
+                ),
+                width: radius * 2,
+                height: radius * 2,
+                fallback: (_) => _fallback(value),
+              ),
+            ),
     );
   }
+
+  Widget _fallback(String value) => Text(
+    value.isEmpty ? '?' : value.substring(0, 1).toUpperCase(),
+    style: AppTextStyles.headline,
+  );
 }
 
 class ProfileActionRow extends StatelessWidget {

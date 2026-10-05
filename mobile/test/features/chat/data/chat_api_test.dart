@@ -51,10 +51,47 @@ void main() {
       'replyToMessageId': null,
     });
     expect(sent.isMine, isTrue);
+    await api.send(
+      conversation.id,
+      '',
+      attachmentStorageKeys: const ['chat/conversation/user/object'],
+    );
+    expect(adapter.request.data, {
+      'content': '',
+      'replyToMessageId': null,
+      'attachmentStorageKeys': ['chat/conversation/user/object'],
+    });
     final withdrawn = await api.unsend('message/one');
     expect(adapter.request.method, 'POST');
     expect(adapter.request.path, '/api/v1/messages/message%2Fone/unsend');
     expect(withdrawn.status, 'UNSENT');
+  });
+
+  test('parses authoritative image type and ordered attachment metadata', () {
+    final message = ChatMessage.fromJson({
+      'id': 'image-1',
+      'sequence': 4,
+      'type': 'IMAGE',
+      'isMine': false,
+      'content': '',
+      'status': 'ACTIVE',
+      'createdAt': '2026-09-27T00:00:00Z',
+      'reactions': [],
+      'attachments': [
+        {
+          'id': 'attachment-1',
+          'storageKey': 'chat/conversation/user/object',
+          'fileName': 'photo.webp',
+          'contentType': 'image/webp',
+          'fileSizeBytes': 128,
+          'sortOrder': 0,
+        },
+      ],
+      'permissions': _permissions(),
+    });
+    expect(message.type, 'IMAGE');
+    expect(message.attachments.single.fileName, 'photo.webp');
+    expect(message.attachments.single.sortOrder, 0);
   });
 }
 

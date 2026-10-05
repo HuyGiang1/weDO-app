@@ -29,6 +29,24 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    container_name: wedo-minio
+    command: server /data --console-address ":9001" --license /minio.license
+    environment:
+      MINIO_ROOT_USER: ${WEDO_MEDIA_ACCESS_KEY:-wedo_local_access}
+      MINIO_ROOT_PASSWORD: ${WEDO_MEDIA_SECRET_KEY:-wedo_local_secret_change_me}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - wedo_minio_data:/data
+      - type: bind
+        source: ${WEDO_AISTOR_LICENSE_PATH:?Set WEDO_AISTOR_LICENSE_PATH to the external AIStor license file}
+        target: /minio.license
+        read_only: true
+
 volumes:
   wedo_postgres_data:
   wedo_redis_data:
+  wedo_minio_data:

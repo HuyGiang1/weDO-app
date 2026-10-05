@@ -19,6 +19,9 @@ class GroupInfoScreen extends StatefulWidget {
   final VoidCallback? onChat;
   final VoidCallback? onChatHome;
   final VoidCallback? onCalendar;
+  final VoidCallback? onHome;
+  final VoidCallback? onGroups;
+  final VoidCallback? onProfile;
   final VoidCallback? onInviteLinks, onJoinRequests, onBans;
   final VoidCallback? onArchive, onRestore, onDelete;
 
@@ -39,6 +42,9 @@ class GroupInfoScreen extends StatefulWidget {
     this.onChat,
     this.onChatHome,
     this.onCalendar,
+    this.onHome,
+    this.onGroups,
+    this.onProfile,
     this.onInviteLinks,
     this.onJoinRequests,
     this.onBans,
@@ -82,8 +88,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       ),
       bottomNavigationBar: GroupsBottomNavigation(
         onTap: (index) {
+          if (index == 0) widget.onHome?.call();
+          if (index == 1) widget.onGroups?.call();
           if (index == 2) widget.onChatHome?.call();
           if (index == 3) widget.onCalendar?.call();
+          if (index == 4) widget.onProfile?.call();
         },
       ),
       body: ValueListenableBuilder<GroupDetailState>(

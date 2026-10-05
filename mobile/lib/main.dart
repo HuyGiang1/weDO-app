@@ -227,9 +227,9 @@ void main() async {
 
   void handleAuthenticated(BuildContext context) {
     Navigator.of(context).pushNamedAndRemoveUntil(
-      AppRoutes.groups,
+      AppRoutes.home,
       (route) => false,
-      arguments: GroupsRouteArgs(
+      arguments: HomeRouteArgs(
         repository: groupRepository,
         searchArgs: SearchRouteArgs(
           searchRepository: searchRepository,

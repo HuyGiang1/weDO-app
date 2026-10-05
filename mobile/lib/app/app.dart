@@ -83,12 +83,22 @@ class WeDoApp extends StatelessWidget {
       ),
       initialRoute:
           authSessionController.isAuthenticated && groupRepository != null
-          ? AppRoutes.groups
+          ? AppRoutes.home
           : AppRoutes.welcome,
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
-        settings.name == AppRoutes.groups &&
+        settings.name == AppRoutes.home &&
                 groupRepository != null &&
                 settings.arguments == null
+            ? RouteSettings(
+                name: settings.name,
+                arguments: HomeRouteArgs(
+                  repository: groupRepository!,
+                  searchArgs: searchRouteArgs,
+                ),
+              )
+            : settings.name == AppRoutes.groups &&
+                  groupRepository != null &&
+                  settings.arguments == null
             ? RouteSettings(
                 name: settings.name,
                 arguments: GroupsRouteArgs(
@@ -105,6 +115,8 @@ class WeDoApp extends StatelessWidget {
             ? RouteSettings(
                 name: settings.name,
                 arguments: ProfileRouteArgs(
+                  groupRepository: groupRepository,
+                  searchArgs: searchRouteArgs,
                   loadCurrentUser: loadCurrentUser!,
                   updateProfile: updateProfile!,
                   uploadAvatar: uploadAvatar,

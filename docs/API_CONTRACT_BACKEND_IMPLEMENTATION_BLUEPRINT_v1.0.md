@@ -1489,7 +1489,7 @@ Filters: ACTIVE / ARCHIVED.
 ### GROUP-03 Recent Groups
 
 `GET /api/v1/groups/recent`  
-Used by Home and Groups screens.
+Returns up to five existing Group Summary DTOs for the caller's active memberships in active groups, newest group update first (then ID). It uses the same Group Service projection as `GET /api/v1/home.recentGroups`; archived, banned, kicked and outsider groups are excluded.
 
 ### GROUP-04 Group Detail
 
@@ -2656,13 +2656,21 @@ Media visibility inherits owning-entity visibility. Chat media reads require cur
 
 `GET /api/v1/home`
 
-Aggregated read model may return Recent Groups, Upcoming Activities, Finance Summary, Actions Required and Recent Updates. This is not a database entity.
+This authenticated aggregate is a read model, not a database entity. The response has all five M17 sections:
+
+- `recentGroups`: up to five active groups with active membership, ordered by group update time descending (then ID); each is the existing Group Summary DTO.
+- `upcomingActivities`: up to five scheduled future `PLANNING`/`CONFIRMED` activities from active groups where the caller is an active member, ordered by `startAt` then ID. Each item has `id`, `groupId`, `groupName`, `title`, `status`, and `startAt`.
+- `financeSummary`: `totalOwedByMe`, `totalOwedToMe`, and up to four nonzero group balances (`groupId`, `groupName`, `owedByMe`, `owedToMe`). Amounts are decimal strings derived from active expenses and completed settlements using the existing Expense ledger rules; pending settlements do not reduce debt. Active memberships can read balances of archived groups. Totals cover all eligible groups, not only the four displayed rows.
+- `actionsRequired`: up to eight items with `type`, `targetId`, `groupId`, nullable `activityId`, `title`, and nullable `dueAt`. Pass 1 types are `RSVP_REQUIRED` (future scheduled activity with no response), `POLL_VOTE_REQUIRED` (open unvoted poll with an enabled option), `TASK_DUE` (assigned incomplete task due within seven days or overdue), and `SETTLEMENT_CONFIRMATION` (pending settlement awaiting this caller). All require active group membership and an active group; Activity actions exclude completed/cancelled activities. Ordering is settlement, task, RSVP, poll; then due time and ID.
+- `recentUpdates`: up to five newest actionable Notification inbox items for this recipient, selected from the newest 30 inbox records. Items retain the existing Notification DTO's category/type, title, body, created time, read state and resolved target. A target that is no longer accessible is excluded. This reuses persisted inbox records independently of push delivery preferences; no new event table or workflow is created.
+
+Home loads these sections in one request. Its update taps use the existing Notification target router.
 
 ### HOME-02 Actions Required
 
 `GET /api/v1/me/actions-required`
 
-Potential action types: RSVP_REQUIRED, POLL_VOTE_REQUIRED, TASK_DUE, SETTLEMENT_CONFIRMATION, FUND_CONTRIBUTION, CONTRIBUTION_VERIFICATION, REIMBURSEMENT_APPROVAL.
+Returns the same bounded `actionsRequired` list and semantics as `GET /api/v1/home`, through the same query. Implemented types are `RSVP_REQUIRED`, `POLL_VOTE_REQUIRED`, `TASK_DUE` and `SETTLEMENT_CONFIRMATION`; future candidate types are not exposed without corresponding implemented action rules.
 
 ---
 

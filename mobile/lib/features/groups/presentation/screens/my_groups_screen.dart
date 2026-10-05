@@ -17,6 +17,8 @@ class MyGroupsScreen extends StatefulWidget {
   final VoidCallback? onChat;
   final VoidCallback? onCalendar;
   final VoidCallback? onSearch;
+  final VoidCallback? onHome;
+  final VoidCallback? onProfile;
 
   const MyGroupsScreen({
     super.key,
@@ -30,6 +32,8 @@ class MyGroupsScreen extends StatefulWidget {
     this.onChat,
     this.onCalendar,
     this.onSearch,
+    this.onHome,
+    this.onProfile,
   });
   @override
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
@@ -47,8 +51,10 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
     return Scaffold(
       bottomNavigationBar: GroupsBottomNavigation(
         onTap: (index) {
+          if (index == 0) widget.onHome?.call();
           if (index == 2) widget.onChat?.call();
           if (index == 3) widget.onCalendar?.call();
+          if (index == 4) widget.onProfile?.call();
         },
       ),
       body: SafeArea(

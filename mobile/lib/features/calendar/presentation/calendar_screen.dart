@@ -13,6 +13,7 @@ class CalendarScreen extends StatefulWidget {
   final GroupRepository groups;
   final ValueChanged<String> onOpenActivity;
   final VoidCallback onGroups, onChat, onProfile;
+  final VoidCallback? onHome;
 
   const CalendarScreen({
     super.key,
@@ -22,6 +23,7 @@ class CalendarScreen extends StatefulWidget {
     required this.onGroups,
     required this.onChat,
     required this.onProfile,
+    this.onHome,
   });
 
   @override
@@ -132,6 +134,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     bottomNavigationBar: GroupsBottomNavigation(
       currentIndex: 3,
       onTap: (index) {
+        if (index == 0) widget.onHome?.call();
         if (index == 1) widget.onGroups();
         if (index == 2) widget.onChat();
         if (index == 4) widget.onProfile();

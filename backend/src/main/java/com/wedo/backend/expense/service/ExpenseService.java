@@ -45,6 +45,7 @@ import java.util.UUID;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +54,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ExpenseService {
     private static final BigDecimal CENT = new BigDecimal("0.01");
     private static final BigDecimal ZERO = new BigDecimal("0.00");
+
+    public record GroupBalanceTotal(UUID groupId, String groupName,
+                                    BigDecimal owedByMe, BigDecimal owedToMe) { }
     private static final RowMapper<ExpenseRow> EXPENSE_ROW = ExpenseService::mapExpenseRow;
 
     private final JdbcTemplate jdbc;
@@ -260,6 +264,60 @@ public class ExpenseService {
         balances.sort(Comparator.comparing((UserBalance b) -> b.user().displayName(), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(b -> b.user().id().toString()));
         return new MyBalances(owedByMe.setScale(2), owedToMe.setScale(2), balances);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<GroupBalanceTotal> homeBalances(UUID actorId) {
+        Map<UUID, String> names = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT g.id, g.name FROM groups g
+                JOIN group_memberships gm ON gm.group_id = g.id
+                WHERE gm.user_id = ? AND gm.status = 'ACTIVE' AND g.status <> 'DELETED'
+                ORDER BY g.name, g.id
+                """, (RowCallbackHandler) rs -> names.put(rs.getObject("id", UUID.class), rs.getString("name")), actorId);
+        if (names.isEmpty()) return List.of();
+
+        Map<UUID, Ledger> ledgers = new HashMap<>();
+        names.keySet().forEach(id -> ledgers.put(id, new Ledger()));
+        jdbc.query("""
+                SELECT e.group_id, e.paid_by, s.user_id, s.amount
+                FROM expenses e JOIN expense_shares s ON s.expense_id = e.id
+                JOIN group_memberships gm ON gm.group_id = e.group_id
+                    AND gm.user_id = ? AND gm.status = 'ACTIVE'
+                JOIN groups g ON g.id = e.group_id AND g.status <> 'DELETED'
+                WHERE e.status = 'ACTIVE'
+                """, (RowCallbackHandler) rs -> applyObligation(ledgers.get(rs.getObject("group_id", UUID.class)),
+                        rs.getObject("user_id", UUID.class), rs.getObject("paid_by", UUID.class),
+                        rs.getBigDecimal("amount")), actorId);
+        jdbc.query("""
+                SELECT s.group_id, s.from_user_id, s.to_user_id, s.amount
+                FROM settlements s
+                JOIN group_memberships gm ON gm.group_id = s.group_id
+                    AND gm.user_id = ? AND gm.status = 'ACTIVE'
+                JOIN groups g ON g.id = s.group_id AND g.status <> 'DELETED'
+                WHERE s.status = 'COMPLETED'
+                """, rs -> {
+            UUID from = rs.getObject("from_user_id", UUID.class);
+            UUID to = rs.getObject("to_user_id", UUID.class);
+            ledgers.get(rs.getObject("group_id", UUID.class)).net.merge(PairKey.of(from, to),
+                    direction(from, to, rs.getBigDecimal("amount")).negate(), BigDecimal::add);
+        }, actorId);
+
+        List<GroupBalanceTotal> result = new ArrayList<>();
+        names.forEach((groupId, name) -> {
+            BigDecimal owedByMe = ZERO;
+            BigDecimal owedToMe = ZERO;
+            for (Map.Entry<PairKey, BigDecimal> entry : ledgers.get(groupId).net.entrySet()) {
+                PairKey pair = entry.getKey();
+                BigDecimal amount = entry.getValue();
+                if (amount.signum() == 0 || (!pair.first().equals(actorId) && !pair.second().equals(actorId))) continue;
+                boolean actorOwes = pair.first().equals(actorId) ? amount.signum() > 0 : amount.signum() < 0;
+                if (actorOwes) owedByMe = owedByMe.add(amount.abs());
+                else owedToMe = owedToMe.add(amount.abs());
+            }
+            result.add(new GroupBalanceTotal(groupId, name, owedByMe.setScale(2), owedToMe.setScale(2)));
+        });
+        return result;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

@@ -20,13 +20,17 @@ import 'package:mobile/core/storage/secure_storage_service.dart';
 import 'package:mobile/features/auth/data/auth_api.dart';
 import 'package:mobile/features/auth/data/auth_repository.dart';
 import 'package:mobile/features/groups/presentation/screens/my_groups_screen.dart';
+import 'package:mobile/features/home/presentation/home_screen.dart';
+import 'package:mobile/features/calendar/presentation/calendar_screen.dart';
+import 'package:mobile/features/chat/presentation/chat_home_screen.dart';
+import 'package:mobile/features/profile/presentation/screens/profile_screen.dart';
 import 'package:mobile/features/profile/data/profile_models.dart';
 import 'package:mobile/features/profile/presentation/screens/public_user_profile_screen.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 42 registered production routes', () {
-      expect(AppRoutes.routes.length, 42);
+    test('contains exactly 43 registered production routes', () {
+      expect(AppRoutes.routes.length, 43);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -43,6 +47,7 @@ void main() {
         AppRoutes.personalQr,
         AppRoutes.publicUserProfile,
         AppRoutes.groups,
+        AppRoutes.home,
         AppRoutes.createGroup,
         AppRoutes.groupInfo,
         AppRoutes.groupActivityLog,
@@ -86,6 +91,7 @@ void main() {
                   entry.key == AppRoutes.personalQr ||
                   entry.key == AppRoutes.publicUserProfile ||
                   entry.key == AppRoutes.groups ||
+                  entry.key == AppRoutes.home ||
                   entry.key == AppRoutes.createGroup ||
                   entry.key == AppRoutes.groupInfo ||
                   entry.key == AppRoutes.groupActivityLog ||
@@ -930,18 +936,18 @@ void main() {
     });
   });
 
-  group('Authenticated Navigation to Groups Runtime (M7 Bridge)', () {
-    test('unauthenticated users cannot directly enter protected Groups', () {
+  group('Authenticated Home landing', () {
+    test('unauthenticated users cannot directly enter protected Home', () {
       expect(
         AppRoutes.onGenerateRoute(
-          const RouteSettings(name: AppRoutes.groups),
+          const RouteSettings(name: AppRoutes.home),
           authStatus: AuthSessionStatus.unauthenticated,
         ),
         isNull,
       );
       expect(
         AppRoutes.onGenerateRoute(
-          const RouteSettings(name: AppRoutes.groups),
+          const RouteSettings(name: AppRoutes.home),
           authStatus: AuthSessionStatus.restoring,
         ),
         isNull,
@@ -949,7 +955,7 @@ void main() {
     });
 
     testWidgets(
-      'successful login replaces auth stack and enters Groups with real GroupsRouteArgs and Back cannot return',
+      'successful login replaces auth stack and enters Home with typed args and Back cannot return',
       (tester) async {
         tester.view.physicalSize = const Size(390, 844);
         tester.view.devicePixelRatio = 1.0;
@@ -975,9 +981,9 @@ void main() {
           sessionController: sessionController,
           onAuthenticated: (context) {
             Navigator.of(context).pushNamedAndRemoveUntil(
-              AppRoutes.groups,
+              AppRoutes.home,
               (route) => false,
-              arguments: GroupsRouteArgs(repository: groupRepo),
+              arguments: HomeRouteArgs(repository: groupRepo),
             );
           },
         );
@@ -1013,9 +1019,8 @@ void main() {
         await tester.tap(loginButton);
         await tester.pumpAndSettle();
 
-        // Successful login transitions cleanly to MyGroupsScreen
-        expect(find.byType(MyGroupsScreen), findsOneWidget);
-        expect(groupRepo.calls, contains('list-groups'));
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(find.byType(MyGroupsScreen), findsNothing);
 
         // Back cannot return to Login/Register onboarding screens
         final nav = tester.state<NavigatorState>(find.byType(Navigator));
@@ -1024,7 +1029,7 @@ void main() {
     );
 
     testWidgets(
-      'app startup with persisted authenticated session lands directly on Groups',
+      'app startup with persisted authenticated session lands directly on Home',
       (tester) async {
         final groupRepo = _RouteGroupRepository();
         final store = _TestMemoryStore();
@@ -1048,15 +1053,132 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        expect(find.byType(HomeScreen), findsOneWidget);
         expect(find.text('Welcome Back'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'five main tabs open independent real roots with correct selection',
+      (tester) async {
+        tester.view.physicalSize = const Size(430, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final groupRepo = _RouteGroupRepository();
+        final store = _TestMemoryStore();
+        final holder = AccessTokenHolder();
+        final authRepo = AuthRepository(
+          api: _TestAuthApi(),
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+        );
+        final session = AuthSessionController(
+          storage: SecureStorageService(store: store),
+          accessTokenHolder: holder,
+          repository: authRepo,
+        )..markAuthenticated();
+        Future<CurrentUser> loadUser() async => const CurrentUser(
+          id: 'user-id',
+          email: 'user@wedo.social',
+          status: 'ACTIVE',
+          emailVerified: true,
+        );
+        await tester.pumpWidget(
+          WeDoApp(
+            authSessionController: session,
+            groupRepository: groupRepo,
+            loadCurrentUser: loadUser,
+            updateProfile: (_) async => loadUser(),
+            updateUsername: (_) async => loadUser(),
+            changePassword: ({
+              required currentPassword,
+              required newPassword,
+            }) async {},
+            endSessionAfterPasswordChange: () async => true,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final nav = tester.state<NavigatorState>(find.byType(Navigator));
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(
+          tester
+              .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
+              .items
+              .map((item) => item.label),
+          ['Home', 'Groups', 'Chat', 'Calendar', 'Profile'],
+        );
+
+        Future<void> select(String label, int index) async {
+          await tester.tap(
+            find.descendant(
+              of: find.byType(BottomNavigationBar),
+              matching: find.text(label),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester
+                .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
+                .currentIndex,
+            index,
+          );
+          expect(nav.canPop(), isFalse);
+        }
+
+        await select('Groups', 1);
+        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        await select('Chat', 2);
+        expect(find.byType(ChatHomeScreen), findsOneWidget);
+        await select('Calendar', 3);
+        expect(find.byType(CalendarScreen), findsOneWidget);
+        await select('Profile', 4);
+        expect(find.byType(ProfileScreen), findsOneWidget);
+        await select('Home', 0);
+        expect(find.byType(HomeScreen), findsOneWidget);
       },
     );
   });
 }
 
+Dio _homeDio() {
+  final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
+  dio.interceptors.add(
+    InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (options.path == '/api/v1/home') {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              data: {
+                'recentGroups': [],
+                'upcomingActivities': [],
+                'financeSummary': {
+                  'totalOwedByMe': '0.00',
+                  'totalOwedToMe': '0.00',
+                  'groups': [],
+                },
+                'actionsRequired': [],
+                'recentUpdates': [],
+              },
+            ),
+          );
+          return;
+        }
+        if (options.path == '/api/v1/conversations' ||
+            options.path == '/api/v1/calendar/activities') {
+          handler.resolve(Response(requestOptions: options, data: []));
+          return;
+        }
+        handler.next(options);
+      },
+    ),
+  );
+  return dio;
+}
+
 class _RouteGroupRepository extends GroupRepository {
-  _RouteGroupRepository() : super(api: GroupApi(Dio()));
+  _RouteGroupRepository() : super(api: GroupApi(_homeDio()));
   final List<String> calls = [];
   @override
   Future<GroupDetail> getGroup(String id) async {

@@ -4,6 +4,7 @@ import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../app/routes.dart';
 import '../../../auth/data/models/auth_models.dart';
+import '../../../groups/presentation/widgets/group_widgets.dart';
 import '../../data/profile_models.dart';
 import 'change_username_screen.dart';
 import 'edit_profile_screen.dart';
@@ -29,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
   changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
   final Future<void> Function()? logout;
+  final VoidCallback? onHome, onGroups, onChat, onCalendar;
 
   const ProfileScreen({
     super.key,
@@ -39,6 +41,10 @@ class ProfileScreen extends StatefulWidget {
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
     this.logout,
+    this.onHome,
+    this.onGroups,
+    this.onChat,
+    this.onCalendar,
   });
 
   @override
@@ -65,6 +71,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
+      bottomNavigationBar: widget.onHome == null
+          ? null
+          : GroupsBottomNavigation(
+              currentIndex: 4,
+              onTap: (index) {
+                if (index == 0) widget.onHome?.call();
+                if (index == 1) widget.onGroups?.call();
+                if (index == 2) widget.onChat?.call();
+                if (index == 3) widget.onCalendar?.call();
+              },
+            ),
       body: FutureBuilder<CurrentUser>(
         future: _profileFuture,
         builder: (context, snapshot) {

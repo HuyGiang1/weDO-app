@@ -13,6 +13,7 @@ import 'chat_formatters.dart';
 class ChatHomeScreen extends StatefulWidget {
   final ChatRepository repository;
   final VoidCallback onGroups;
+  final VoidCallback? onHome;
   final VoidCallback? onCalendar;
   final VoidCallback? onProfile;
   final ValueChanged<ChatConversation> onOpenConversation;
@@ -21,6 +22,7 @@ class ChatHomeScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.onGroups,
+    this.onHome,
     this.onCalendar,
     this.onProfile,
     required this.onOpenConversation,
@@ -100,6 +102,7 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
     bottomNavigationBar: GroupsBottomNavigation(
       currentIndex: 2,
       onTap: (index) {
+        if (index == 0) widget.onHome?.call();
         if (index == 1) widget.onGroups();
         if (index == 3) widget.onCalendar?.call();
         if (index == 4) widget.onProfile?.call();

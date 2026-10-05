@@ -63,6 +63,13 @@ public class GroupController {
         return ResponseEntity.ok(groupService.getGroups(principal.userId(), page, size, GroupStatus.valueOf(status)));
     }
 
+    @GetMapping("/recent")
+    public List<GroupSummaryResponse> recentGroups(
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal
+    ) {
+        return groupService.getGroups(principal.userId(), 0, 5, GroupStatus.ACTIVE).items();
+    }
+
     @GetMapping("/{groupId}")
     public ResponseEntity<GroupDetailResponse> getGroup(
             @AuthenticationPrincipal AuthenticatedUserPrincipal principal,

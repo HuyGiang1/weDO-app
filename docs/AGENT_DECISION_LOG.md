@@ -363,3 +363,21 @@
 - **Decision**: Global Search has exactly `PEOPLE`, `GROUPS`, `ACTIVITIES`, and `CONVERSATIONS`. Queries are trimmed, length 2..100, case-insensitive PostgreSQL substring matches with accent-sensitive semantics and literal `%`/`_`. All mode returns up to five results per category with independent `hasMore`; typed mode uses page/size (0/20 defaults, size 1..50) and no totals. Typed projections contain no email, phone, storage key, signed URL, or internal permission. Each category inherits its existing domain visibility rules in the database query before pagination. A conversation hit is its newest visible matching textual message; hidden, UNSENT, outside-history, and empty image-only messages do not match. Opening a hit opens its conversation without message anchoring. No migration, text extension/index, or external search engine is added.
 - **Reason / Source**: User-approved M16 Phase B implementation contract; current V1-V12 schema and established user/group/activity/chat authorization.
 - **Consequences**: Search behavior is bounded and privacy-preserving under current domain rules. Ranking is deterministic (exact, prefix, substring; category-specific tie-breakers); Flutter debounces 300 ms, uses five-result All sections and typed size-20 pagination, and ignores stale responses.
+
+### DEC-M17-01 -- Bounded Home Read Model for Pass 1
+- **ID**: `DEC-M17-01`
+- **Milestone**: `M17`
+- **Date**: `2026-10-05`
+- **Status**: Implemented for Pass 1; subject to review
+- **Decision**: Use canonical `GET /api/v1/home` as one authenticated, bounded read model. Recent Groups reuse the existing active-membership group listing; Upcoming Activities require a future scheduled `PLANNING`/`CONFIRMED` Activity in an active group; Finance Summary derives from the existing Expense ledger rules with completed settlements; Actions Required initially includes unanswered future RSVP, open unvoted Poll, assigned incomplete Task due within seven days or overdue, and pending Settlement awaiting the caller. Limit sections to 5/5/4/8 rows respectively. Do not add a table or migration. Do not present ordinary notifications as required actions.
+- **Reason / Source**: M17 Pass 1's four-section scope, HOME-01, current group/activity/finance permissions, and current V1-V12 schema. The roadmap also lists Recent Updates, but the explicit Pass 1 brief fixes only four sections.
+- **Consequences**: Home has no mutation authority and does not create a second business workflow. Recent Updates and other potential action categories require a later M17 review.
+
+### DEC-M17-02 -- Home Recent Updates from the Notification Inbox
+- **ID**: `DEC-M17-02`
+- **Milestone**: `M17`
+- **Date**: `2026-10-05`
+- **Status**: Implemented; subject to closeout review
+- **Decision**: Populate Home Recent Updates from persisted, recipient-scoped Notification inbox records. Scan the newest 30, retain only records whose existing target resolver reports an actionable current-user destination, and show at most five in inbox order. Reuse the Notification DTO and target router for display/read/deep-link behavior; do not add a feed table or generate duplicate events.
+- **Reason / Source**: M17 Pass 2 requires cross-domain, privacy-preserving updates; the existing inbox already contains type, title/body, timestamp, read state, recipient and target context independently of push preferences.
+- **Consequences**: Revoked or otherwise inaccessible targets do not appear on Home. Home reflects events already emitted to the inbox; it does not promise a complete audit log or include older eligible records beyond the bounded scan window.

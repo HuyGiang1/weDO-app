@@ -64,6 +64,7 @@ import '../features/fund/presentation/fund_screens.dart';
 import '../features/notification/data/notification_api.dart';
 import '../features/notification/data/notification_repository.dart';
 import '../features/notification/presentation/notification_screens.dart';
+import '../features/notification/presentation/notification_target_router.dart';
 import '../features/calendar/data/calendar_api.dart';
 import '../features/calendar/data/calendar_repository.dart';
 import '../features/calendar/presentation/calendar_screen.dart';
@@ -73,6 +74,10 @@ import '../features/search/application/search_controller.dart'
 import '../features/search/data/search_api.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../features/profile/data/profile_repository.dart';
+import '../features/home/application/home_controller.dart';
+import '../features/home/data/home_models.dart';
+import '../features/home/data/home_repository.dart';
+import '../features/home/presentation/home_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -94,6 +99,8 @@ class ResetPasswordRouteArgs {
 }
 
 class ProfileRouteArgs {
+  final GroupRepository? groupRepository;
+  final SearchRouteArgs? searchArgs;
   final Future<CurrentUser> Function() loadCurrentUser;
   final Future<CurrentUser> Function(UpdateProfileRequest request)
   updateProfile;
@@ -114,6 +121,8 @@ class ProfileRouteArgs {
   final Future<void> Function()? logout;
 
   const ProfileRouteArgs({
+    this.groupRepository,
+    this.searchArgs,
     required this.loadCurrentUser,
     required this.updateProfile,
     this.uploadAvatar,
@@ -170,6 +179,12 @@ class GroupsRouteArgs {
   const GroupsRouteArgs({required this.repository, this.searchArgs});
 }
 
+class HomeRouteArgs {
+  final GroupRepository repository;
+  final SearchRouteArgs? searchArgs;
+  const HomeRouteArgs({required this.repository, this.searchArgs});
+}
+
 class SearchRouteArgs {
   final SearchRepository searchRepository;
   final ProfileRepository profileRepository;
@@ -187,10 +202,12 @@ class GroupInfoRouteArgs {
   final GroupRepository repository;
   final ChatRepository? chatRepository;
   final String groupId;
+  final SearchRouteArgs? searchArgs;
   const GroupInfoRouteArgs({
     required this.repository,
     required this.groupId,
     this.chatRepository,
+    this.searchArgs,
   });
 }
 
@@ -231,12 +248,18 @@ class ChatRequestsRouteArgs {
 class ChatHomeRouteArgs {
   final ChatRepository chatRepository;
   final GroupRepository groupRepository;
-  const ChatHomeRouteArgs(this.chatRepository, this.groupRepository);
+  final SearchRouteArgs? searchArgs;
+  const ChatHomeRouteArgs(
+    this.chatRepository,
+    this.groupRepository, {
+    this.searchArgs,
+  });
 }
 
 class CalendarRouteArgs {
   final GroupRepository groupRepository;
-  const CalendarRouteArgs(this.groupRepository);
+  final SearchRouteArgs? searchArgs;
+  const CalendarRouteArgs(this.groupRepository, {this.searchArgs});
 }
 
 class ActivityDetailRouteArgs {
@@ -290,6 +313,12 @@ final class AppRouteDefinition {
   const AppRouteDefinition({required this.access, required this.builder});
 }
 
+void _openTabRoot(BuildContext context, String route, {Object? arguments}) {
+  Navigator.of(
+    context,
+  ).pushNamedAndRemoveUntil(route, (previous) => false, arguments: arguments);
+}
+
 /// Application route definitions, registry, and Navigator 1.0 generator.
 abstract final class AppRoutes {
   static const String welcome = '/';
@@ -306,6 +335,7 @@ abstract final class AppRoutes {
   static const String personalQr = '/profile/qr';
   static const String publicUserProfile = '/users/profile';
   static const String groups = '/groups';
+  static const String home = '/home';
   static const String createGroup = '/groups/create';
   static const String groupInfo = '/groups/info';
   static const String groupActivityLog = '/groups/activity-log';
@@ -336,6 +366,133 @@ abstract final class AppRoutes {
   static const String search = '/search';
 
   static final Map<String, AppRouteDefinition> _routes = {
+    home: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! HomeRouteArgs) return null;
+        final dio = args.repository.api.dio;
+        final notificationRepository = NotificationRepository(
+          NotificationApi(dio),
+        );
+        final homeController = HomeController(HomeRepository(HomeApi(dio)));
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (context) => HomeScreen(
+            controller: homeController,
+            onOpenGroup: (id) => Navigator.of(context).pushNamed(
+              groupInfo,
+              arguments: GroupInfoRouteArgs(
+                repository: args.repository,
+                groupId: id,
+                searchArgs: args.searchArgs,
+              ),
+            ),
+            onOpenActivity: (id) => Navigator.of(context).pushNamed(
+              activityDetail,
+              arguments: ActivityDetailRouteArgs(
+                repository: ActivityRepository(api: ActivityApi(dio)),
+                activityId: id,
+              ),
+            ),
+            onOpenBalance: (id) => Navigator.of(context).pushNamed(
+              groupSettlements,
+              arguments: ExpenseRouteArgs(
+                repository: ExpenseRepository(ExpenseApi(dio)),
+                groupRepository: args.repository,
+                groupId: id,
+              ),
+            ),
+            onOpenAction: (action) {
+              if (action.type == HomeActionType.rsvpRequired) {
+                Navigator.of(context).pushNamed(
+                  activityDetail,
+                  arguments: ActivityDetailRouteArgs(
+                    repository: ActivityRepository(api: ActivityApi(dio)),
+                    activityId: action.targetId,
+                  ),
+                );
+                return;
+              }
+              final Widget detail = switch (action.type) {
+                HomeActionType.rsvpRequired => throw StateError(
+                  'Handled above',
+                ),
+                HomeActionType.pollVoteRequired => PollDetailScreen(
+                  pollId: action.targetId,
+                  repository: PollRepository(PollApi(dio)),
+                ),
+                HomeActionType.taskDue => TaskDetailScreen(
+                  taskId: action.targetId,
+                  repository: TaskRepository(TaskApi(dio)),
+                  loadMembers: () => args.repository.getMembers(action.groupId),
+                ),
+                HomeActionType.settlementConfirmation => SettlementDetailScreen(
+                  groupId: action.groupId,
+                  settlementId: action.targetId,
+                  repository: ExpenseRepository(ExpenseApi(dio)),
+                ),
+              };
+              Navigator.of(context)
+                  .push(MaterialPageRoute<void>(builder: (_) => detail));
+            },
+            onOpenUpdate: (update) async {
+              try {
+                final current = await notificationRepository.markReadForTap(
+                  update.notificationId,
+                );
+                if (!context.mounted) return;
+                await NotificationTargetRouter.open(
+                  context: context,
+                  item: current,
+                  groupRepository: args.repository,
+                );
+                if (context.mounted) await homeController.load();
+              } catch (_) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Không thể mở cập nhật này.')),
+                  );
+                }
+              }
+            },
+            onGroups: () => _openTabRoot(
+              context,
+              groups,
+              arguments: GroupsRouteArgs(
+                repository: args.repository,
+                searchArgs: args.searchArgs,
+              ),
+            ),
+            onChat: () => _openTabRoot(
+              context,
+              chatHome,
+              arguments: ChatHomeRouteArgs(
+                ChatRepository(ChatApi(dio)),
+                args.repository,
+                searchArgs: args.searchArgs,
+              ),
+            ),
+            onCalendar: () => _openTabRoot(
+              context,
+              calendar,
+              arguments: CalendarRouteArgs(
+                args.repository,
+                searchArgs: args.searchArgs,
+              ),
+            ),
+            onProfile: () => _openTabRoot(context, profile),
+            onNotifications: () => Navigator.of(context).pushNamed(
+              notifications,
+              arguments: NotificationRouteArgs(
+                repository: notificationRepository,
+                groupRepository: args.repository,
+              ),
+            ),
+          ),
+        );
+      },
+    ),
     welcome: AppRouteDefinition(
       access: AppRouteAccess.public,
       builder: (settings, coordinator) => MaterialPageRoute<void>(
@@ -504,7 +661,7 @@ abstract final class AppRoutes {
         final loader = settings.arguments;
         if (loader is! ProfileRouteArgs) return null;
         return MaterialPageRoute<void>(
-          builder: (_) => ProfileScreen(
+          builder: (context) => ProfileScreen(
             loadCurrentUser: loader.loadCurrentUser,
             updateProfile: loader.updateProfile,
             uploadAvatar: loader.uploadAvatar,
@@ -512,6 +669,47 @@ abstract final class AppRoutes {
             changePassword: loader.changePassword,
             endSessionAfterPasswordChange: loader.endSessionAfterPasswordChange,
             logout: loader.logout,
+            onHome: loader.groupRepository == null
+                ? null
+                : () => _openTabRoot(
+                    context,
+                    home,
+                    arguments: HomeRouteArgs(
+                      repository: loader.groupRepository!,
+                      searchArgs: loader.searchArgs,
+                    ),
+                  ),
+            onGroups: loader.groupRepository == null
+                ? null
+                : () => _openTabRoot(
+                    context,
+                    groups,
+                    arguments: GroupsRouteArgs(
+                      repository: loader.groupRepository!,
+                      searchArgs: loader.searchArgs,
+                    ),
+                  ),
+            onChat: loader.groupRepository == null
+                ? null
+                : () => _openTabRoot(
+                    context,
+                    chatHome,
+                    arguments: ChatHomeRouteArgs(
+                      ChatRepository(ChatApi(loader.groupRepository!.api.dio)),
+                      loader.groupRepository!,
+                      searchArgs: loader.searchArgs,
+                    ),
+                  ),
+            onCalendar: loader.groupRepository == null
+                ? null
+                : () => _openTabRoot(
+                    context,
+                    calendar,
+                    arguments: CalendarRouteArgs(
+                      loader.groupRepository!,
+                      searchArgs: loader.searchArgs,
+                    ),
+                  ),
           ),
           settings: settings,
         );
@@ -615,6 +813,15 @@ abstract final class AppRoutes {
             final groupsController = GroupsController(args.repository);
             return MyGroupsScreen(
               controller: groupsController,
+              onHome: () => _openTabRoot(
+                context,
+                home,
+                arguments: HomeRouteArgs(
+                  repository: args.repository,
+                  searchArgs: args.searchArgs,
+                ),
+              ),
+              onProfile: () => _openTabRoot(context, profile),
               onCreate: () =>
                   Navigator.of(context).pushNamed(createGroup, arguments: args),
               onSearch: args.searchArgs == null
@@ -628,6 +835,7 @@ abstract final class AppRoutes {
                     arguments: GroupInfoRouteArgs(
                       repository: args.repository,
                       groupId: id,
+                      searchArgs: args.searchArgs,
                     ),
                   )
                   .whenComplete(groupsController.refresh),
@@ -654,16 +862,22 @@ abstract final class AppRoutes {
                   groupRepository: args.repository,
                 ),
               ),
-              onChat: () => Navigator.of(context).pushNamed(
+              onChat: () => _openTabRoot(
+                context,
                 chatHome,
                 arguments: ChatHomeRouteArgs(
                   ChatRepository(ChatApi(args.repository.api.dio)),
                   args.repository,
+                  searchArgs: args.searchArgs,
                 ),
               ),
-              onCalendar: () => Navigator.of(context).pushNamed(
+              onCalendar: () => _openTabRoot(
+                context,
                 calendar,
-                arguments: CalendarRouteArgs(args.repository),
+                arguments: CalendarRouteArgs(
+                  args.repository,
+                  searchArgs: args.searchArgs,
+                ),
               ),
             );
           },
@@ -692,6 +906,7 @@ abstract final class AppRoutes {
                 repository: args.groupRepository,
                 groupId: group.id,
                 chatRepository: chatRepo,
+                searchArgs: args,
               ),
             ),
             onOpenActivity: (activity) => Navigator.of(context).pushNamed(
@@ -752,6 +967,7 @@ abstract final class AppRoutes {
               arguments: GroupInfoRouteArgs(
                 repository: args.repository,
                 groupId: detail.id,
+                searchArgs: args.searchArgs,
               ),
             ),
           ),
@@ -772,6 +988,23 @@ abstract final class AppRoutes {
             return GroupInfoScreen(
               groupId: args.groupId,
               controller: detail,
+              onHome: () => _openTabRoot(
+                context,
+                home,
+                arguments: HomeRouteArgs(
+                  repository: args.repository,
+                  searchArgs: args.searchArgs,
+                ),
+              ),
+              onGroups: () => _openTabRoot(
+                context,
+                groups,
+                arguments: GroupsRouteArgs(
+                  repository: args.repository,
+                  searchArgs: args.searchArgs,
+                ),
+              ),
+              onProfile: () => _openTabRoot(context, profile),
               onEdit: () =>
                   Navigator.of(context)
                       .pushNamed(editGroup, arguments: args)
@@ -796,9 +1029,13 @@ abstract final class AppRoutes {
                   groupId: args.groupId,
                 ),
               ),
-              onCalendar: () => Navigator.of(context).pushNamed(
+              onCalendar: () => _openTabRoot(
+                context,
                 calendar,
-                arguments: CalendarRouteArgs(args.repository),
+                arguments: CalendarRouteArgs(
+                  args.repository,
+                  searchArgs: args.searchArgs,
+                ),
               ),
               onExpenses: () => Navigator.of(context).pushNamed(
                 groupExpenses,
@@ -840,12 +1077,14 @@ abstract final class AppRoutes {
                   groupName: detail.value.detail?.name ?? 'Nhóm WeDo',
                 ),
               ),
-              onChatHome: () => Navigator.of(context).pushNamed(
+              onChatHome: () => _openTabRoot(
+                context,
                 chatHome,
                 arguments: ChatHomeRouteArgs(
                   args.chatRepository ??
                       ChatRepository(ChatApi(args.repository.api.dio)),
                   args.repository,
+                  searchArgs: args.searchArgs,
                 ),
               ),
               onChat: () => Navigator.of(context).pushNamed(
@@ -1074,14 +1313,30 @@ abstract final class AppRoutes {
           settings: settings,
           builder: (context) => ChatHomeScreen(
             repository: args.chatRepository,
-            onCalendar: () => Navigator.of(context).pushNamed(
-              calendar,
-              arguments: CalendarRouteArgs(args.groupRepository),
+            onHome: () => _openTabRoot(
+              context,
+              home,
+              arguments: HomeRouteArgs(
+                repository: args.groupRepository,
+                searchArgs: args.searchArgs,
+              ),
             ),
-            onProfile: () => Navigator.of(context).pushNamed(profile),
-            onGroups: () => Navigator.of(context).pushReplacementNamed(
+            onCalendar: () => _openTabRoot(
+              context,
+              calendar,
+              arguments: CalendarRouteArgs(
+                args.groupRepository,
+                searchArgs: args.searchArgs,
+              ),
+            ),
+            onProfile: () => _openTabRoot(context, profile),
+            onGroups: () => _openTabRoot(
+              context,
               groups,
-              arguments: GroupsRouteArgs(repository: args.groupRepository),
+              arguments: GroupsRouteArgs(
+                repository: args.groupRepository,
+                searchArgs: args.searchArgs,
+              ),
             ),
             onOpenConversation: (conversation) =>
                 Navigator.of(context).pushNamed(
@@ -1111,6 +1366,14 @@ abstract final class AppRoutes {
               CalendarApi(args.groupRepository.api.dio),
             ),
             groups: args.groupRepository,
+            onHome: () => _openTabRoot(
+              context,
+              home,
+              arguments: HomeRouteArgs(
+                repository: args.groupRepository,
+                searchArgs: args.searchArgs,
+              ),
+            ),
             onOpenActivity: (id) => Navigator.of(context).pushNamed(
               activityDetail,
               arguments: ActivityDetailRouteArgs(
@@ -1118,18 +1381,24 @@ abstract final class AppRoutes {
                 activityId: id,
               ),
             ),
-            onGroups: () => Navigator.of(context).pushReplacementNamed(
+            onGroups: () => _openTabRoot(
+              context,
               groups,
-              arguments: GroupsRouteArgs(repository: args.groupRepository),
+              arguments: GroupsRouteArgs(
+                repository: args.groupRepository,
+                searchArgs: args.searchArgs,
+              ),
             ),
-            onChat: () => Navigator.of(context).pushReplacementNamed(
+            onChat: () => _openTabRoot(
+              context,
               chatHome,
               arguments: ChatHomeRouteArgs(
                 ChatRepository(ChatApi(args.groupRepository.api.dio)),
                 args.groupRepository,
+                searchArgs: args.searchArgs,
               ),
             ),
-            onProfile: () => Navigator.of(context).pushNamed(profile),
+            onProfile: () => _openTabRoot(context, profile),
           ),
         );
       },

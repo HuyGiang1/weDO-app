@@ -360,9 +360,17 @@ public class FundService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public CollectionDetailResponse getCollectionDetail(UUID collectionId, UUID callerUserId) {
+        return getCollectionDetail(collectionId, callerUserId, null);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public CollectionDetailResponse getCollectionDetail(UUID collectionId, UUID callerUserId, UUID expectedFundId) {
         CollectionRow collection = requireCollectionRow(collectionId);
         FundRow fund = requireFundRow(collection.fundId());
         ReadableGroupAccess access = groupPermissions.requireReadableMembership(fund.groupId(), callerUserId);
+        if (expectedFundId != null && !fund.id().equals(expectedFundId)) {
+            throw new BusinessException(ErrorCode.FUND_COLLECTION_NOT_FOUND);
+        }
         cleanupStaleManagers(fund.id(), fund.groupId());
         return buildCollectionDetailResponse(fund, collection, access, callerUserId);
     }
@@ -1057,9 +1065,26 @@ public class FundService {
             return List.of();
         }
 
+        String marks = String.join(",", java.util.Collections.nCopies(rows.size(), "?"));
+        Object[] collectionIds = rows.stream().map(CollectionRow::id).toArray();
+        Map<UUID, List<ObligationRow>> obligations = jdbc.query(
+                "SELECT * FROM fund_collection_obligations WHERE collection_id IN (" + marks + ") ORDER BY created_at ASC,id ASC",
+                OBLIGATION_ROW, collectionIds).stream().collect(java.util.stream.Collectors.groupingBy(ObligationRow::collectionId));
+        Map<UUID, List<ContributionRow>> contributions = jdbc.query(
+                "SELECT * FROM fund_contributions WHERE collection_id IN (" + marks + ") ORDER BY created_at DESC,id DESC",
+                CONTRIBUTION_ROW, collectionIds).stream().collect(java.util.stream.Collectors.groupingBy(ContributionRow::collectionId));
+        Set<UUID> reversed = loadReversedContributionIds(fund.id());
+        Set<UUID> userIds = new LinkedHashSet<>();
+        rows.forEach(row -> userIds.add(row.createdBy()));
+        obligations.values().forEach(list -> list.forEach(o -> userIds.add(o.userId())));
+        contributions.values().forEach(list -> list.forEach(c -> { userIds.add(c.userId()); userIds.add(c.confirmedBy()); }));
+        Map<UUID, FundUserSummary> users = loadUserSummaries(fund.groupId(), userIds);
+        boolean canManage = canManageFund(fund.id(), access, callerUserId);
         List<CollectionSummaryResponse> result = new ArrayList<>(rows.size());
         for (CollectionRow row : rows) {
-            CollectionDetailResponse detail = buildCollectionDetailResponse(fund, row, access, callerUserId);
+            CollectionDetailResponse detail = buildCollectionDetailResponse(fund, row, access, callerUserId,
+                    obligations.getOrDefault(row.id(), List.of()), contributions.getOrDefault(row.id(), List.of()),
+                    reversed, users, canManage);
             CollectionObligationResponse myOb = detail.obligations().stream()
                     .filter(o -> o.user().userId().equals(callerUserId))
                     .findFirst()
@@ -1129,6 +1154,16 @@ public class FundService {
         }
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), userIds);
 
+        return buildCollectionDetailResponse(fund, collection, access, callerUserId, obligationRows,
+                contributionRows, reversedContributionIds, userMap, canManageFund(fund.id(), access, callerUserId));
+    }
+
+    private CollectionDetailResponse buildCollectionDetailResponse(
+            FundRow fund, CollectionRow collection, ReadableGroupAccess access, UUID callerUserId,
+            List<ObligationRow> obligationRows, List<ContributionRow> contributionRows,
+            Set<UUID> reversedContributionIds, Map<UUID, FundUserSummary> userMap, boolean callerCanManage
+    ) {
+
         Map<UUID, BigDecimal> confirmedByUser = new HashMap<>();
         Map<UUID, BigDecimal> pendingByUser = new HashMap<>();
         int pendingCount = 0;
@@ -1188,7 +1223,6 @@ public class FundService {
             totalRemaining = totalRemaining.add(remaining);
         }
 
-        boolean callerCanManage = canManageFund(fund.id(), access, callerUserId);
         boolean mutable = access.group().getStatus() == GroupStatus.ACTIVE && "ACTIVE".equals(fund.status());
         boolean collectionOpen = "OPEN".equals(collection.status());
         boolean canManageCollection = callerCanManage && mutable && collectionOpen;

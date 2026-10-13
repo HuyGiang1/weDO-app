@@ -14,10 +14,6 @@ public class LocalEmailVerificationLogger {
 
     @TransactionalEventListener
     public void handle(EmailVerificationRequestedEvent event) {
-        log.warn(
-                "LOCAL EMAIL VERIFICATION | email={} | code={} | userId={}",
-                event.email(),
-                event.rawCode(),
-                event.userId());
+        log.info("LOCAL EMAIL VERIFICATION REQUESTED | userId={}", event.userId());
     }
 }

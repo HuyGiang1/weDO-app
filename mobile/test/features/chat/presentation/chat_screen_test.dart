@@ -22,6 +22,72 @@ import 'package:mobile/features/groups/presentation/widgets/group_widgets.dart';
 import 'package:mobile/features/social/presentation/widgets/user_avatar.dart';
 
 void main() {
+  testWidgets(
+    'reconnect walks past one page and merges REST realtime overlap',
+    (tester) async {
+      final realtime = _FakeRealtimeClient();
+      addTearDown(realtime.dispose);
+      final messages = [
+        _message(
+          id: 'm1',
+          sequence: 1,
+          authorId: 'peer',
+          name: 'Peer',
+          content: 'Anchor',
+          mine: false,
+        ),
+      ];
+      final adapter = _ChatScreenAdapter(messages: messages);
+      await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
+      await tester.pumpAndSettle();
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'CONNECTED',
+          'eventId': 'connect-1',
+        }),
+      );
+      await tester.pumpAndSettle();
+      for (var sequence = 2; sequence <= 105; sequence++) {
+        messages.add(
+          _message(
+            id: 'm$sequence',
+            sequence: sequence,
+            authorId: 'peer',
+            name: 'Peer',
+            content: 'Recovered $sequence',
+            mine: false,
+          ),
+        );
+      }
+      final overlap = ChatRealtimeEvent.fromJson({
+        'type': 'MESSAGE_CREATED',
+        'eventId': 'overlap',
+        'conversationId': 'conversation-1',
+        'message': messages.last,
+      });
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'CONNECTED',
+          'eventId': 'connect-2',
+        }),
+      );
+      realtime.emit(overlap);
+      realtime.emit(overlap);
+      await tester.pumpAndSettle();
+      expect(adapter.historyCursors, [null, null, 6]);
+      expect(find.text('Anchor'), findsOneWidget);
+      expect(find.text('Recovered 2'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('chat-item-m105')),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Recovered 105'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('group chat loads and sends authoritative REST response', (
     tester,
   ) async {
@@ -122,30 +188,31 @@ void main() {
     expect(adapter.sentBody?['attachmentStorageKeys'], isNotEmpty);
   });
 
-  testWidgets('pending message request allows text but hides image attachment', (
-    tester,
-  ) async {
-    final adapter = _ChatScreenAdapter();
-    final pending = ChatConversation.fromJson({
-      'id': 'conversation-1',
-      'type': 'DIRECT',
-      'accessStatus': 'REQUEST_PENDING',
-      'lastSequence': 0,
-      'unreadCount': 0,
-      'permissions': _permissions(),
-    });
-    await tester.pumpWidget(_app(adapter, initialConversation: pending));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'pending message request allows text but hides image attachment',
+    (tester) async {
+      final adapter = _ChatScreenAdapter();
+      final pending = ChatConversation.fromJson({
+        'id': 'conversation-1',
+        'type': 'DIRECT',
+        'accessStatus': 'REQUEST_PENDING',
+        'lastSequence': 0,
+        'unreadCount': 0,
+        'permissions': _permissions(),
+      });
+      await tester.pumpWidget(_app(adapter, initialConversation: pending));
+      await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Attach image'), findsNothing);
-    await tester.enterText(find.byType(TextField), 'Text request');
-    await tester.pump();
-    expect(_sendButton(tester).onPressed, isNotNull);
-    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
-    await tester.pumpAndSettle();
-    expect(adapter.sentBody?['content'], 'Text request');
-    expect(adapter.sentBody?.containsKey('attachmentStorageKeys'), isFalse);
-  });
+      expect(find.byTooltip('Attach image'), findsNothing);
+      await tester.enterText(find.byType(TextField), 'Text request');
+      await tester.pump();
+      expect(_sendButton(tester).onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+      await tester.pumpAndSettle();
+      expect(adapter.sentBody?['content'], 'Text request');
+      expect(adapter.sentBody?.containsKey('attachmentStorageKeys'), isFalse);
+    },
+  );
 
   testWidgets('accepted direct chat offers image attachment', (tester) async {
     final adapter = _ChatScreenAdapter();
@@ -1252,6 +1319,7 @@ class _FakeRealtimeClient implements ChatRealtimeClient {
 }
 
 class _ChatScreenAdapter implements HttpClientAdapter {
+  final List<int?> historyCursors = [];
   final List<Map<String, dynamic>> messages;
   final List<Map<String, Object?>> readers;
   final String? groupAvatarStorageKey;
@@ -1294,12 +1362,23 @@ class _ChatScreenAdapter implements HttpClientAdapter {
         'permissions': _permissions(),
       };
     } else if (options.path.endsWith('/messages') && options.method == 'GET') {
+      final cursor = options.queryParameters['beforeSequence'] as int?;
+      historyCursors.add(cursor);
+      final limit = options.queryParameters['limit'] as int? ?? 30;
+      final candidates = messages
+          .where((m) => cursor == null || (m['sequence'] as int) < cursor)
+          .toList();
+      final page = candidates.length > limit
+          ? candidates.sublist(candidates.length - limit)
+          : candidates;
       body = {
         'conversationId': 'conversation-1',
-        'messages': messages,
+        'messages': page,
         'readers': readers,
-        'nextBeforeSequence': null,
-        'hasMore': false,
+        'nextBeforeSequence': candidates.length > limit
+            ? page.first['sequence']
+            : null,
+        'hasMore': candidates.length > limit,
       };
     } else if (options.path.endsWith('/read-state')) {
       status = 204;

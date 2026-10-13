@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -20,6 +21,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.web.servlet.MockMvc;
 
 import javax.crypto.SecretKey;
@@ -56,6 +58,14 @@ class SecurityConfigTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private RestAccessDeniedHandler accessDeniedHandler;
+
+    @Autowired
+    private ApplicationContext applicationContext;
+
+    @Test
+    void jwtOnlyApplicationDoesNotCreateOrLogADefaultPasswordUser() {
+        assertThat(applicationContext.getBeansOfType(UserDetailsService.class)).isEmpty();
+    }
 
     @Value("${security.jwt.secret-base64}")
     private String secretBase64;

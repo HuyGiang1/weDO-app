@@ -25,12 +25,18 @@ import com.wedo.backend.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.stream.LongStream;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+@SpringBootTest
 class ChatServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired ChatService chat;
     @Autowired UserRepository users;
@@ -40,6 +46,64 @@ class ChatServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired BlockService blockService;
     @Autowired JdbcTemplate jdbc;
     @Autowired InMemoryObjectStorageService objectStorage;
+    @Autowired com.wedo.backend.common.event.PostCommitDelivery delivery;
+
+    @Test
+    void listProjectionPreservesUnreadRequestPeerAndArchivedPermissions() {
+        Fixture f = fixture();
+        UUID groupConversation = chat.openGroup(f.groupId(),f.owner()).id();
+        chat.send(groupConversation,f.member(),new ChatRequests.SendMessage("List projection",null));
+        var listed = chat.list(f.owner()).stream().filter(c -> c.id().equals(groupConversation)).findFirst().orElseThrow();
+        assertEquals(1,listed.unreadCount());
+        chat.read(groupConversation,f.owner(),1);
+        assertEquals(0,chat.list(f.owner()).stream().filter(c -> c.id().equals(groupConversation)).findFirst().orElseThrow().unreadCount());
+        var direct = chat.openDirect(f.owner(),f.outsider()).conversation();
+        var senderView = chat.list(f.owner()).stream().filter(c -> c.id().equals(direct.id())).findFirst().orElseThrow();
+        assertEquals(direct,senderView);
+        assertEquals("REQUEST_PENDING",senderView.accessStatus());
+        var receiverView = chat.list(f.outsider()).stream().filter(c -> c.id().equals(direct.id())).findFirst().orElseThrow();
+        assertEquals("REQUEST_RECEIVED",receiverView.accessStatus());
+        assertEquals(f.owner(),receiverView.peer().id());
+        assertTrue(receiverView.permissions().readOnly());
+        assertTrue(chat.list(f.outsider()).stream().noneMatch(c -> c.id().equals(groupConversation)));
+        jdbc.update("UPDATE groups SET status='ARCHIVED' WHERE id=?",f.groupId());
+        assertTrue(chat.list(f.owner()).stream().filter(c -> c.id().equals(groupConversation)).findFirst().orElseThrow().permissions().readOnly());
+    }
+
+    @Test
+    void concurrentMessagesHaveUniqueContiguousDurableSequences() throws Exception {
+        Fixture f = fixture();
+        UUID conversationId = chat.openGroup(f.groupId(), f.owner()).id();
+        int count = 20;
+        CountDownLatch ready = new CountDownLatch(count);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(count)) {
+            List<Future<ChatResponses.Message>> futures = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                int index = i;
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    assertTrue(start.await(10, TimeUnit.SECONDS));
+                    return chat.send(conversationId, index % 2 == 0 ? f.owner() : f.member(),
+                            new ChatRequests.SendMessage("Concurrent " + index, null));
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            for (Future<ChatResponses.Message> future : futures) future.get(30, TimeUnit.SECONDS);
+        }
+        List<Long> sequences = jdbc.queryForList(
+                "SELECT sequence FROM messages WHERE conversation_id=? ORDER BY sequence", Long.class, conversationId);
+        assertEquals(LongStream.rangeClosed(1, count).boxed().toList(), sequences);
+        assertEquals(count, jdbc.queryForObject(
+                "SELECT count(DISTINCT id) FROM messages WHERE conversation_id=?", Integer.class, conversationId));
+        assertEquals((long) count, jdbc.queryForObject(
+                "SELECT current_sequence FROM conversation_sequences WHERE conversation_id=?", Long.class, conversationId));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(20)).until(delivery::isIdle);
+        assertEquals(count, jdbc.queryForObject(
+                "SELECT count(*) FROM notifications WHERE data->>'conversationId'=? AND category='CHAT'",
+                Integer.class, conversationId.toString()));
+    }
 
     @Test
     void imageMessagePersistsOrderedAttachmentsAndPrivateVisibility() {

@@ -51,6 +51,8 @@ class ActivityRsvpConcurrencyIntegrationTest extends AbstractPostgresIntegration
 
         assertTrue(outcomes.stream().allMatch(value -> value == null), outcomes::toString);
         List<ActivityParticipantEntity> state = participants.findProjectionByActivityId(fixture.activityId());
+        assertEquals(2, state.size());
+        assertEquals(2, state.stream().map(ActivityParticipantEntity::getUserId).distinct().count());
         assertEquals(1, state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.GOING).count());
         assertEquals(1, state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.WAITLIST).count());
         assertEquals(1, state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.WAITLIST && p.getWaitlistSequence() != null).count());
@@ -85,6 +87,50 @@ class ActivityRsvpConcurrencyIntegrationTest extends AbstractPostgresIntegration
     }
 
     private List<Throwable> concurrentlyGoing(UUID activityId, List<UUID> users) throws Exception {
+        return concurrentlyRsvp(activityId, users, ActivityRsvpStatus.GOING);
+    }
+
+    @Test
+    void concurrentTwoSlotReleasePromotesOnlyTheFirstTwoWaiters() throws Exception {
+        Fixture fixture = fixture(2, 6);
+        List<UUID> leaving = fixture.memberIds().subList(0, 2);
+        for (UUID user : fixture.memberIds()) {
+            rsvp.changeRsvp(fixture.activityId(), user, new ChangeRsvpRequest(ActivityRsvpStatus.GOING));
+        }
+        assertTrue(concurrentlyRsvp(fixture.activityId(), leaving, ActivityRsvpStatus.MAYBE)
+                .stream().allMatch(value -> value == null));
+        List<ActivityParticipantEntity> state = participants.findProjectionByActivityId(fixture.activityId());
+        assertEquals(6, state.size());
+        assertEquals(6, state.stream().map(ActivityParticipantEntity::getUserId).distinct().count());
+        assertEquals(2, state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.GOING).count());
+        assertEquals(fixture.memberIds().subList(2, 4).stream().sorted().toList(), state.stream()
+                .filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.GOING)
+                .map(ActivityParticipantEntity::getUserId).sorted().toList(),
+                "FIFO promotion preserves the first two queued users");
+        assertEquals(List.of(3L, 4L), state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.WAITLIST)
+                .map(ActivityParticipantEntity::getWaitlistSequence).sorted().toList());
+        assertEquals(10, historyCount(fixture.activityId()));
+    }
+
+    @Test
+    void duplicateConcurrentLeaveReleasesOnlyOneSlotAndPromotesOnce() throws Exception {
+        Fixture fixture = fixture(1, 4);
+        for (UUID user : fixture.memberIds()) {
+            rsvp.changeRsvp(fixture.activityId(), user, new ChangeRsvpRequest(ActivityRsvpStatus.GOING));
+        }
+        UUID leaving = fixture.memberIds().getFirst();
+        assertTrue(concurrentlyRsvp(fixture.activityId(), List.of(leaving, leaving), ActivityRsvpStatus.MAYBE)
+                .stream().allMatch(value -> value == null));
+        List<ActivityParticipantEntity> state = participants.findProjectionByActivityId(fixture.activityId());
+        assertEquals(1, state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.GOING).count());
+        assertEquals(fixture.memberIds().get(1), state.stream()
+                .filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.GOING).findFirst().orElseThrow().getUserId());
+        assertEquals(List.of(2L, 3L), state.stream().filter(p -> p.getRsvpStatus() == ActivityRsvpStatus.WAITLIST)
+                .map(ActivityParticipantEntity::getWaitlistSequence).sorted().toList());
+        assertEquals(6, historyCount(fixture.activityId()));
+    }
+
+    private List<Throwable> concurrentlyRsvp(UUID activityId, List<UUID> users, ActivityRsvpStatus status) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(users.size());
         CountDownLatch ready = new CountDownLatch(users.size());
         CountDownLatch start = new CountDownLatch(1);
@@ -92,7 +138,7 @@ class ActivityRsvpConcurrencyIntegrationTest extends AbstractPostgresIntegration
             List<Future<Throwable>> futures = new ArrayList<>();
             for (UUID userId : users) futures.add(pool.submit(() -> {
                 ready.countDown(); start.await();
-                try { rsvp.changeRsvp(activityId, userId, new ChangeRsvpRequest(ActivityRsvpStatus.GOING)); return null; }
+                try { rsvp.changeRsvp(activityId, userId, new ChangeRsvpRequest(status)); return null; }
                 catch (Throwable throwable) { return throwable; }
             }));
             assertTrue(ready.await(10, TimeUnit.SECONDS)); start.countDown();

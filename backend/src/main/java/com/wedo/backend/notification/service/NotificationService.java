@@ -7,6 +7,7 @@ import com.wedo.backend.chat.realtime.ChatRealtimeEvents;
 import com.wedo.backend.common.dto.PagedResponse;
 import com.wedo.backend.common.error.BusinessException;
 import com.wedo.backend.common.error.ErrorCode;
+import com.wedo.backend.common.event.PostCommitDelivery;
 import com.wedo.backend.group.service.GroupPermissionService;
 import com.wedo.backend.notification.dto.NotificationDtos.GroupNotificationSettingsResponse;
 import com.wedo.backend.notification.dto.NotificationDtos.MarkAllReadResponse;
@@ -27,6 +28,7 @@ import com.wedo.backend.notification.push.PushGateway.PushDeliveryResult;
 import com.wedo.backend.notification.push.PushGateway.PushDeliveryStatus;
 import com.wedo.backend.notification.push.PushGateway.PushMessage;
 import com.wedo.backend.notification.repository.UserNotificationSettingsRepository;
+import com.wedo.backend.user.service.UserService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -55,6 +57,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Service
 public class NotificationService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NotificationService.class);
 
     public static final Set<String> VALID_CATEGORIES = Set.of(
             "SOCIAL", "GROUP", "CHAT", "ACTIVITY", "POLL", "TASK", "FINANCE", "FUND"
@@ -65,30 +68,36 @@ public class NotificationService {
     private final JdbcTemplate jdbc;
     private final UserNotificationSettingsRepository userSettingsRepository;
     private final GroupPermissionService groupPermissionService;
+    private final UserService userService;
     private final ChatRealtimeCoordinator chatRealtimeCoordinator;
     private final PushGateway pushGateway;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final TransactionTemplate requiresNewTx;
+    private final PostCommitDelivery delivery;
 
 
     public NotificationService(
             JdbcTemplate jdbc,
             UserNotificationSettingsRepository userSettingsRepository,
             GroupPermissionService groupPermissionService,
+            UserService userService,
             ChatRealtimeCoordinator chatRealtimeCoordinator,
             PushGateway pushGateway,
             ObjectMapper objectMapper,
             Clock clock,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            PostCommitDelivery delivery
     ) {
         this.jdbc = jdbc;
         this.userSettingsRepository = userSettingsRepository;
         this.groupPermissionService = groupPermissionService;
+        this.userService = userService;
         this.chatRealtimeCoordinator = chatRealtimeCoordinator;
         this.pushGateway = pushGateway;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.delivery = delivery;
         this.requiresNewTx = new TransactionTemplate(transactionManager);
         this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -99,6 +108,7 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public PagedResponse<NotificationItemResponse> listNotifications(UUID userId, int page, int size) {
+        userService.requireActiveUser(userId);
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(100, size));
         long total = queryTotalCount(userId);
@@ -121,14 +131,16 @@ public class NotificationService {
                 safeSize,
                 (long) safePage * safeSize
         );
+        TargetBatch targets = loadTargetBatch(rows, userId);
         List<NotificationItemResponse> items = rows.stream()
-                .map(row -> toNotificationItemResponse(row, userId))
+                .map(row -> toNotificationItemResponse(row, userId, targets))
                 .toList();
         return PagedResponse.from(new PageImpl<>(items, PageRequest.of(safePage, safeSize), total), items);
     }
 
     @Transactional(readOnly = true)
     public UnreadCountResponse getUnreadCount(UUID userId) {
+        userService.requireActiveUser(userId);
         Long count = jdbc.queryForObject(
                 "SELECT count(*) FROM notifications WHERE user_id = ? AND read_at IS NULL",
                 Long.class,
@@ -139,6 +151,7 @@ public class NotificationService {
 
     @Transactional
     public NotificationItemResponse markRead(UUID notificationId, UUID userId) {
+        userService.requireActiveUser(userId);
         List<NotificationRow> rows = jdbc.query("""
                 SELECT n.*,
                        u.display_name AS actor_display_name,
@@ -173,6 +186,7 @@ public class NotificationService {
 
     @Transactional
     public MarkAllReadResponse markAllRead(UUID userId) {
+        userService.requireActiveUser(userId);
         Instant now = clock.instant();
         int marked = jdbc.update(
                 "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
@@ -189,6 +203,7 @@ public class NotificationService {
 
     @Transactional
     public UserNotificationSettingsResponse getUserSettings(UUID userId) {
+        userService.requireActiveUser(userId);
         UserNotificationSettingsEntity entity = getOrCreateUserSettings(userId);
         return toUserSettingsResponse(entity);
     }
@@ -198,6 +213,7 @@ public class NotificationService {
             UUID userId,
             UpdateUserNotificationSettingsRequest request
     ) {
+        userService.requireActiveUser(userId);
         UserNotificationSettingsEntity entity = getOrCreateUserSettings(userId);
         if (request != null) {
             if (request.pushEnabled() != null) entity.setPushEnabled(request.pushEnabled());
@@ -375,6 +391,7 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public List<UserDeviceResponse> listDevices(UUID userId) {
+        userService.requireActiveUser(userId);
         return jdbc.query("""
                 SELECT id, user_id, device_id, platform, push_token, active, last_seen_at, updated_at
                 FROM user_devices
@@ -388,6 +405,7 @@ public class NotificationService {
 
     @Transactional
     public UserDeviceResponse registerDevice(UUID userId, RegisterDeviceRequest request) {
+        userService.requireActiveUser(userId);
         if (request == null
                 || request.deviceId() == null || request.deviceId().isBlank()
                 || request.platform() == null || request.platform().isBlank()
@@ -452,6 +470,7 @@ public class NotificationService {
 
     @Transactional
     public void deactivateDevice(UUID userId, String deviceId) {
+        userService.requireActiveUser(userId);
         if (deviceId == null || deviceId.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "deviceId is required.");
         }
@@ -511,10 +530,11 @@ public class NotificationService {
                         occurredAt
                 ));
                 if (plan != null && "ELIGIBLE".equals(plan.pushDecision()) && !plan.devices().isEmpty()) {
-                    dispatchPushMessagesSafely(plan);
+                    delivery.submitPush(plan.notificationId(), () -> dispatchPushMessagesSafely(plan));
                 }
-            } catch (RuntimeException ignored) {
-                // Push or notification failure must NEVER roll back or break the originating business transaction.
+            } catch (RuntimeException ex) {
+                log.warn("Inbox delivery failed target={} recipient={} failure={}",
+                        event.targetId(), recipientId, ex.getClass().getSimpleName());
             }
         }
     }
@@ -558,7 +578,7 @@ public class NotificationService {
                 @Override
                 public void afterCommit() {
                     if ("ELIGIBLE".equals(plan.pushDecision()) && !plan.devices().isEmpty()) {
-                        dispatchPushMessagesSafely(plan);
+                        delivery.submitPush(plan.notificationId(), () -> dispatchPushMessagesSafely(plan));
                     }
                 }
             });
@@ -604,8 +624,8 @@ public class NotificationService {
                 );
                 processDomainEvent(domainEvent);
             }
-        } catch (RuntimeException ignored) {
-            // Never fail chat transaction
+        } catch (RuntimeException ex) {
+            log.warn("Chat inbox delivery failed message={} failure={}", chatEvent.messageId(), ex.getClass().getSimpleName());
         }
     }
 
@@ -768,6 +788,7 @@ public class NotificationService {
                 );
                 PushDeliveryResult result = pushGateway.sendPush(message);
                 if (result != null && result.status() == PushDeliveryStatus.INVALID_TOKEN) {
+                    log.warn("Push token invalid notification={} device={}", plan.notificationId(), device.id());
                     deactivatePushToken(device.pushToken());
                 } else if (result != null && result.status() == PushDeliveryStatus.GATEWAY_ACCEPTED) {
                     anyGatewayAccepted = true;
@@ -775,9 +796,12 @@ public class NotificationService {
                     externalConfigBlocked = true;
                 } else {
                     anyProviderFailure = true;
+                    log.warn("Push provider failed notification={} device={}", plan.notificationId(), device.id());
                 }
             } catch (RuntimeException ex) {
                 anyProviderFailure = true;
+                log.warn("Push delivery failed notification={} device={} failure={}",
+                        plan.notificationId(), device.id(), ex.getClass().getSimpleName());
             }
         }
 
@@ -793,8 +817,8 @@ public class NotificationService {
                     finalDecision,
                     plan.notificationId()
             ));
-        } catch (RuntimeException ignored) {
-            // Preserve persisted inbox row even if metadata update fails
+        } catch (RuntimeException ex) {
+            log.warn("Push metadata update failed notification={} failure={}", plan.notificationId(), ex.getClass().getSimpleName());
         }
     }
 
@@ -803,6 +827,10 @@ public class NotificationService {
     // =========================================================================
 
     private NotificationItemResponse toNotificationItemResponse(NotificationRow row, UUID viewerUserId) {
+        return toNotificationItemResponse(row, viewerUserId, loadTargetBatch(List.of(row), viewerUserId));
+    }
+
+    private NotificationItemResponse toNotificationItemResponse(NotificationRow row, UUID viewerUserId, TargetBatch targets) {
         Map<String, Object> dataMap = parseJsonData(row.dataJson());
         boolean critical = Boolean.TRUE.equals(dataMap.get("critical"));
         NotificationActorSummary actor = row.actorId() == null ? null : new NotificationActorSummary(
@@ -818,7 +846,7 @@ public class NotificationService {
                 row.groupStatus() != null ? row.groupStatus() : "DELETED"
         );
 
-        NotificationTargetInfo target = resolveTargetActionability(row, dataMap, viewerUserId);
+        NotificationTargetInfo target = resolveTargetActionability(row, dataMap, targets);
 
         return new NotificationItemResponse(
                 row.id(),
@@ -839,7 +867,7 @@ public class NotificationService {
     private NotificationTargetInfo resolveTargetActionability(
             NotificationRow row,
             Map<String, Object> dataMap,
-            UUID viewerUserId
+            TargetBatch targets
     ) {
         String targetType = dataMap.get("targetType") != null
                 ? String.valueOf(dataMap.get("targetType"))
@@ -872,29 +900,12 @@ public class NotificationService {
         }
 
         if ("CONVERSATION".equalsIgnoreCase(targetType) && targetId != null) {
-            Integer canOpenConversation = jdbc.queryForObject("""
-                    SELECT count(*)
-                    FROM conversations c
-                    LEFT JOIN group_conversations gc ON gc.conversation_id = c.id
-                    LEFT JOIN direct_conversations dc ON dc.conversation_id = c.id
-                    WHERE c.id = ?
-                      AND (
-                        (c.type = 'GROUP' AND gc.group_id = ? AND EXISTS (
-                            SELECT 1 FROM group_memberships gm
-                            WHERE gm.group_id = gc.group_id AND gm.user_id = ? AND gm.status = 'ACTIVE'
-                        ))
-                        OR
-                        (c.type = 'DIRECT' AND (dc.user_id_1 = ? OR dc.user_id_2 = ?))
-                      )
-                    """,
-                    Integer.class,
-                    targetId,
-                    row.groupId(),
-                    viewerUserId,
-                    viewerUserId,
-                    viewerUserId
-            );
-            if (canOpenConversation == null || canOpenConversation == 0) {
+            Map<String, Object> conversation = targets.get("CONVERSATION", targetId);
+            boolean canOpenConversation = Boolean.TRUE.equals(conversation.get("direct_access"))
+                    || ("GROUP".equals(conversation.get("type")) && row.groupId() != null
+                        && row.groupId().equals(conversation.get("group_id"))
+                        && targets.activeGroups().contains(row.groupId()));
+            if (!canOpenConversation) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
                         "Cuá»™c trÃ² chuyá»‡n nÃ y khÃ´ng cÃ²n kháº£ dá»¥ng.", params
@@ -910,15 +921,7 @@ public class NotificationService {
                         "Nhóm này đã bị xóa hoặc không còn tồn tại.", params
                 );
             }
-            Integer activeMembership = jdbc.queryForObject("""
-                    SELECT count(*) FROM group_memberships
-                    WHERE group_id = ? AND user_id = ? AND status = 'ACTIVE'
-                    """,
-                    Integer.class,
-                    row.groupId(),
-                    viewerUserId
-            );
-            if (activeMembership == null || activeMembership == 0) {
+            if (!targets.activeGroups().contains(row.groupId())) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
                         "Bạn không còn là thành viên hoạt động của nhóm này.", params
@@ -934,12 +937,7 @@ public class NotificationService {
                         "NhÃ³m cá»§a lá»i má»i khÃ´ng cÃ²n kháº£ dá»¥ng.", params
                 );
             }
-            List<String> statuses = jdbc.query(
-                    "SELECT status FROM group_invitations WHERE id = ? AND invitee_id = ?",
-                    (rs, i) -> rs.getString("status"),
-                    targetId,
-                    viewerUserId
-            );
+            List<String> statuses = targets.statuses("GROUP_INVITATION", targetId);
             if (statuses.isEmpty() || !"PENDING".equalsIgnoreCase(statuses.get(0))) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -947,11 +945,7 @@ public class NotificationService {
                 );
             }
         } else if ("ACTIVITY".equalsIgnoreCase(targetType) && targetId != null) {
-            List<String> statuses = jdbc.query(
-                    "SELECT status FROM activities WHERE id = ?",
-                    (rs, i) -> rs.getString("status"),
-                    targetId
-            );
+            List<String> statuses = targets.statuses("ACTIVITY", targetId);
             if (statuses.isEmpty() || "CANCELLED".equalsIgnoreCase(statuses.get(0))) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -959,11 +953,7 @@ public class NotificationService {
                 );
             }
         } else if ("POLL".equalsIgnoreCase(targetType) && targetId != null) {
-            List<UUID> activityIds = jdbc.query("""
-                    SELECT p.activity_id FROM polls p
-                    JOIN activities a ON a.id = p.activity_id
-                    WHERE p.id = ? AND a.group_id = ?
-                    """, (rs, i) -> rs.getObject("activity_id", UUID.class), targetId, row.groupId());
+            List<UUID> activityIds = targets.activityIds("POLL", targetId, row.groupId());
             if (activityIds.isEmpty()) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -973,11 +963,7 @@ public class NotificationService {
             params.put("activityId", activityIds.get(0).toString());
             route = "/activities/detail";
         } else if ("TASK".equalsIgnoreCase(targetType) && targetId != null) {
-            List<UUID> activityIds = jdbc.query("""
-                    SELECT t.activity_id FROM tasks t
-                    JOIN activities a ON a.id = t.activity_id
-                    WHERE t.id = ? AND a.group_id = ?
-                    """, (rs, i) -> rs.getObject("activity_id", UUID.class), targetId, row.groupId());
+            List<UUID> activityIds = targets.activityIds("TASK", targetId, row.groupId());
             if (activityIds.isEmpty()) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -987,11 +973,7 @@ public class NotificationService {
             params.put("activityId", activityIds.get(0).toString());
             route = "/activities/detail";
         } else if ("EXPENSE".equalsIgnoreCase(targetType) && targetId != null) {
-            List<String> statuses = jdbc.query(
-                    "SELECT status FROM expenses WHERE id = ?",
-                    (rs, i) -> rs.getString("status"),
-                    targetId
-            );
+            List<String> statuses = targets.statuses("EXPENSE", targetId);
             if (statuses.isEmpty() || "CANCELLED".equalsIgnoreCase(statuses.get(0))) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -999,11 +981,7 @@ public class NotificationService {
                 );
             }
         } else if ("SETTLEMENT".equalsIgnoreCase(targetType) && targetId != null) {
-            List<String> statuses = jdbc.query(
-                    "SELECT status FROM settlements WHERE id = ?",
-                    (rs, i) -> rs.getString("status"),
-                    targetId
-            );
+            List<String> statuses = targets.statuses("SETTLEMENT", targetId);
             if (statuses.isEmpty() || "CANCELLED".equalsIgnoreCase(statuses.get(0))) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
@@ -1011,8 +989,7 @@ public class NotificationService {
                 );
             }
         } else if ("FUND".equalsIgnoreCase(targetType) && targetId != null) {
-            Integer count = jdbc.queryForObject("SELECT count(*) FROM group_funds WHERE id = ?", Integer.class, targetId);
-            if (count == null || count == 0) {
+            if (targets.get("FUND", targetId).isEmpty()) {
                 return new NotificationTargetInfo(
                         targetType, targetId, route, false,
                         "Quỹ nhóm này không còn tồn tại.", params
@@ -1021,6 +998,71 @@ public class NotificationService {
         }
 
         return new NotificationTargetInfo(targetType, targetId, route, true, null, params);
+    }
+
+    // Page-local facts only: reload authorization on every request, with one read per target class.
+    private TargetBatch loadTargetBatch(List<NotificationRow> rows, UUID viewerUserId) {
+        Set<UUID> groupIds = new java.util.LinkedHashSet<>();
+        Map<String, Set<UUID>> idsByType = new LinkedHashMap<>();
+        for (NotificationRow row : rows) {
+            if (row.groupId() != null) groupIds.add(row.groupId());
+            Map<String, Object> data = parseJsonData(row.dataJson());
+            String type = String.valueOf(data.get("targetType") == null ? row.category() : data.get("targetType")).toUpperCase(Locale.ROOT);
+            UUID id = extractUuidFromMetadata(data, "targetId");
+            if (id != null) idsByType.computeIfAbsent(type, ignored -> new java.util.LinkedHashSet<>()).add(id);
+        }
+        Set<UUID> activeGroups = new java.util.HashSet<>();
+        if (!groupIds.isEmpty()) {
+            List<Object> args = new ArrayList<>(); args.add(viewerUserId); args.addAll(groupIds);
+            activeGroups.addAll(jdbc.query("SELECT group_id FROM group_memberships WHERE user_id=? AND status='ACTIVE' AND group_id IN ("
+                    + placeholders(groupIds.size()) + ")", (rs, n) -> rs.getObject(1, UUID.class), args.toArray()));
+        }
+        Map<String, Map<UUID, Map<String, Object>>> facts = new LinkedHashMap<>();
+        idsByType.forEach((type, ids) -> {
+            List<Object> args = new ArrayList<>();
+            String select = switch (type) {
+                case "ACTIVITY" -> "SELECT id,status FROM activities WHERE id IN (";
+                case "EXPENSE" -> "SELECT id,status FROM expenses WHERE id IN (";
+                case "SETTLEMENT" -> "SELECT id,status FROM settlements WHERE id IN (";
+                case "FUND" -> "SELECT id FROM group_funds WHERE id IN (";
+                case "GROUP_INVITATION" -> {
+                    args.add(viewerUserId);
+                    yield "SELECT id,status FROM group_invitations WHERE invitee_id=? AND id IN (";
+                }
+                case "POLL", "TASK" -> "SELECT t.id,t.activity_id,a.group_id FROM "
+                        + (type.equals("POLL") ? "polls" : "tasks")
+                        + " t JOIN activities a ON a.id=t.activity_id WHERE t.id IN (";
+                case "CONVERSATION" -> {
+                    args.add(viewerUserId); args.add(viewerUserId);
+                    yield "SELECT c.id,c.type,gc.group_id,(c.type='DIRECT' AND (dc.user_id_1=? OR dc.user_id_2=?)) AS direct_access "
+                            + "FROM conversations c LEFT JOIN group_conversations gc ON gc.conversation_id=c.id "
+                            + "LEFT JOIN direct_conversations dc ON dc.conversation_id=c.id WHERE c.id IN (";
+                }
+                default -> null;
+            };
+            if (select == null) return;
+            args.addAll(ids);
+            Map<UUID, Map<String, Object>> byId = new LinkedHashMap<>();
+            jdbc.queryForList(select + placeholders(ids.size()) + ")", args.toArray())
+                    .forEach(fact -> byId.put((UUID) fact.get("id"), fact));
+            facts.put(type, byId);
+        });
+        return new TargetBatch(activeGroups, facts);
+    }
+
+    private static String placeholders(int count) { return String.join(",", Collections.nCopies(count, "?")); }
+
+    private record TargetBatch(Set<UUID> activeGroups, Map<String, Map<UUID, Map<String, Object>>> facts) {
+        Map<String, Object> get(String type, UUID id) { return facts.getOrDefault(type, Map.of()).getOrDefault(id, Map.of()); }
+        List<String> statuses(String type, UUID id) {
+            Object status = get(type, id).get("status");
+            return status == null ? List.of() : List.of(status.toString());
+        }
+        List<UUID> activityIds(String type, UUID id, UUID groupId) {
+            Map<String, Object> target = get(type, id);
+            return groupId != null && groupId.equals(target.get("group_id"))
+                    ? List.of((UUID) target.get("activity_id")) : List.of();
+        }
     }
 
     // =========================================================================

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:mobile/core/storage/secure_key_value_store.dart';
 import 'package:mobile/core/storage/secure_storage_service.dart';
 import 'package:mobile/features/notification/application/notification_push_service.dart';
@@ -39,6 +41,66 @@ void main() {
     await service.dispose();
     await messaging.close();
   });
+
+  test('Firebase initialization contains external failures but not programming errors', () async {
+    expect(await initializePushFirebase(() async {}), isTrue);
+    expect(
+      await initializePushFirebase(() async {
+        throw FirebaseException(plugin: 'firebase_core', code: 'unavailable');
+      }),
+      isFalse,
+    );
+    expect(
+      await initializePushFirebase(() async {
+        throw TimeoutException('Simulated unavailable provider');
+      }),
+      isFalse,
+    );
+    await expectLater(
+      initializePushFirebase(() async {
+        throw StateError('Programming error');
+      }),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'unexpected initial-message programming error is not silently swallowed',
+    () async {
+      messaging.programmingFailure = true;
+      await expectLater(service.start(authenticated: true), throwsStateError);
+    },
+  );
+
+  test('token failure does not block startup or cold-start tap and refresh recovers', () async {
+    messaging.tokenFailure = true;
+    messaging.initialMessage = const FcmPushEvent(
+      notificationId: 'recovery-tap',
+    );
+    await service.start(authenticated: true);
+    expect(registrations, isEmpty);
+    await service.markAppReady();
+    expect(taps.single.notificationId, 'recovery-tap');
+    messaging.tokenFailure = false;
+    messaging.tokenRefreshes.add('recovered-test-token');
+    await Future<void>.delayed(Duration.zero);
+    expect(registrations.single.$2, 'recovered-test-token');
+  });
+
+  test(
+    'permission and initial message failures are isolated from startup',
+    () async {
+      messaging.initialFailure = true;
+      messaging.permissionFailure = true;
+      await service.start(authenticated: true);
+      await service.markAppReady();
+      expect(registrations, isEmpty);
+      expect(taps, isEmpty);
+      messaging.permissionFailure = false;
+      await service.setAuthenticated(true);
+      expect(registrations, hasLength(1));
+    },
+  );
 
   test(
     'authenticated startup registers token with stable installation id',
@@ -236,6 +298,8 @@ class _FakeMessaging implements PushMessagingClient {
   final List<bool> permissionChecks = <bool>[];
   String? token = 'registration-test-token';
   FcmPushEvent? initialMessage;
+  bool tokenFailure = false, permissionFailure = false, initialFailure = false;
+  bool programmingFailure = false;
 
   @override
   Stream<String> get onTokenRefresh => tokenRefreshes.stream;
@@ -247,16 +311,29 @@ class _FakeMessaging implements PushMessagingClient {
   Stream<FcmPushEvent> get onMessageOpenedApp => openedMessages.stream;
 
   @override
-  Future<FcmPushEvent?> getInitialMessage() async => initialMessage;
+  Future<FcmPushEvent?> getInitialMessage() async {
+    if (programmingFailure) throw StateError('Programming error');
+    if (initialFailure) throw PlatformException(code: 'unavailable');
+    return initialMessage;
+  }
 
   @override
-  Future<String?> getToken() async => token;
+  Future<String?> getToken() async {
+    if (tokenFailure) {
+      throw FirebaseException(
+        plugin: 'firebase_messaging',
+        code: 'unavailable',
+      );
+    }
+    return token;
+  }
 
   @override
   Future<bool> requestPermissionIfNeeded({
     required bool previouslyRequested,
   }) async {
     permissionChecks.add(previouslyRequested);
+    if (permissionFailure) throw PlatformException(code: 'unavailable');
     return true;
   }
 

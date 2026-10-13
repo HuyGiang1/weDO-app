@@ -31,12 +31,12 @@ public class CalendarRepository {
                 JOIN group_memberships gm ON gm.group_id = a.group_id
                      AND gm.user_id = :userId AND gm.status = 'ACTIVE'
                 LEFT JOIN activity_participants mine ON mine.activity_id = a.id AND mine.user_id = :userId
-                LEFT JOIN (
-                    SELECT activity_id,
+                LEFT JOIN LATERAL (
+                    SELECT
                            COUNT(*) FILTER (WHERE rsvp_status = 'GOING') AS going_count,
                            COUNT(*) FILTER (WHERE rsvp_status = 'WAITLIST') AS waitlist_count
-                    FROM activity_participants GROUP BY activity_id
-                ) pc ON pc.activity_id = a.id
+                    FROM activity_participants WHERE activity_id = a.id
+                ) pc ON TRUE
                 LEFT JOIN user_activity_reminders rem ON rem.activity_id = a.id AND rem.user_id = :userId
                 WHERE a.start_at IS NOT NULL
                 """);

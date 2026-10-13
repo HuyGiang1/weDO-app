@@ -128,9 +128,10 @@ public class FundController {
     @GetMapping({"/collections/{collectionId}", "/funds/{fundId}/collections/{collectionId}"})
     public CollectionDetailResponse getCollectionDetail(
             @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
-            @PathVariable UUID collectionId
+            @PathVariable UUID collectionId,
+            @PathVariable(required = false) UUID fundId
     ) {
-        return fundService.getCollectionDetail(collectionId, principal.userId());
+        return fundService.getCollectionDetail(collectionId, principal.userId(), fundId);
     }
 
     @PostMapping("/collections/{collectionId}/close")

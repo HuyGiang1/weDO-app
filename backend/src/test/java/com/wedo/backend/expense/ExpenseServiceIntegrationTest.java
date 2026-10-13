@@ -284,6 +284,7 @@ class ExpenseServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private void assertNotification(UUID recipient, String eventType, UUID targetId, boolean critical) {
+        awaitDelivery();
         assertEquals(1, jdbc.queryForObject("""
                 SELECT count(*) FROM notifications
                 WHERE user_id = ? AND category = 'FINANCE' AND priority = 'HIGH'
@@ -293,6 +294,7 @@ class ExpenseServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private void assertNotificationCount(UUID recipient, String eventType, UUID targetId, int expected) {
+        awaitDelivery();
         assertEquals(expected, jdbc.queryForObject("""
                 SELECT count(*) FROM notifications
                 WHERE user_id = ? AND data->>'eventType' = ? AND data->>'targetId' = ?

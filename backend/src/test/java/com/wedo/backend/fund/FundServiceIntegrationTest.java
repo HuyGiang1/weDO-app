@@ -36,6 +36,7 @@ import com.wedo.backend.group.repository.GroupSettingsRepository;
 import com.wedo.backend.group.service.GroupService;
 import com.wedo.backend.group.service.GroupBanService;
 import com.wedo.backend.media.storage.InMemoryObjectStorageService;
+import com.wedo.backend.security.jwt.JwtService;
 import com.wedo.backend.user.entity.UserEntity;
 import com.wedo.backend.user.entity.UserStatus;
 import com.wedo.backend.user.repository.UserRepository;
@@ -47,14 +48,23 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@AutoConfigureMockMvc
 class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired FundService fundService;
     @Autowired GroupService groupService;
@@ -65,6 +75,114 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired GroupSettingsRepository settings;
     @Autowired JdbcTemplate jdbc;
     @Autowired InMemoryObjectStorageService objectStorage;
+    @Autowired MockMvc mockMvc;
+    @Autowired JwtService jwtService;
+
+    @Test
+    void concurrentContributionsCannotOverReserveAnObligation() throws Exception {
+        Fixture f = fixture();
+        FundDetailResponse fund = fundService.createFund(f.groupId(), f.owner(), null);
+        CollectionDetailResponse collection = fundService.createCollection(fund.fundId(), f.owner(),
+                new CreateCollectionRequest("Contribution race", null, null, "EQUAL_PER_MEMBER",
+                        new BigDecimal("100.00"), List.of(f.member()), null));
+        Runnable submit = () -> fundService.submitContribution(collection.collectionId(), f.member(),
+                new CreateContributionRequest(null, new BigDecimal("80.00"), null, null, null));
+        List<ErrorCode> results = race(List.of(submit, submit));
+        assertEquals(1, results.stream().filter(code -> code == null).count());
+        assertEquals(1, results.stream().filter(code -> code == ErrorCode.FUND_CONTRIBUTION_EXCEEDS_OBLIGATION).count());
+        CollectionDetailResponse persisted = fundService.getCollectionDetail(collection.collectionId(), f.member());
+        assertEquals(1, persisted.contributions().size());
+        assertEquals("PENDING", persisted.contributions().getFirst().status());
+        assertEquals(new BigDecimal("100.00"), persisted.totalExpectedAmount());
+        assertEquals(new BigDecimal("80.00"), persisted.totalPendingAmount());
+        assertEquals(new BigDecimal("0.00"), persisted.totalConfirmedAmount());
+        assertEquals(new BigDecimal("20.00"), persisted.totalRemainingAmount());
+        assertEquals(1, persisted.obligations().size());
+        assertEquals(new BigDecimal("80.00"), persisted.obligations().getFirst().pendingAmount());
+        assertEquals("OPEN", persisted.status());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM fund_contributions WHERE collection_id=?",
+                Integer.class, collection.collectionId()));
+    }
+
+    @Test
+    void concurrentExpenseAndReimbursementCannotOverspendOrLeavePartialRecords() throws Exception {
+        Fixture f = fixture();
+        FundDetailResponse fund = funded(f, "100.00");
+        List<ErrorCode> results = race(List.of(
+                () -> fundService.createFundExpense(fund.fundId(), f.owner(),
+                        new CreateFundExpenseRequest("Spend", new BigDecimal("80.00"), null, null, null, null)),
+                () -> fundService.createReimbursement(fund.fundId(), f.member(),
+                        new CreateReimbursementRequest(new BigDecimal("80.00"), "Reserve", null))));
+        assertEquals(1, results.stream().filter(code -> code == null).count());
+        assertEquals(1, results.stream().filter(code -> code == ErrorCode.FUND_INSUFFICIENT_BALANCE).count());
+        int expenseCount = jdbc.queryForObject("SELECT count(*) FROM fund_expenses WHERE fund_id=?", Integer.class, fund.fundId());
+        int reimbursementCount = jdbc.queryForObject("SELECT count(*) FROM fund_reimbursements WHERE fund_id=?", Integer.class, fund.fundId());
+        assertEquals(1, expenseCount + reimbursementCount);
+        assertEquals(expenseCount, jdbc.queryForObject(
+                "SELECT count(*) FROM fund_transactions WHERE fund_id=? AND transaction_type='FUND_EXPENSE'",
+                Integer.class, fund.fundId()));
+        BigDecimal rebuilt = jdbc.queryForObject(
+                "SELECT sum(CASE WHEN direction='IN' THEN amount ELSE -amount END) FROM fund_transactions WHERE fund_id=?",
+                BigDecimal.class, fund.fundId());
+        FundDetailResponse persisted = fundService.getGroupFund(f.groupId(), f.owner());
+        assertEquals(0, rebuilt.compareTo(persisted.ledgerBalance()));
+        assertEquals(new BigDecimal("20.00"), persisted.availableBalance());
+        assertTrue(persisted.ledgerBalance().signum() >= 0);
+        assertEquals(new BigDecimal(reimbursementCount == 1 ? "80.00" : "0.00"), persisted.pendingReimbursements());
+    }
+
+    @Test
+    void concurrentReimbursementApprovalAndCancellationResolveExactlyOnce() throws Exception {
+        Fixture f = fixture();
+        FundDetailResponse fund = funded(f, "100.00");
+        ReimbursementResponse pending = fundService.createReimbursement(fund.fundId(), f.member(),
+                new CreateReimbursementRequest(new BigDecimal("80.00"), "Resolve race", null));
+        List<ErrorCode> results = race(List.of(
+                () -> fundService.approveReimbursement(pending.reimbursementId(), f.owner()),
+                () -> fundService.cancelReimbursement(pending.reimbursementId(), f.member())));
+        assertEquals(1, results.stream().filter(code -> code == null).count());
+        assertEquals(1, results.stream().filter(code -> code == ErrorCode.FUND_REIMBURSEMENT_ALREADY_RESOLVED).count());
+        String status = jdbc.queryForObject("SELECT status FROM fund_reimbursements WHERE id=?", String.class, pending.reimbursementId());
+        assertTrue(List.of("COMPLETED", "CANCELLED").contains(status));
+        int completed = "COMPLETED".equals(status) ? 1 : 0;
+        assertEquals(completed, jdbc.queryForObject(
+                "SELECT count(*) FROM fund_transactions WHERE reference_type='FUND_REIMBURSEMENT' AND reference_id=?",
+                Integer.class, pending.reimbursementId()));
+        FundDetailResponse persisted = fundService.getGroupFund(f.groupId(), f.owner());
+        assertEquals(new BigDecimal(completed == 1 ? "20.00" : "100.00"), persisted.ledgerBalance());
+        assertEquals(persisted.ledgerBalance(), persisted.availableBalance());
+        assertEquals(new BigDecimal("0.00"), persisted.pendingReimbursements());
+    }
+
+    private FundDetailResponse funded(Fixture f, String amount) {
+        FundDetailResponse fund = fundService.createFund(f.groupId(), f.owner(), null);
+        CollectionDetailResponse collection = fundService.createCollection(fund.fundId(), f.owner(),
+                new CreateCollectionRequest("Seed balance", null, null, "EQUAL_PER_MEMBER",
+                        new BigDecimal(amount), List.of(f.member()), null));
+        ContributionResponse contribution = fundService.submitContribution(collection.collectionId(), f.member(),
+                new CreateContributionRequest(null, new BigDecimal(amount), null, null, null));
+        fundService.confirmContribution(contribution.contributionId(), f.owner());
+        return fund;
+    }
+
+    private List<ErrorCode> race(List<Runnable> operations) throws Exception {
+        CountDownLatch ready = new CountDownLatch(operations.size());
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(operations.size())) {
+            List<Future<ErrorCode>> futures = new ArrayList<>();
+            for (Runnable operation : operations) futures.add(pool.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(10, TimeUnit.SECONDS));
+                try { operation.run(); return null; }
+                catch (BusinessException ex) { return ex.errorCode(); }
+            }));
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            List<ErrorCode> results = new ArrayList<>();
+            for (Future<ErrorCode> future : futures) results.add(future.get(30, TimeUnit.SECONDS));
+            return results;
+        }
+    }
 
     @Test
     void ownerCreatesFundEnforcesSingleActiveFundAndDelegatesAdminManagersOnly() {
@@ -595,6 +713,42 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         String json = mapper.writeValueAsString(fundService.getGroupFund(f.groupId(), f.owner()));
         assertTrue(json.contains("\"ledgerBalance\":\"0.00\""));
         assertTrue(json.contains("\"availableBalance\":\"0.00\""));
+
+        CollectionDetailResponse collection = fundService.createCollection(fund.fundId(), f.owner(),
+                new CreateCollectionRequest("Decimal strings", null, null, "EQUAL_PER_MEMBER",
+                        new BigDecimal("100.00"), List.of(f.member()), null));
+        String collectionJson = mapper.writeValueAsString(collection);
+        assertTrue(collectionJson.contains("\"totalExpectedAmount\":\"100.00\""));
+        assertTrue(collectionJson.contains("\"amountDue\":\"100.00\""));
+    }
+
+    @Test
+    void nestedCollectionRouteRequiresItsActualFundAndHidesForeignGroup() throws Exception {
+        Fixture first = fixture();
+        Fixture second = fixture();
+        FundDetailResponse firstFund = fundService.createFund(first.groupId(), first.owner(), null);
+        FundDetailResponse secondFund = fundService.createFund(second.groupId(), second.owner(), null);
+        CollectionDetailResponse collection = fundService.createCollection(firstFund.fundId(), first.owner(),
+                new CreateCollectionRequest("Collection", null, null, "EQUAL_PER_MEMBER",
+                        new BigDecimal("10.00"), List.of(first.member()), null));
+        String firstBearer = "Bearer " + jwtService.generateAccessToken(first.owner());
+        String secondBearer = "Bearer " + jwtService.generateAccessToken(second.owner());
+
+        mockMvc.perform(get("/api/v1/funds/{fundId}/collections/{collectionId}",
+                        firstFund.fundId(), collection.collectionId()).header("Authorization", firstBearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fundId").value(firstFund.fundId().toString()));
+        mockMvc.perform(get("/api/v1/collections/{collectionId}", collection.collectionId())
+                        .header("Authorization", firstBearer))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/funds/{fundId}/collections/{collectionId}",
+                        secondFund.fundId(), collection.collectionId()).header("Authorization", firstBearer))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("FUND_COLLECTION_NOT_FOUND"));
+        mockMvc.perform(get("/api/v1/funds/{fundId}/collections/{collectionId}",
+                        secondFund.fundId(), collection.collectionId()).header("Authorization", secondBearer))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("GROUP_NOT_FOUND"));
     }
 
     @Test

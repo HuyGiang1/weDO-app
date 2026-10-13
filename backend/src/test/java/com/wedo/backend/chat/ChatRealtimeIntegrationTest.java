@@ -43,7 +43,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "logging.level.org.springframework.web=INFO")
 class ChatRealtimeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @LocalServerPort
@@ -60,7 +61,7 @@ class ChatRealtimeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void rejectsUnauthenticatedHandshakeAndAllowsAuthenticatedHeaderOrQueryToken() throws Exception {
+    void requiresBearerHeaderAndRejectsQueryOnlyAuthentication() throws Exception {
         Fixture f = fixture();
         HttpClient http = HttpClient.newHttpClient();
 
@@ -88,11 +89,14 @@ class ChatRealtimeIntegrationTest extends AbstractPostgresIntegrationTest {
             assertEquals(f.ownerA, connected.actor().id());
         }
 
-        // 4. Authenticated query param (?access_token=...) succeeds and receives CONNECTED
-        try (TestWsClient adminClient = connectQuery(f.adminB)) {
-            ServerEvent connected = adminClient.awaitEvent("CONNECTED");
-            assertNotNull(connected);
-            assertEquals(f.adminB, connected.actor().id());
+        String token = jwtService.generateAccessToken(f.adminB);
+        for (String query : List.of("access_token=" + token, "token=" + token, "accessToken=token-like-value")) {
+            CompletionException queryEx = assertThrows(CompletionException.class, () ->
+                    http.newWebSocketBuilder()
+                            .buildAsync(URI.create("ws://localhost:" + port + "/ws?" + query),
+                                    new TestWsListener(objectMapper)).join());
+            assertInstanceOf(WebSocketHandshakeException.class, queryEx.getCause());
+            assertEquals(401, ((WebSocketHandshakeException) queryEx.getCause()).getResponse().statusCode());
         }
     }
 
@@ -295,16 +299,6 @@ class ChatRealtimeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .newWebSocketBuilder()
                 .header("Authorization", "Bearer " + token)
                 .buildAsync(URI.create("ws://localhost:" + port + "/ws"), listener)
-                .join();
-        return new TestWsClient(ws, listener);
-    }
-
-    private TestWsClient connectQuery(UUID userId) {
-        String token = jwtService.generateAccessToken(userId);
-        TestWsListener listener = new TestWsListener(objectMapper);
-        WebSocket ws = HttpClient.newHttpClient()
-                .newWebSocketBuilder()
-                .buildAsync(URI.create("ws://localhost:" + port + "/ws?access_token=" + token), listener)
                 .join();
         return new TestWsClient(ws, listener);
     }

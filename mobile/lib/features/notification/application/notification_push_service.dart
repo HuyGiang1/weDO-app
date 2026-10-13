@@ -3,9 +3,28 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/storage/secure_storage_service.dart';
 import '../data/notification_failure.dart';
+
+bool _isExternalMessagingFailure(Object error) =>
+    error is FirebaseException ||
+    error is PlatformException ||
+    error is TimeoutException;
+
+Future<bool> initializePushFirebase(Future<void> Function() initialize) async {
+  try {
+    await initialize();
+    return true;
+  } catch (error) {
+    if (!_isExternalMessagingFailure(error)) rethrow;
+    if (kDebugMode) {
+      debugPrint('FCM sync: initialization unavailable (${error.runtimeType})');
+    }
+    return false;
+  }
+}
 
 class FcmPushEvent {
   const FcmPushEvent({
@@ -145,7 +164,12 @@ class NotificationPushService {
       if (_authenticated) unawaited(onForegroundMessage(event));
     });
     _tapSubscription = messaging.onMessageOpenedApp.listen(_handleTap);
-    _pendingTap = await messaging.getInitialMessage();
+    try {
+      _pendingTap = await messaging.getInitialMessage();
+    } catch (error) {
+      if (!_isExternalMessagingFailure(error)) rethrow;
+      _logMessagingFailure('initial message', error);
+    }
     await setAuthenticated(authenticated);
   }
 
@@ -163,25 +187,38 @@ class NotificationPushService {
       debugPrint('FCM sync: authenticated=$authenticated');
     }
     if (authenticated) {
-      final bool permissionRequested = await storage
-          .hasRequestedNotificationPermission();
-      final bool permissionGranted = await messaging.requestPermissionIfNeeded(
-        previouslyRequested: permissionRequested,
-      );
-      if (kDebugMode) {
-        debugPrint('FCM sync: permissionGranted=$permissionGranted');
+      try {
+        final bool permissionRequested = await storage
+            .hasRequestedNotificationPermission();
+        final bool permissionGranted = await messaging
+            .requestPermissionIfNeeded(
+              previouslyRequested: permissionRequested,
+            );
+        if (kDebugMode) {
+          debugPrint('FCM sync: permissionGranted=$permissionGranted');
+        }
+        if (!permissionRequested) {
+          await storage.markNotificationPermissionRequested();
+        }
+        final String? token = await messaging.getToken();
+        if (!_isCurrentSession(generation)) return;
+        if (kDebugMode) {
+          debugPrint('FCM sync: tokenAvailable=${token?.isNotEmpty == true}');
+        }
+        await _register(token);
+      } catch (error) {
+        if (!_isExternalMessagingFailure(error)) rethrow;
+        // Firebase availability is not a prerequisite for login or app startup.
+        _logMessagingFailure('registration', error);
       }
-      if (!permissionRequested) {
-        await storage.markNotificationPermissionRequested();
-      }
-      final String? token = await messaging.getToken();
-      if (!_isCurrentSession(generation)) return;
-      if (kDebugMode) {
-        debugPrint('FCM sync: tokenAvailable=${token?.isNotEmpty == true}');
-      }
-      await _register(token);
       if (!_isCurrentSession(generation)) return;
       await _deliverPendingTap();
+    }
+  }
+
+  void _logMessagingFailure(String operation, Object error) {
+    if (kDebugMode) {
+      debugPrint('FCM sync: $operation unavailable (${error.runtimeType})');
     }
   }
 

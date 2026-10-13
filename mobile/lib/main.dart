@@ -42,9 +42,12 @@ import 'features/search/data/search_api.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  bool pushAvailable = false;
   if (defaultTargetPlatform == TargetPlatform.android) {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    pushAvailable = await initializePushFirebase(() async {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    });
   }
 
   final apiConfig = ApiConfig();
@@ -191,7 +194,7 @@ void main() async {
     );
   }
 
-  if (defaultTargetPlatform == TargetPlatform.android) {
+  if (pushAvailable) {
     pushService = NotificationPushService(
       messaging: FirebasePushMessagingClient(FirebaseMessaging.instance),
       storage: storage,

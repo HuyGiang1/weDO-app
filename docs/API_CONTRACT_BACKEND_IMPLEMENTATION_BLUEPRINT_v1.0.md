@@ -2298,6 +2298,8 @@ Owner only.
 
 Returns computed balance, active collection preview, pending contribution-verification count, pending reimbursements, recent transactions and current-user permissions.
 
+Fund monetary response fields use decimal JSON strings, matching Expense and Balance responses; request amounts remain JSON numbers or decimal strings accepted by `BigDecimal` binding.
+
 Fund balance is NEVER directly edited or trusted from a stored balance field. It is derived from the ledger:
 
 ```text
@@ -3587,7 +3589,7 @@ The next design phase is **SYSTEM ARCHITECTURE**, where the project will finaliz
 ### 41.1 Endpoint & Authentication
 - **WebSocket Endpoints:** `/ws` and `/api/v1/ws` (`ChatWebSocketConfig`).
 - **Handshake Authentication (`ChatWebSocketHandshakeInterceptor`):**
-  - Accepts JWT access token via `Authorization: Bearer <token>` HTTP header or `?access_token=<token>` query parameter.
+  - Accepts JWT access token via the `Authorization: Bearer <token>` HTTP header only. Query parameters are never an authentication source.
   - Validates token signature, expiration, `access` token type, and active user status (`UserStatus.ACTIVE`).
   - Rejects unauthenticated or inactive handshakes with HTTP 401 before WebSocket upgrade.
 
@@ -3597,6 +3599,9 @@ The next design phase is **SYSTEM ARCHITECTURE**, where the project will finaliz
 - `ChatRealtimeTransactionalBridge` listens with `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)` so WebSocket/Redis events are emitted strictly after PostgreSQL transaction commit. Rolled-back transactions never emit realtime frames.
 
 ### 41.3 Client-to-Server WebSocket JSON Frames
+- M18 reliability: after-commit bridges enqueue work on bounded named application workers, not the request transaction thread. General domain inbox creation remains an isolated, advisory-lock-idempotent secondary transaction; it is eventually available, not atomic with the originating mutation. Reminder inbox/sent state remains atomic. Push uses a separate bounded executor after inbox commit. Rejection, process crash and persistence failure can lose non-durable attempts; no outbox/retry or exactly-once transport guarantee is claimed. Failures never undo committed business state.
+- Flutter reconnect uses existing bounded backwards REST history pages (up to 100), walking to its pre-reconnect durable sequence and merging by message ID in sequence order. Redis/WebSocket is best effort; REST is authoritative. Missing provider registration must not prevent Flutter startup/session restoration.
+
 - Durable message send/edit/unsend/reaction mutations are not WebSocket commands; clients must use the authoritative M9 REST endpoints listed in §41.2.
 - `SUBSCRIBE` (`{ "type": "SUBSCRIBE", "conversationId": "<uuid>" }`): Verifies conversation access (`ChatService.canSubscribeConversation`) before registering session subscription; denies outsiders/blocked users with `ERROR` (`ACCESS_DENIED`).
 - `UNSUBSCRIBE` (`{ "type": "UNSUBSCRIBE", "conversationId": "<uuid>" }`): Removes session subscription for the conversation.

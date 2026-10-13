@@ -381,3 +381,29 @@
 - **Decision**: Populate Home Recent Updates from persisted, recipient-scoped Notification inbox records. Scan the newest 30, retain only records whose existing target resolver reports an actionable current-user destination, and show at most five in inbox order. Reuse the Notification DTO and target router for display/read/deep-link behavior; do not add a feed table or generate duplicate events.
 - **Reason / Source**: M17 Pass 2 requires cross-domain, privacy-preserving updates; the existing inbox already contains type, title/body, timestamp, read state, recipient and target context independently of push preferences.
 - **Consequences**: Revoked or otherwise inaccessible targets do not appear on Home. Home reflects events already emitted to the inbox; it does not promise a complete audit log or include older eligible records beyond the bounded scan window.
+
+### DEC-M18-01 -- Fund Response Monetary Precision
+- **ID**: `DEC-M18-01`
+- **Milestone**: `M18 Pass 1`
+- **Date**: `2026-10-11`
+- **Status**: Implemented; pending full regression
+- **Decision**: Serialize all Fund response monetary `BigDecimal` fields as decimal JSON strings, matching the established Expense/Balance response contract. Keep request binding and stored `NUMERIC(19,2)` values unchanged.
+- **Reason / Source**: The existing Fund integration assertion for `ledgerBalance` expected a string while the DTO emitted a JSON number; the finance contract already requires decimal strings to preserve precision.
+- **Consequences**: Fund clients receive exact decimal text. No schema change or new endpoint is introduced; the baseline Fund test and full suite must confirm compatibility before closeout.
+
+### DEC-M18-02 -- Header-only WebSocket Authentication
+- **ID**: `DEC-M18-02`
+- **Milestone**: `M18 Pass 1 closeout`
+- **Date**: `2026-10-11`
+- **Status**: Implemented
+- **Decision**: Authenticate supported Chat WebSocket clients with the bearer handshake header, never a URL query token. Remove the backend legacy query fallback rather than introduce an unused compatibility switch.
+- **Reason / Source**: Current Flutter uses the Authorization header; repository audit found query-only authentication only in legacy tests/documentation, not another supported production client. URL credentials risk disclosure through diagnostics.
+- **Consequences**: Query-only clients receive 401. Update the canonical API and handshake regression; historical M10 decisions remain historical. No endpoint, schema, or financial behavior change.
+
+### DEC-M18-03 -- Bounded Post-commit Delivery and Honest Durability
+- **ID**: `DEC-M18-03`
+- **Milestone**: `M18 Pass 4`
+- **Date**: `2026-10-11`
+- **Decision**: Move general domain notification and Chat realtime after-commit callbacks to explicit application workers (2 threads, queue 256, named `wedo-delivery-`); use separate push workers with the same bounds (`wedo-push-`). Never use CallerRuns on rejection. Keep secondary inbox/policy and metadata transactions REQUIRES_NEW and advisory-lock duplicate prevention. Reminder inbox and sent_at remain atomic; only push is deferred. Log rejection/failure with safe IDs and exception class, not provider payloads.
+- **Reason**: Synchronous secondary transactions held a completed business transaction's connection while requesting another, starving the normal pool under twenty Chat sends. Independent workers remove that connection dependency without increasing Hikari capacity.
+- **Consequences**: General inbox creation is eventual/best-effort until its insert commits; persisted inbox survives push failure. Queue rejection or process crash may lose an attempt, as no durable outbox/retry exists. REST Chat history remains durable and powers bounded backwards-cursor reconnect recovery; FCM is best effort and unavailable mobile registration cannot block app startup. No schema or financial transaction change.

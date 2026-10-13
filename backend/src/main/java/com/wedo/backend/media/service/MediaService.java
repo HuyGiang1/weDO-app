@@ -64,7 +64,7 @@ public class MediaService {
     }
 
     public MediaResource loadMedia(String category, String filename) {
-        if (category == null || filename == null || category.isBlank() || filename.isBlank()) {
+        if (!"avatars".equals(category) || filename == null || filename.isBlank()) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
         String storageKey = category + "/" + filename;

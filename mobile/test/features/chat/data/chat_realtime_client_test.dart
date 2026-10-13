@@ -92,14 +92,16 @@ void main() {
   });
 
   group('WebSocketChatRealtimeClient', () {
-    test('builds ws URI with token, subscribes, emits frames, and sends typing', () async {
+    test('sends token in header only, subscribes, emits frames, and sends typing', () async {
       final fakeSocket = _FakeRealtimeSocket();
       String? connectedUrl;
+      Map<String, dynamic>? connectedHeaders;
       final client = WebSocketChatRealtimeClient(
         baseUrl: 'http://127.0.0.1:8080',
         accessTokenProvider: () => 'jwt-token-123',
         connector: (url, headers) async {
           connectedUrl = url;
+          connectedHeaders = headers;
           return fakeSocket;
         },
       );
@@ -109,7 +111,8 @@ void main() {
 
       await client.connect();
       client.subscribeConversation('conv-99');
-      expect(connectedUrl, startsWith('ws://127.0.0.1:8080/ws?access_token=jwt-token-123'));
+      expect(connectedUrl, 'ws://127.0.0.1:8080/ws');
+      expect(connectedHeaders?['Authorization'], 'Bearer jwt-token-123');
       expect(
         fakeSocket.sentFrames.map(jsonDecode).toList(),
         contains(

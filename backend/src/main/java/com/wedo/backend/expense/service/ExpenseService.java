@@ -735,7 +735,25 @@ public class ExpenseService {
         }
         sql.append(" ORDER BY s.created_at DESC, s.id");
         List<SettlementRow> rows = jdbc.query(sql.toString(), ExpenseService::mapSettlementRow, args.toArray());
-        return rows.stream().map(row -> toSettlementResponse(row, actorId, access)).toList();
+        if (rows.isEmpty()) return List.of();
+        Set<UUID> userIds = new java.util.LinkedHashSet<>();
+        rows.forEach(row -> { userIds.add(row.fromUserId()); userIds.add(row.toUserId()); userIds.add(row.createdBy()); });
+        String userMarks = String.join(",", java.util.Collections.nCopies(userIds.size(), "?"));
+        Map<UUID, UserSummary> users = new HashMap<>();
+        jdbc.query("SELECT id,COALESCE(display_name,username::text,'Người dùng') AS name,avatar_storage_key FROM users WHERE id IN ("
+                + userMarks + ")", (RowCallbackHandler) rs -> users.put(rs.getObject("id", UUID.class),
+                new UserSummary(rs.getObject("id", UUID.class),rs.getString("name"),rs.getString("avatar_storage_key"))), userIds.toArray());
+        Map<UUID, List<SettlementStatusChange>> histories = new HashMap<>();
+        String settlementMarks = String.join(",", java.util.Collections.nCopies(rows.size(), "?"));
+        jdbc.query("""
+                SELECT h.settlement_id,h.from_status,h.to_status,h.changed_by,h.created_at,
+                       COALESCE(u.display_name,u.username::text,'Người dùng') AS actor_name,u.avatar_storage_key AS actor_avatar
+                FROM settlement_status_history h LEFT JOIN users u ON u.id=h.changed_by
+                WHERE h.settlement_id IN (""" + settlementMarks + ") ORDER BY h.created_at ASC,h.id ASC",
+                (RowCallbackHandler) rs -> histories.computeIfAbsent(rs.getObject("settlement_id", UUID.class), ignored -> new ArrayList<>())
+                        .add(settlementHistory(rs)), rows.stream().map(SettlementRow::id).toArray());
+        return rows.stream().map(row -> toSettlementResponse(row,actorId,access,
+                histories.getOrDefault(row.id(),List.of()),users.get(row.fromUserId()),users.get(row.toUserId()),users.get(row.createdBy()))).toList();
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -896,18 +914,22 @@ public class ExpenseService {
                 LEFT JOIN users u ON u.id=h.changed_by
                 WHERE h.settlement_id=?
                 ORDER BY h.created_at ASC, h.id ASC
-                """, (rs, n) -> {
-            UUID changedBy = rs.getObject("changed_by", UUID.class);
-            UserSummary actor = changedBy == null
-                    ? null
-                    : new UserSummary(changedBy, rs.getString("actor_name"), rs.getString("actor_avatar"));
-            return new SettlementStatusChange(
-                    rs.getString("from_status"),
-                    rs.getString("to_status"),
-                    actor,
-                    rs.getTimestamp("created_at").toInstant()
-            );
-        }, row.id());
+                """, (rs, n) -> settlementHistory(rs), row.id());
+        return toSettlementResponse(row,actorId,access,history,user(row.fromUserId()),user(row.toUserId()),user(row.createdBy()));
+    }
+
+    private SettlementStatusChange settlementHistory(ResultSet rs) throws SQLException {
+        UUID changedBy = rs.getObject("changed_by", UUID.class);
+        UserSummary actor = changedBy == null ? null
+                : new UserSummary(changedBy,rs.getString("actor_name"),rs.getString("actor_avatar"));
+        return new SettlementStatusChange(rs.getString("from_status"),rs.getString("to_status"),actor,
+                rs.getTimestamp("created_at").toInstant());
+    }
+
+    private SettlementResponse toSettlementResponse(
+            SettlementRow row, UUID actorId, ReadableGroupAccess access, List<SettlementStatusChange> history,
+            UserSummary fromUser, UserSummary toUser, UserSummary creator
+    ) {
 
         boolean mutable = access.group().getStatus() == GroupStatus.ACTIVE && "PENDING".equals(row.status());
         UUID confirmerId = expectedConfirmer(row);
@@ -920,9 +942,9 @@ public class ExpenseService {
         return new SettlementResponse(
                 row.id(),
                 row.groupId(),
-                user(row.fromUserId()),
-                user(row.toUserId()),
-                user(row.createdBy()),
+                fromUser,
+                toUser,
+                creator,
                 row.amount().setScale(2, RoundingMode.UNNECESSARY),
                 row.status(),
                 row.declarationType(),

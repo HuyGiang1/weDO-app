@@ -11,6 +11,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest
 @ActiveProfiles("test")
 public abstract class AbstractPostgresIntegrationTest {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.wedo.backend.common.event.PostCommitDelivery delivery;
+
+    @org.junit.jupiter.api.AfterEach
+    protected void awaitDelivery() {
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(20)).until(delivery::isIdle);
+    }
 
     protected static final PostgreSQLContainer<?> postgres;
 

@@ -26,13 +26,16 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class SettlementServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired ExpenseService expenses;
@@ -40,6 +43,67 @@ class SettlementServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired GroupRepository groups;
     @Autowired GroupMembershipRepository memberships;
     @Autowired GroupSettingsRepository settings;
+    @Autowired JdbcTemplate jdbc;
+
+    @Test
+    void concurrentParticipantConfirmationsCompleteExactlyOnce() throws Exception {
+        Fixture f = fixture();
+        expenses.create(f.groupId(), f.owner(), expenseRequest("100.00", f.owner(), List.of(f.member())));
+        SettlementResponse pending = expenses.createSettlement(f.groupId(), f.member(),
+                new CreateSettlementRequest(f.owner(), new BigDecimal("60.00"), "I_PAID"));
+        List<ErrorCode> results = race(List.of(
+                () -> expenses.confirmSettlement(pending.id(), f.owner()),
+                () -> expenses.confirmSettlement(pending.id(), f.member())));
+        assertEquals(1, results.stream().filter(code -> code == null).count());
+        assertTrue(results.stream().filter(code -> code != null).allMatch(code ->
+                code == ErrorCode.SETTLEMENT_CONFIRMATION_NOT_ALLOWED || code == ErrorCode.SETTLEMENT_ALREADY_RESOLVED));
+        assertSettlementState(pending.id(), "COMPLETED");
+        assertEquals(new BigDecimal("40.00"), expenses.myBalances(f.groupId(), f.member()).totalOwedByMe());
+    }
+
+    @Test
+    void concurrentConfirmationAndCancellationChooseOneTerminalState() throws Exception {
+        Fixture f = fixture();
+        expenses.create(f.groupId(), f.owner(), expenseRequest("100.00", f.owner(), List.of(f.member())));
+        SettlementResponse pending = expenses.createSettlement(f.groupId(), f.member(),
+                new CreateSettlementRequest(f.owner(), new BigDecimal("60.00"), "I_PAID"));
+        List<ErrorCode> results = race(List.of(
+                () -> expenses.confirmSettlement(pending.id(), f.owner()),
+                () -> expenses.cancelSettlement(pending.id(), f.member())));
+        assertEquals(1, results.stream().filter(code -> code == null).count());
+        assertEquals(1, results.stream().filter(code -> code == ErrorCode.SETTLEMENT_ALREADY_RESOLVED).count());
+        String status = expenses.settlementDetail(pending.id(), f.owner()).status();
+        assertTrue(List.of("COMPLETED", "CANCELLED").contains(status));
+        assertSettlementState(pending.id(), status);
+        assertEquals(new BigDecimal("COMPLETED".equals(status) ? "40.00" : "100.00"),
+                expenses.myBalances(f.groupId(), f.member()).totalOwedByMe());
+    }
+
+    private void assertSettlementState(UUID settlementId, String expected) {
+        assertEquals(expected, jdbc.queryForObject("SELECT status FROM settlements WHERE id=?", String.class, settlementId));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM settlement_status_history WHERE settlement_id=?", Integer.class, settlementId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM settlement_status_history WHERE settlement_id=? AND to_status=?",
+                Integer.class, settlementId, expected));
+    }
+
+    private List<ErrorCode> race(List<Runnable> operations) throws Exception {
+        CountDownLatch ready = new CountDownLatch(operations.size());
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(operations.size())) {
+            List<Future<ErrorCode>> futures = new ArrayList<>();
+            for (Runnable operation : operations) futures.add(pool.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(10, TimeUnit.SECONDS));
+                try { operation.run(); return null; }
+                catch (BusinessException ex) { return ex.errorCode(); }
+            }));
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            List<ErrorCode> results = new ArrayList<>();
+            for (Future<ErrorCode> future : futures) results.add(future.get(30, TimeUnit.SECONDS));
+            return results;
+        }
+    }
 
     @Test
     void partialAndFullRepaymentTwoSidedConfirmationUpdatesBalancesAndHistory() {
@@ -271,6 +335,7 @@ class SettlementServiceIntegrationTest extends AbstractPostgresIntegrationTest {
         assertTrue(confirmPool.awaitTermination(10, TimeUnit.SECONDS));
         assertEquals(1, confirmSuccess.get());
         assertEquals(1, alreadyResolved.get());
+        assertSettlementState(pending.id(), "COMPLETED");
         assertEquals(new BigDecimal("20.00"), expenses.myBalances(f.groupId(), f.member()).totalOwedByMe());
     }
 

@@ -403,6 +403,7 @@ class ActivityReminderDeliveryIntegrationTest extends AbstractPostgresIntegratio
     }
 
     private List<NotificationItemResponse> inbox(UUID userId) {
+        awaitDelivery();
         return notificationService.listNotifications(userId, 0, 100).items();
     }
 

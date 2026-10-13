@@ -164,7 +164,7 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
           : ChatRealtimeConnectionState.connecting,
     );
 
-    final wsUrl = _buildWebSocketUrl(baseUrl, token);
+    final wsUrl = _buildWebSocketUrl(baseUrl);
     try {
       final socket = await _connector(wsUrl, {
         'Authorization': 'Bearer $token',
@@ -200,15 +200,14 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
     }
   }
 
-  static String _buildWebSocketUrl(String rawBaseUrl, String token) {
+  static String _buildWebSocketUrl(String rawBaseUrl) {
     final trimmed = rawBaseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
     final wsBase = trimmed.startsWith('https://')
         ? 'wss://${trimmed.substring(8)}'
         : trimmed.startsWith('http://')
         ? 'ws://${trimmed.substring(7)}'
         : trimmed;
-    final encodedToken = Uri.encodeQueryComponent(token);
-    return '$wsBase/ws?access_token=$encodedToken';
+    return '$wsBase/ws';
   }
 
   void _onRawFrame(dynamic data) {

@@ -29,6 +29,7 @@ import org.springframework.web.socket.WebSocketSession;
 
 @Component
 public class ChatRealtimeCoordinator {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatRealtimeCoordinator.class);
     public static final String REDIS_FANOUT_CHANNEL = "wedo:chat:realtime";
     private static final Duration TYPING_TTL = Duration.ofSeconds(5);
     private static final Duration PRESENCE_TTL = Duration.ofSeconds(120);
@@ -231,7 +232,10 @@ public class ChatRealtimeCoordinator {
             try {
                 String json = objectMapper.writeValueAsString(envelope);
                 redisTemplate.convertAndSend(REDIS_FANOUT_CHANNEL, json);
-            } catch (Exception ignored) { }
+            } catch (Exception ex) {
+                log.warn("Redis chat publish failed event={} conversation={} failure={}",
+                        envelope.eventId(), envelope.conversationId(), ex.getClass().getSimpleName());
+            }
         }
     }
 
@@ -474,7 +478,10 @@ public class ChatRealtimeCoordinator {
                     session.sendMessage(new TextMessage(json));
                 }
             }
-        } catch (IOException | RuntimeException ignored) { }
+        } catch (IOException | RuntimeException ex) {
+            log.warn("WebSocket delivery failed event={} conversation={} failure={}",
+                    event.eventId(), event.conversationId(), ex.getClass().getSimpleName());
+        }
     }
 
     private record TypingKey(UUID conversationId, UUID userId) { }

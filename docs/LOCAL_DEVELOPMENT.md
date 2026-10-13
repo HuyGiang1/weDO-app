@@ -71,7 +71,10 @@ The seeder requires the `local` Spring profile and the explicit
 `wedo.local-test-data.enabled=true` opt-in. `dev-run.cmd` sets the matching
 environment variable only for the backend child process; it does not change
 the machine's execution policy or enable seed data in other profiles. The
-multi-account integration harness is test-only and can be rerun with:
+local email-verification event log contains only the user ID; it does not print
+the email address or one-time verification code. Use the seeded accounts for
+manual local testing until a private email-delivery mechanism is configured.
+The multi-account integration harness is test-only and can be rerun with:
 
 ```powershell
 cd D:\weDO-app\backend

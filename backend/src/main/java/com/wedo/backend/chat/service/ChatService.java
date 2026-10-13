@@ -77,29 +77,47 @@ public class ChatService {
         List<UUID> groupIds = jdbc.query("""
                 SELECT gm.group_id FROM group_memberships gm JOIN groups g ON g.id=gm.group_id
                 WHERE gm.user_id=? AND gm.status='ACTIVE' AND g.status IN ('ACTIVE','ARCHIVED')
+                  AND NOT EXISTS(SELECT 1 FROM group_conversations gc WHERE gc.group_id=gm.group_id)
                 ORDER BY gm.created_at,gm.group_id
                 """, (rs,n)->rs.getObject(1,UUID.class), userId);
         groupIds.forEach(this::ensureGroupConversation);
+        jdbc.update("""
+                INSERT INTO conversation_sequences(conversation_id)
+                SELECT gc.conversation_id FROM group_conversations gc
+                JOIN groups g ON g.id=gc.group_id
+                JOIN group_memberships gm ON gm.group_id=gc.group_id
+                WHERE gm.user_id=? AND gm.status='ACTIVE' AND g.status IN ('ACTIVE','ARCHIVED')
+                ON CONFLICT DO NOTHING
+                """, userId);
         return jdbc.query("""
                 SELECT c.id, c.type, gc.group_id, g.name AS title,g.avatar_storage_key,
                        dc.user_id_1, dc.user_id_2,
                        COALESCE(s.current_sequence,0) AS last_sequence,
                        (SELECT CASE WHEN m.status='UNSENT' THEN 'Tin nhắn đã được thu hồi' ELSE m.content END FROM messages m WHERE m.conversation_id=c.id ORDER BY m.sequence DESC LIMIT 1) AS preview,
                        (SELECT m.created_at FROM messages m WHERE m.conversation_id=c.id ORDER BY m.sequence DESC LIMIT 1) AS last_at,
-                       COALESCE(rs.last_read_sequence,0) AS last_read
+                       COALESCE(rs.last_read_sequence,0) AS last_read,
+                       g.status AS group_status,
+                       pu.id AS peer_id,COALESCE(pu.display_name,pu.username::text,'Người dùng') AS peer_name,
+                       pu.avatar_storage_key AS peer_avatar,mr.status AS request_status,mr.sender_id AS request_sender,
+                       (SELECT count(*) FROM messages m WHERE m.conversation_id=c.id
+                            AND m.sequence>COALESCE(rs.last_read_sequence,0) AND m.sender_id<>?
+                            AND NOT EXISTS(SELECT 1 FROM message_hidden_users h WHERE h.message_id=m.id AND h.user_id=?)) AS unread_count
                 FROM conversations c
                 LEFT JOIN group_conversations gc ON gc.conversation_id=c.id
                 LEFT JOIN groups g ON g.id=gc.group_id
                 LEFT JOIN direct_conversations dc ON dc.conversation_id=c.id
                 LEFT JOIN conversation_sequences s ON s.conversation_id=c.id
                 LEFT JOIN conversation_read_states rs ON rs.conversation_id=c.id AND rs.user_id=?
+                LEFT JOIN users pu ON pu.id=CASE WHEN dc.user_id_1=? THEN dc.user_id_2 ELSE dc.user_id_1 END
+                LEFT JOIN LATERAL (SELECT status,sender_id FROM message_requests
+                    WHERE conversation_id=c.id ORDER BY created_at DESC LIMIT 1) mr ON TRUE
                 WHERE (c.type='GROUP' AND g.status IN ('ACTIVE','ARCHIVED') AND EXISTS(SELECT 1 FROM group_memberships gm WHERE gm.group_id=gc.group_id AND gm.user_id=? AND gm.status='ACTIVE'))
                    OR (c.type='DIRECT' AND (dc.user_id_1=? OR dc.user_id_2=?)
                        AND NOT EXISTS(SELECT 1 FROM user_blocks ub WHERE
                          (ub.blocker_id=dc.user_id_1 AND ub.blocked_id=dc.user_id_2)
                          OR (ub.blocker_id=dc.user_id_2 AND ub.blocked_id=dc.user_id_1)))
                 ORDER BY last_at DESC NULLS LAST, c.created_at DESC
-                """, (rs, n) -> conversation(rs, userId), userId, userId, userId, userId);
+                """, (rs, n) -> conversation(rs, userId, true), userId, userId, userId, userId, userId, userId, userId);
     }
 
     public ChatResponses.Conversation openGroup(UUID groupId, UUID userId) {
@@ -409,9 +427,7 @@ public class ChatService {
         return jdbc.query("SELECT status,sender_id FROM message_requests WHERE conversation_id=? ORDER BY created_at DESC LIMIT 1",
                 rs -> {
                     if (!rs.next()) return "OPEN";
-                    String state=rs.getString("status");
-                    if ("PENDING".equals(state)) return userId.equals(rs.getObject("sender_id",UUID.class)) ? "REQUEST_PENDING" : "REQUEST_RECEIVED";
-                    return "ACCEPTED".equals(state) ? "OPEN" : "REQUEST_DECLINED";
+                    return requestAccess(rs.getString("status"),rs.getObject("sender_id",UUID.class),userId);
                 },conversationId);
     }
 
@@ -426,17 +442,32 @@ public class ChatService {
     }
 
     private ChatResponses.Conversation conversation(ResultSet rs,UUID userId) throws SQLException {
+        return conversation(rs,userId,false);
+    }
+
+    private String requestAccess(String state,UUID senderId,UUID userId) {
+        if (state==null||"ACCEPTED".equals(state)) return "OPEN";
+        if ("PENDING".equals(state)) return userId.equals(senderId)?"REQUEST_PENDING":"REQUEST_RECEIVED";
+        return "REQUEST_DECLINED";
+    }
+
+    private ChatResponses.Conversation conversation(ResultSet rs,UUID userId,boolean listProjection) throws SQLException {
         UUID groupId=rs.getObject("group_id",UUID.class);
         UUID peerId=null;
         if("DIRECT".equals(rs.getString("type"))) { UUID a=rs.getObject("user_id_1",UUID.class),b=rs.getObject("user_id_2",UUID.class); peerId=userId.equals(a)?b:a; }
         String access="OPEN";
-        if(peerId!=null) access=requestStatus(rs.getObject("id",UUID.class),userId);
-        boolean writable=permissions(rs.getString("type"),groupId,userId,access,true);
+        if(peerId!=null) {
+            if (listProjection) {
+                access=requestAccess(rs.getString("request_status"),rs.getObject("request_sender",UUID.class),userId);
+            } else access=requestStatus(rs.getObject("id",UUID.class),userId);
+        }
+        boolean writable=listProjection&&groupId!=null ? "ACTIVE".equals(rs.getString("group_status"))
+                : permissions(rs.getString("type"),groupId,userId,access,true);
         Long seq=rs.getLong("last_sequence");
-        long read=jdbc.query("SELECT last_read_sequence FROM conversation_read_states WHERE conversation_id=? AND user_id=?",r->r.next()?r.getLong(1):0L,rs.getObject("id",UUID.class),userId);
-        long unread=jdbc.queryForObject("SELECT count(*) FROM messages m WHERE m.conversation_id=? AND m.sequence>? AND m.sender_id<>? AND NOT EXISTS(SELECT 1 FROM message_hidden_users h WHERE h.message_id=m.id AND h.user_id=?)",Long.class,rs.getObject("id",UUID.class),read,userId,userId);
+        long read=listProjection?rs.getLong("last_read"):jdbc.query("SELECT last_read_sequence FROM conversation_read_states WHERE conversation_id=? AND user_id=?",r->r.next()?r.getLong(1):0L,rs.getObject("id",UUID.class),userId);
+        long unread=listProjection?rs.getLong("unread_count"):jdbc.queryForObject("SELECT count(*) FROM messages m WHERE m.conversation_id=? AND m.sequence>? AND m.sender_id<>? AND NOT EXISTS(SELECT 1 FROM message_hidden_users h WHERE h.message_id=m.id AND h.user_id=?)",Long.class,rs.getObject("id",UUID.class),read,userId,userId);
         return new ChatResponses.Conversation(rs.getObject("id",UUID.class),rs.getString("type"),groupId,rs.getString("title"),rs.getString("avatar_storage_key"),
-                peerId==null?null:user(peerId),access,seq,rs.getString("preview"),rs.getTimestamp("last_at")==null?null:rs.getTimestamp("last_at").toInstant(),unread,
+                peerId==null?null:(listProjection?new ChatResponses.User(rs.getObject("peer_id",UUID.class),rs.getString("peer_name"),rs.getString("peer_avatar")):user(peerId)),access,seq,rs.getString("preview"),rs.getTimestamp("last_at")==null?null:rs.getTimestamp("last_at").toInstant(),unread,
                 new ChatResponses.Permissions(writable,false,false,false,writable,false,!writable));
     }
 

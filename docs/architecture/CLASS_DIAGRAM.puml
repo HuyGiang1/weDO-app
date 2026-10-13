@@ -140,6 +140,10 @@ ChatWebSocketConfig --> ChatWebSocketHandshakeInterceptor : enforces JWT handsha
 ChatWebSocketHandler --> ChatRealtimeCoordinator : manages sessions, typing, presence
 NotificationController --> NotificationService
 NotificationDomainEventListener --> NotificationService : AFTER_COMMIT inbox + push dispatch
+class PostCommitDelivery
+ChatRealtimeTransactionalBridge --> PostCommitDelivery : bounded post-commit enqueue
+NotificationDomainEventListener --> PostCommitDelivery : isolated inbox work
+NotificationService --> PostCommitDelivery : separate bounded push workers
 NotificationService ..> NotificationDomainEvent : deduplicates by eventKey
 NotificationService ..> NotificationItemResponse : persists inbox and resolves target actionability
 NotificationService ..> UserNotificationSettingsResponse : evaluates category push policy

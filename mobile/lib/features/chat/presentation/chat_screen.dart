@@ -57,6 +57,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _onlineUserIds = <String>{};
   DateTime? _lastTypingSentAt;
   bool _wasConnectedOnce = false;
+  Future<void>? _catchUp;
 
   @override
   void initState() {
@@ -136,6 +137,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (event.eventId != null && !_seenEventIds.add(event.eventId!)) {
       return;
     }
+    if (_seenEventIds.length > 2000) {
+      _seenEventIds.remove(_seenEventIds.first);
+    }
     if (event.type == ChatRealtimeEventType.connected) {
       if (event.actor?.id != null) {
         _connectedOwnUserId = event.actor!.id;
@@ -145,7 +149,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (conversation != null) {
         widget.repository.realtimeClient.subscribeConversation(conversation.id);
         if (_wasConnectedOnce) {
-          unawaited(_load(silent: true));
+          unawaited(_catchUpAfterReconnect());
         }
       }
       _wasConnectedOnce = true;
@@ -338,6 +342,61 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  List<ChatMessage> _mergeMessages(Iterable<ChatMessage> incoming) {
+    final byId = {for (final message in _messages) message.id: message};
+    for (final message in incoming) {
+      final existing = byId[message.id];
+      byId[message.id] = existing == null
+          ? message
+          : _mergeMessage(existing, message);
+    }
+    return byId.values.toList()
+      ..sort((a, b) => a.sequence.compareTo(b.sequence));
+  }
+
+  Future<void> _catchUpAfterReconnect() {
+    return _catchUp ??= _recoverHistory().whenComplete(() => _catchUp = null);
+  }
+
+  Future<void> _recoverHistory() async {
+    final conversation = _conversation;
+    if (conversation == null) return;
+    // The existing API has a backwards cursor. Walk bounded pages to the
+    // pre-reconnect high-water mark, not just the newest thirty messages.
+    final anchor = _messages.isEmpty ? 0 : _messages.last.sequence;
+    int? cursor;
+    try {
+      do {
+        final page = await widget.repository.history(
+          conversation.id,
+          beforeSequence: cursor,
+          limit: 100,
+        );
+        if (!mounted) return;
+        setState(() {
+          _messages = _mergeMessages(page.messages);
+          _readers = page.readers;
+        });
+        if (page.messages.isEmpty ||
+            page.messages.first.sequence <= anchor ||
+            !page.hasMore) {
+          break;
+        }
+        final next = page.nextBeforeSequence;
+        if (next == null || (cursor != null && next >= cursor)) break;
+        cursor = next;
+      } while (true);
+      if (_messages.isNotEmpty) {
+        await widget.repository.markRead(
+          conversation.id,
+          _messages.last.sequence,
+        );
+      }
+    } catch (error) {
+      if (mounted) _notice(widget.repository.failureMessage(error));
+    }
+  }
+
   Future<void> _load({bool silent = false}) async {
     if (!silent) {
       setState(() => _loading = true);
@@ -383,7 +442,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _messages = [...page.messages, ..._messages];
+        _messages = _mergeMessages(page.messages);
         _readers = page.readers;
         _hasMore = page.hasMore;
         _nextBeforeSequence = page.nextBeforeSequence;

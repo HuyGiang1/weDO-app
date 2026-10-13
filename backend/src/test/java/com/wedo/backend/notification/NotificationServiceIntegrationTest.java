@@ -93,6 +93,22 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 @Import(NotificationServiceIntegrationTest.FakePushGatewayConfiguration.class)
 class NotificationServiceIntegrationTest {
+    @Autowired private com.wedo.backend.common.event.PostCommitDelivery delivery;
+
+    @org.junit.jupiter.api.AfterEach
+    void awaitDelivery() {
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(20)).until(delivery::isIdle);
+    }
+
+    private PagedResponse<NotificationItemResponse> inbox(UUID userId, int page, int size) {
+        awaitDelivery();
+        return notificationService.listNotifications(userId, page, size);
+    }
+
+    private List<PushMessage> recordedPushMessages() {
+        awaitDelivery();
+        return fakePushGateway.getRecordedMessages();
+    }
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
@@ -263,8 +279,8 @@ class NotificationServiceIntegrationTest {
                 Instant.now()
         ));
 
-        PushMessage push = fakePushGateway.getRecordedMessages().get(0);
-        NotificationItemResponse persisted = notificationService.listNotifications(member1Id, 0, 1)
+        PushMessage push = recordedPushMessages().get(0);
+        NotificationItemResponse persisted = inbox(member1Id, 0, 1)
                 .items().get(0);
         assertThat(push.data())
                 .containsEntry("notificationId", persisted.id().toString())
@@ -306,7 +322,7 @@ class NotificationServiceIntegrationTest {
         assertThat(notificationService.getUnreadCount(member1Id).unreadCount()).isEqualTo(3L);
         assertThat(notificationService.getUnreadCount(ownerId).unreadCount()).isEqualTo(0L);
 
-        PagedResponse<NotificationItemResponse> page0 = notificationService.listNotifications(member1Id, 0, 2);
+        PagedResponse<NotificationItemResponse> page0 = inbox(member1Id, 0, 2);
         assertThat(page0.items()).hasSize(2);
         assertThat(page0.totalElements()).isEqualTo(3L);
         assertThat(page0.items().get(0).title()).isEqualTo("Thông báo #3");
@@ -340,6 +356,35 @@ class NotificationServiceIntegrationTest {
     }
 
     @Test
+    void suspendedAndDeactivatedAccountsCannotUsePersonalNotificationEndpoints() {
+        UserEntity member = userRepository.findById(member1Id).orElseThrow();
+        List<Runnable> protectedCalls = List.of(
+                () -> inbox(member1Id, 0, 10),
+                () -> notificationService.getUnreadCount(member1Id),
+                () -> notificationService.markRead(UUID.randomUUID(), member1Id),
+                () -> notificationService.markAllRead(member1Id),
+                () -> notificationService.getUserSettings(member1Id),
+                () -> notificationService.updateUserSettings(member1Id, null),
+                () -> notificationService.listDevices(member1Id),
+                () -> notificationService.registerDevice(member1Id,
+                        new RegisterDeviceRequest("device", "ANDROID", "test-token")),
+                () -> notificationService.deactivateDevice(member1Id, "device")
+        );
+        for (UserStatus status : List.of(UserStatus.SUSPENDED, UserStatus.DEACTIVATED)) {
+            member.setStatus(status);
+            userRepository.saveAndFlush(member);
+            ErrorCode expected = status == UserStatus.SUSPENDED
+                    ? ErrorCode.ACCOUNT_SUSPENDED : ErrorCode.ACCOUNT_DEACTIVATED;
+            for (Runnable call : protectedCalls) {
+                assertThatThrownBy(call::run)
+                        .isInstanceOf(BusinessException.class)
+                        .extracting(ex -> ((BusinessException) ex).errorCode())
+                        .isEqualTo(expected);
+            }
+        }
+    }
+
+    @Test
     void userSettingsControlPushOnlyWhileAlwaysPersistingInAppNotifications() {
         notificationService.registerDevice(member1Id, new RegisterDeviceRequest("dev-m1", "ANDROID", "token-settings-" + UUID.randomUUID()));
 
@@ -369,11 +414,11 @@ class NotificationServiceIntegrationTest {
         ));
 
         // In-app notification is still persisted, but push is suppressed by category preference
-        PagedResponse<NotificationItemResponse> inbox = notificationService.listNotifications(member1Id, 0, 10);
+        PagedResponse<NotificationItemResponse> inbox = inbox(member1Id, 0, 10);
         assertThat(inbox.items()).isNotEmpty();
         assertThat(inbox.items().get(0).category()).isEqualTo("FINANCE");
         assertThat(persistedPushDecision(inbox.items().get(0).id())).isEqualTo("SUPPRESSED_CATEGORY_DISABLED");
-        assertThat(fakePushGateway.getRecordedMessages()).isEmpty();
+        assertThat(recordedPushMessages()).isEmpty();
 
         // Disable global pushEnabled
         notificationService.updateUserSettings(
@@ -397,9 +442,9 @@ class NotificationServiceIntegrationTest {
                 Map.of(),
                 Instant.now()
         ));
-        PagedResponse<NotificationItemResponse> afterGlobalOff = notificationService.listNotifications(member1Id, 0, 10);
+        PagedResponse<NotificationItemResponse> afterGlobalOff = inbox(member1Id, 0, 10);
         assertThat(persistedPushDecision(afterGlobalOff.items().get(0).id())).isEqualTo("SUPPRESSED_USER_PUSH_DISABLED");
-        assertThat(fakePushGateway.getRecordedMessages()).isEmpty();
+        assertThat(recordedPushMessages()).isEmpty();
     }
 
     @Test
@@ -438,8 +483,8 @@ class NotificationServiceIntegrationTest {
                 null,
                 10
         ));
-        assertThat(fakePushGateway.getRecordedMessages()).isEmpty();
-        NotificationItemResponse nonCriticalItem = notificationService.listNotifications(member1Id, 0, 10).items().get(0);
+        assertThat(recordedPushMessages()).isEmpty();
+        NotificationItemResponse nonCriticalItem = inbox(member1Id, 0, 10).items().get(0);
         assertThat(persistedPushDecision(nonCriticalItem.id())).isEqualTo("SUPPRESSED_GROUP_MUTED");
 
         // While muted, CRITICAL notifications (waitlist promotion, settlement confirmation, contribution confirmation) BYPASS group mute!
@@ -461,9 +506,9 @@ class NotificationServiceIntegrationTest {
         fakePushGateway.clearRecordedMessages();
         expenseService.confirmSettlement(settlement.id(), ownerId);
 
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(1);
-        assertThat(fakePushGateway.getRecordedMessages().get(0).critical()).isTrue();
-        assertThat(fakePushGateway.getRecordedMessages().get(0).category()).isEqualTo("FINANCE");
+        assertThat(recordedPushMessages()).hasSize(1);
+        assertThat(recordedPushMessages().get(0).critical()).isTrue();
+        assertThat(recordedPushMessages().get(0).category()).isEqualTo("FINANCE");
 
         // Simulate expired mute row in DB and verify server evaluates it as unmuted
         jdbc.update(
@@ -494,7 +539,7 @@ class NotificationServiceIntegrationTest {
                 Map.of(),
                 Instant.now()
         ));
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(1);
+        assertThat(recordedPushMessages()).hasSize(1);
     }
 
     @Test
@@ -543,7 +588,7 @@ class NotificationServiceIntegrationTest {
         ));
 
         // Only the 2 active devices (phone-1 and old-phone-3) were attempted; tablet-2 was skipped
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(2);
+        assertThat(recordedPushMessages()).hasSize(2);
 
         // old-phone-3 had an invalid token, so NotificationService automatically marked it active=false
         Map<String, Boolean> activeByDeviceId = notificationService.listDevices(member1Id).stream()
@@ -582,9 +627,29 @@ class NotificationServiceIntegrationTest {
         assertThat(confirmed.status()).isEqualTo("CONFIRMED");
 
         // In-app notifications for FUND_COLLECTION_CREATED and FUND_CONTRIBUTION_CONFIRMED are persisted with PROVIDER_FAILED
-        List<NotificationItemResponse> items = notificationService.listNotifications(member1Id, 0, 10).items();
+        List<NotificationItemResponse> items = inbox(member1Id, 0, 10).items();
         assertThat(items).hasSize(2);
         assertThat(persistedPushDecision(items.get(0).id())).isEqualTo("PROVIDER_FAILED");
+
+        UUID conversationId = chatService.openGroup(groupId, ownerId).id();
+        var message = chatService.send(conversationId, ownerId,
+                new com.wedo.backend.chat.dto.ChatRequests.SendMessage("Failure-isolated chat", null));
+        awaitDelivery();
+        assertThat(chatService.history(conversationId, member1Id, null, 30).messages())
+                .anyMatch(row -> row.id().equals(message.id()));
+        var chatInbox = inbox(member1Id, 0, 10).items().stream()
+                .filter(row -> "CHAT".equals(row.category())).findFirst().orElseThrow();
+        assertThat(persistedPushDecision(chatInbox.id())).isEqualTo("PROVIDER_FAILED");
+
+        var activity = activityService.createFoundation(groupId, ownerId, new CreateActivityRequest(
+                "Provider failure activity", null, Instant.now().plusSeconds(3600),
+                null, "UTC", null, 2));
+        awaitDelivery();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM activities WHERE id=?", Integer.class, activity.id()))
+                .isEqualTo(1);
+        var activityInbox = inbox(member1Id, 0, 10).items().stream()
+                .filter(row -> "ACTIVITY".equals(row.category())).findFirst().orElseThrow();
+        assertThat(persistedPushDecision(activityInbox.id())).isEqualTo("PROVIDER_FAILED");
 
         // Duplicate prevention: re-sending the exact same NotificationDomainEvent key is ignored
         fakePushGateway.setSimulateRuntimeFailure(false);
@@ -608,7 +673,7 @@ class NotificationServiceIntegrationTest {
         );
         notificationService.processDomainEvent(duplicateEvent);
         notificationService.processDomainEvent(duplicateEvent);
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(1);
+        assertThat(recordedPushMessages()).hasSize(1);
     }
 
     @Test
@@ -665,10 +730,28 @@ class NotificationServiceIntegrationTest {
                 eventKey + ":" + member1Id
         );
         assertThat(rows).isEqualTo(1);
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(1);
-        Map<String, Object> targetParams = notificationService.listNotifications(member1Id, 0, 10)
+        assertThat(recordedPushMessages()).hasSize(1);
+        Map<String, Object> targetParams = inbox(member1Id, 0, 10)
                 .items().get(0).target().params();
         assertThat(targetParams).doesNotContainKeys("eventKey", "pushDecision", "collapseKey");
+    }
+
+    @Test
+    void failedInboxPersistenceDoesNotUndoDurableChatAndRestHistoryRecoversIt() {
+        awaitDelivery();
+        UUID conversation = chatService.openGroup(groupId, ownerId).id();
+        jdbc.execute("ALTER TABLE notifications ADD CONSTRAINT chk_m18_fail_chat CHECK (category <> 'CHAT') NOT VALID");
+        try {
+            var message = chatService.send(conversation, ownerId,
+                    new com.wedo.backend.chat.dto.ChatRequests.SendMessage("Durable despite inbox failure", null));
+            awaitDelivery();
+            assertThat(chatService.history(conversation, member1Id, null, 30).messages())
+                    .anyMatch(row -> row.id().equals(message.id()));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE data->>'conversationId'=?",
+                    Integer.class, conversation.toString())).isZero();
+        } finally {
+            jdbc.execute("ALTER TABLE notifications DROP CONSTRAINT chk_m18_fail_chat");
+        }
     }
 
     @Test
@@ -741,7 +824,7 @@ class NotificationServiceIntegrationTest {
                 Map.of("conversationId", conversationId.toString()),
                 Instant.now()
         ));
-        NotificationItemResponse outsiderTarget = notificationService.listNotifications(outsiderId, 0, 10)
+        NotificationItemResponse outsiderTarget = inbox(outsiderId, 0, 10)
                 .items().get(0);
         assertThat(outsiderTarget.target().actionable()).isFalse();
 
@@ -751,14 +834,14 @@ class NotificationServiceIntegrationTest {
         ));
 
         // member1 (open conversation) has push suppressed; member2 (not viewing conversation) receives push with collapseKey
-        NotificationItemResponse m1ChatNotif = notificationService.listNotifications(member1Id, 0, 10).items().get(0);
+        NotificationItemResponse m1ChatNotif = inbox(member1Id, 0, 10).items().get(0);
         assertThat(persistedPushDecision(m1ChatNotif.id())).isEqualTo("SUPPRESSED_OPEN_CONVERSATION");
 
-        NotificationItemResponse m2ChatNotif = notificationService.listNotifications(member2Id, 0, 10).items().get(0);
+        NotificationItemResponse m2ChatNotif = inbox(member2Id, 0, 10).items().get(0);
         assertThat(persistedPushDecision(m2ChatNotif.id())).isEqualTo("GATEWAY_ACCEPTED");
-        assertThat(fakePushGateway.getRecordedMessages()).hasSize(1);
-        assertThat(fakePushGateway.getRecordedMessages().get(0).userId()).isEqualTo(member2Id);
-        assertThat(fakePushGateway.getRecordedMessages().get(0).collapseKey()).isEqualTo("chat:" + conversationId);
+        assertThat(recordedPushMessages()).hasSize(1);
+        assertThat(recordedPushMessages().get(0).userId()).isEqualTo(member2Id);
+        assertThat(recordedPushMessages().get(0).collapseKey()).isEqualTo("chat:" + conversationId);
 
         chatRealtimeCoordinator.unregisterSession(wsSession);
 
@@ -772,11 +855,11 @@ class NotificationServiceIntegrationTest {
                 null,
                 2
         ));
-        NotificationItemResponse beforeCancel = notificationService.listNotifications(member1Id, 0, 10).items().get(0);
+        NotificationItemResponse beforeCancel = inbox(member1Id, 0, 10).items().get(0);
         assertThat(beforeCancel.target().actionable()).isTrue();
 
         jdbc.update("UPDATE activities SET status = 'CANCELLED' WHERE id = ?", act.id());
-        NotificationItemResponse afterCancel = notificationService.listNotifications(member1Id, 0, 10).items().get(0);
+        NotificationItemResponse afterCancel = inbox(member1Id, 0, 10).items().get(0);
         assertThat(afterCancel.target().actionable()).isFalse();
         assertThat(afterCancel.target().nonActionableReason()).contains("hủy");
 
@@ -795,7 +878,7 @@ class NotificationServiceIntegrationTest {
         fakePushGateway.clearRecordedMessages();
         activityRsvpService.changeRsvp(capAct.id(), ownerId, new ChangeRsvpRequest(ActivityRsvpStatus.NOT_GOING)); // Promotes member1!
 
-        NotificationItemResponse promotedNotif = notificationService.listNotifications(member1Id, 0, 10).items().get(0);
+        NotificationItemResponse promotedNotif = inbox(member1Id, 0, 10).items().get(0);
         assertThat(promotedNotif.critical()).isTrue();
         assertThat(promotedNotif.priority()).isEqualTo("HIGH");
         assertThat(promotedNotif.title()).contains("danh sách tham gia");

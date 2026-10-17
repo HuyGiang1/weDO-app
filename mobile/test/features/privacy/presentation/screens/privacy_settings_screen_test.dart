@@ -33,7 +33,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-    expect(find.text('Searchability'), findsOneWidget);
+    expect(find.text('Khả năng tìm kiếm'), findsOneWidget);
       expect(
         tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
         isNull,
@@ -41,11 +41,11 @@ void main() {
 
       final phoneSwitch = find.widgetWithText(
         SwitchListTile,
-        'Discover by phone',
+        'Tìm bằng số điện thoại',
       );
       await tester.tap(phoneSwitch);
       await tester.pump();
-      final save = find.text('Save privacy settings');
+      final save = find.text('Lưu cài đặt quyền riêng tư');
       await tester.ensureVisible(save);
       await tester.tap(save);
       await tester.pumpAndSettle();
@@ -75,17 +75,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Unable to load privacy settings.'), findsOneWidget);
-    await tester.tap(find.text('Retry'));
+    expect(find.text('Không thể tải cài đặt quyền riêng tư.'), findsOneWidget);
+    await tester.tap(find.text('Thử lại'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(SwitchListTile, 'Discover by email'));
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Tìm bằng email'));
     await tester.pump();
-    final save = find.text('Save privacy settings');
+    final save = find.text('Lưu cài đặt quyền riêng tư');
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pumpAndSettle();
     expect(
-      find.text('Unable to save privacy settings. Please try again.'),
+      find.text('Không thể lưu cài đặt quyền riêng tư. Vui lòng thử lại.'),
       findsOneWidget,
     );
     expect(
@@ -113,9 +113,9 @@ void main() {
     await tester.ensureVisible(dmPolicy);
     await tester.tap(dmPolicy);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('FRIENDS_ONLY').last);
+    await tester.tap(find.text('Chỉ bạn bè').last);
     await tester.pump();
-    final save = find.text('Save privacy settings');
+    final save = find.text('Lưu cài đặt quyền riêng tư');
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pumpAndSettle();
@@ -138,11 +138,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final lastSeen = find.widgetWithText(SwitchListTile, 'Show last seen');
+    final lastSeen = find.widgetWithText(SwitchListTile, 'Hiện lần truy cập gần nhất');
     await tester.ensureVisible(lastSeen);
     await tester.tap(lastSeen);
     await tester.pump();
-    final save = find.text('Save privacy settings');
+    final save = find.text('Lưu cài đặt quyền riêng tư');
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pump();

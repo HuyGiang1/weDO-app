@@ -374,8 +374,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      TextButton.icon(
+                      IconButton(
                         key: const Key('mark_all_notifications_read_button'),
+                        tooltip: 'Đánh dấu tất cả đã đọc',
                         onPressed: state.unreadCount == 0 || state.isMutating
                             ? null
                             : () async {
@@ -394,8 +395,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                   );
                                 } catch (_) {}
                               },
-                        icon: const Icon(Icons.done_all_rounded, size: 18),
-                        label: const Text('Đánh dấu tất cả đã đọc'),
+                        icon: const Icon(Icons.done_all_rounded),
                       ),
                     ],
                   ),

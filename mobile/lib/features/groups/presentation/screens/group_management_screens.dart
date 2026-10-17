@@ -3,6 +3,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../../../core/l10n/domain_labels.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/l10n/app_strings.dart';
@@ -68,7 +69,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
       if (!mounted) return;
       if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Choose an image smaller than 5 MiB.')),
+          const SnackBar(content: Text('Chọn ảnh nhỏ hơn 5 MiB.')),
         );
         return;
       }
@@ -90,7 +91,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
       }.contains(contentType)) {
         setState(() => _isUploadingAvatar = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Choose a JPEG, PNG, or WebP image.')),
+          const SnackBar(content: Text('Chọn ảnh JPEG, PNG hoặc WebP.')),
         );
         return;
       }
@@ -337,7 +338,7 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('Group Members')),
+    appBar: AppBar(title: const Text('Thành viên nhóm')),
     body: ValueListenableBuilder<GroupAsyncState<List<GroupMember>>>(
       valueListenable: widget.controller,
       builder: (c, s, _) {
@@ -386,7 +387,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('Member Management')),
+    appBar: AppBar(title: const Text('Quản lý thành viên')),
     body: ValueListenableBuilder<GroupAsyncState<MemberManagementData>>(
       valueListenable: widget.controller,
       builder: (c, s, _) {
@@ -413,13 +414,13 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
               ElevatedButton(
                 onPressed: () =>
                     widget.controller.promote(widget.groupId, widget.userId),
-                child: const Text('Make admin'),
+                child: const Text('Bổ nhiệm quản trị viên'),
               ),
             if (owner && target.role == GroupRole.admin)
               OutlinedButton(
                 onPressed: () =>
                     widget.controller.demote(widget.groupId, widget.userId),
-                child: const Text('Remove admin'),
+                child: const Text('Gỡ quyền quản trị viên'),
               ),
             if (canKick) ...[
               OutlinedButton(
@@ -431,7 +432,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                       c.mounted)
                     widget.onKicked();
                 },
-                child: const Text('Remove member'),
+                child: const Text('Xóa thành viên'),
               ),
               OutlinedButton(
                 onPressed: () async {
@@ -439,18 +440,18 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                   final confirmed = await showDialog<bool>(
                     context: c,
                     builder: (ctx) => AlertDialog(
-                      title: const Text('Ban Member'),
+                      title: const Text('Cấm thành viên'),
                       content: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'Are you sure you want to ban ${target.displayName}?',
+                            'Bạn có chắc muốn cấm ${target.displayName}?',
                           ),
                           const SizedBox(height: 12),
                           TextField(
                             controller: reasonController,
                             decoration: const InputDecoration(
-                              labelText: 'Reason (optional)',
+                              labelText: 'Lý do (tùy chọn)',
                             ),
                           ),
                         ],
@@ -458,14 +459,14 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
+                          child: const Text('Hủy'),
                         ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                           ),
                           onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('Ban'),
+                          child: const Text('Cấm'),
                         ),
                       ],
                     ),
@@ -483,7 +484,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                   }
                 },
                 child: const Text(
-                  'Ban member',
+                  'Cấm thành viên',
                   style: TextStyle(color: Colors.red),
                 ),
               ),
@@ -738,7 +739,7 @@ class _GroupAdminManagementScreenState
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('Group Admins')),
+    appBar: AppBar(title: const Text('Quản trị viên nhóm')),
     body: ValueListenableBuilder<GroupAsyncState<GroupAdminData>>(
       valueListenable: widget.controller,
       builder: (c, s, _) {
@@ -759,13 +760,13 @@ class _GroupAdminManagementScreenState
                             widget.groupId,
                             m.userId,
                           ),
-                          child: const Text('Remove admin'),
+                          child: const Text('Gỡ quyền quản trị viên'),
                         )
                       : GroupRoleBadge(role: m.role),
                 ),
             if (owner) ...[
               const Divider(),
-              const Text('Members'),
+              const Text('Thành viên'),
               for (final m in d.members)
                 if (m.role == GroupRole.member)
                   ListTile(
@@ -773,7 +774,7 @@ class _GroupAdminManagementScreenState
                     trailing: TextButton(
                       onPressed: () =>
                           widget.controller.promote(widget.groupId, m.userId),
-                      child: const Text('Make admin'),
+                      child: const Text('Bổ nhiệm quản trị viên'),
                     ),
                   ),
             ],
@@ -809,7 +810,7 @@ class _TransferOwnershipScreenState extends State<TransferOwnershipScreen> {
 
   @override
   Widget build(BuildContext c) => Scaffold(
-    appBar: AppBar(title: const Text('Transfer Ownership')),
+    appBar: AppBar(title: const Text('Chuyển quyền chủ nhóm')),
     body: ValueListenableBuilder<GroupAsyncState<GroupAdminData>>(
       valueListenable: widget.controller,
       builder: (c, s, _) {
@@ -821,13 +822,13 @@ class _TransferOwnershipScreenState extends State<TransferOwnershipScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('Choose an active member or admin as the new owner.'),
+              child: Text('Chọn thành viên hoặc quản trị viên đang hoạt động làm chủ nhóm mới.'),
             ),
             for (final m in d.members)
               if (m.role != GroupRole.owner)
                 ListTile(
                   title: Text(m.displayName),
-                  subtitle: Text(m.role.name.toUpperCase()),
+                  subtitle: Text(m.role.label),
                   onTap: () async {
                     final r = await widget.controller.transfer(
                       widget.groupId,

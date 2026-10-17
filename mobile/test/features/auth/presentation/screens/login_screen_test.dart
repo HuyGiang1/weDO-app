@@ -20,9 +20,23 @@ void main() {
 
   Finder emailField() => find.byType(TextFormField).at(0);
   Finder passwordField() => find.byType(TextFormField).at(1);
-  Finder loginButton() => find.widgetWithText(ElevatedButton, 'Login');
+  Finder loginButton() => find.widgetWithText(ElevatedButton, 'Đăng nhập');
 
   group('LoginScreen Widget Tests', () {
+    testWidgets('required errors clear as valid values are entered', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildSubject());
+      await tester.ensureVisible(loginButton());
+      await tester.tap(loginButton());
+      await tester.pump();
+      expect(find.text('Vui lòng nhập email'), findsOneWidget);
+      await tester.enterText(emailField(), 'user@example.test');
+      await tester.enterText(passwordField(), 'dummy');
+      await tester.pump();
+      expect(find.text('Vui lòng nhập email'), findsNothing);
+      expect(find.text('Vui lòng nhập mật khẩu'), findsNothing);
+    });
     testWidgets('renders local visual content with empty email', (
       tester,
     ) async {
@@ -33,13 +47,13 @@ void main() {
             .assetName,
         equals('assets/images/wedo_logo.png'),
       );
-      expect(find.text('Welcome Back'), findsOneWidget);
-      expect(find.text('Log in to reconnect with your vibe.'), findsOneWidget);
-      expect(find.text('Email Address'), findsOneWidget);
-      expect(find.text('Password'), findsOneWidget);
-      expect(find.text('Forgot Password?'), findsOneWidget);
-      expect(find.text('Login'), findsOneWidget);
-      expect(find.text('Create Account'), findsOneWidget);
+      expect(find.text('Chào mừng trở lại'), findsOneWidget);
+      expect(find.text('Đăng nhập để tiếp tục kết nối cùng mọi người.'), findsOneWidget);
+      expect(find.text('Địa chỉ email'), findsOneWidget);
+      expect(find.text('Mật khẩu'), findsOneWidget);
+      expect(find.text('Quên mật khẩu?'), findsOneWidget);
+      expect(find.text('Đăng nhập'), findsOneWidget);
+      expect(find.text('Tạo tài khoản'), findsOneWidget);
       expect(find.text('hello@wedo.social'), findsNothing);
       expect(
         tester.widget<TextFormField>(emailField()).controller!.text,
@@ -59,8 +73,8 @@ void main() {
       await tester.ensureVisible(loginButton());
       await tester.tap(loginButton());
       await tester.pump();
-      expect(find.text('Email is required'), findsOneWidget);
-      expect(find.text('Password is required'), findsOneWidget);
+      expect(find.text('Vui lòng nhập email'), findsOneWidget);
+      expect(find.text('Vui lòng nhập mật khẩu'), findsOneWidget);
       expect(calls, equals(0));
     });
 
@@ -97,7 +111,7 @@ void main() {
         await tester.ensureVisible(loginButton());
         await tester.tap(loginButton());
         await tester.pumpAndSettle();
-        expect(find.text('Password must not exceed 72 bytes'), findsNothing);
+        expect(find.text('Mật khẩu không được vượt quá 72 byte'), findsNothing);
 
         final emoji = String.fromCharCode(0x1F600);
         await tester.enterText(
@@ -106,7 +120,7 @@ void main() {
         );
         await tester.tap(loginButton());
         await tester.pump();
-        expect(find.text('Password must not exceed 72 bytes'), findsOneWidget);
+        expect(find.text('Mật khẩu không được vượt quá 72 byte'), findsOneWidget);
       },
     );
 
@@ -123,7 +137,7 @@ void main() {
             .obscureText,
         isTrue,
       );
-      await tester.tap(find.byTooltip('Show password'));
+      await tester.tap(find.byTooltip('Hiện mật khẩu'));
       await tester.pump();
       expect(
         tester
@@ -145,7 +159,7 @@ void main() {
       await tester.ensureVisible(loginButton());
       await tester.tap(loginButton());
       await tester.pumpAndSettle();
-      expect(find.text('Welcome Back'), findsOneWidget);
+      expect(find.text('Chào mừng trở lại'), findsOneWidget);
     });
 
     testWidgets('prevents double submit while loading', (tester) async {
@@ -182,10 +196,10 @@ void main() {
           onCreateAccount: () => create = true,
         ),
       );
-      await tester.tap(find.text('Forgot Password?'));
+      await tester.tap(find.text('Quên mật khẩu?'));
       await tester.pump();
       expect(forgot, isTrue);
-      final createAccount = find.text('Create Account');
+      final createAccount = find.text('Tạo tài khoản');
       await tester.ensureVisible(createAccount);
       await tester.tap(createAccount);
       await tester.pump();

@@ -169,6 +169,9 @@ void main() {
     final inv = GroupInvitationResponse.fromJson({
       'id': 'inv-1',
       'groupId': 'grp-1',
+      'groupName': 'Group name',
+      'groupAvatarStorageKey': 'group-avatar/key',
+      'inviterDisplayName': 'Inviter name',
       'inviterUserId': 'user-1',
       'inviteeUserId': 'user-2',
       'status': 'PENDING',
@@ -177,6 +180,9 @@ void main() {
     });
     expect(inv.id, 'inv-1');
     expect(inv.status, GroupInvitationStatus.pending);
+    expect(inv.groupName, 'Group name');
+    expect(inv.groupAvatarStorageKey, 'group-avatar/key');
+    expect(inv.inviterDisplayName, 'Inviter name');
 
     final link = InviteLinkResponse.fromJson({
       'id': 'link-1',

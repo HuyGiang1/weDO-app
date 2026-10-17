@@ -24,14 +24,14 @@ abstract final class NotificationTargetRouter {
       await showDialog<void>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
-          title: const Text('KhÃ´ng thá»ƒ má»Ÿ liÃªn káº¿t'),
+          title: const Text('Không thể mở liên kết'),
           content: Text(
-            target.nonActionableReason ?? 'Má»¥c liÃªn káº¿t nÃ y khÃ´ng cÃ²n kháº£ dá»¥ng hoáº·c Ä‘Ã£ bá»‹ xÃ³a.',
+            target.nonActionableReason ?? 'Mục liên kết này không còn khả dụng hoặc đã bị xóa.',
           ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('ÄÃ£ hiá»ƒu'),
+              child: const Text('Đã hiểu'),
             ),
           ],
         ),
@@ -42,7 +42,7 @@ abstract final class NotificationTargetRouter {
     final GroupRepository? groups = groupRepository;
     if (groups == null) return;
     final String? groupId = item.group?.groupId;
-    final String groupName = item.group?.groupName ?? 'NhÃ³m WeDo';
+    final String groupName = item.group?.groupName ?? 'Nhóm weDO';
     final String route = target.route.trim();
     final String type = target.targetType.toUpperCase();
 

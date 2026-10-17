@@ -53,6 +53,11 @@ void main() {
       await tester.tap(find.text('Park'));
       await tester.pump();
       expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+      final submit = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Gửi bình chọn'),
+      );
+      expect(submit.onPressed, isNotNull);
+      expect(submit.style!.foregroundColor!.resolve({}), Colors.white);
 
       await tester.tap(find.text('Cafe'));
       await tester.pump();

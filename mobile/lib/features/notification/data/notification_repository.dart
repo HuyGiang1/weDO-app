@@ -46,7 +46,7 @@ class NotificationRepository {
 
   Future<NotificationItemModel> markReadForTap(String notificationId) => _guard(
     () => api.markReadForTap(notificationId),
-    fallbackMessage: 'KhÃ´ng thá»ƒ má»Ÿ thÃ´ng bÃ¡o nÃ y.',
+    fallbackMessage: 'Không thể mở thông báo này.',
   );
 
   Future<int> markAllRead() => _guard(

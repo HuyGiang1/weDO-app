@@ -4,6 +4,28 @@ import 'package:mobile/features/profile/data/profile_models.dart';
 import 'package:mobile/features/profile/presentation/screens/public_user_profile_screen.dart';
 
 void main() {
+  testWidgets('message action uses valid Vietnamese and retains its callback', (
+    tester,
+  ) async {
+    var messages = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PublicUserProfileScreen(
+          userId: 'id',
+          loadPublicProfile: (_) async => const PublicUserProfile(
+            id: 'id',
+            username: 'maya',
+            displayName: 'Maya',
+          ),
+          onMessage: () => messages++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nhắn tin'));
+    expect(messages, 1);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('renders loading then only safe public fields with fallbacks', (
     tester,
   ) async {
@@ -53,8 +75,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Unable to load this profile.'), findsOneWidget);
-    await tester.tap(find.text('Retry'));
+    expect(find.text('Không thể tải hồ sơ này.'), findsOneWidget);
+    await tester.tap(find.text('Thử lại'));
     await tester.pumpAndSettle();
     expect(find.text('Maya Lin'), findsOneWidget);
     expect(find.text('Designer'), findsOneWidget);

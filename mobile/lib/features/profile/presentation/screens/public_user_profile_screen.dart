@@ -38,7 +38,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Profile')),
+    appBar: AppBar(title: const Text('Hồ sơ')),
     body: FutureBuilder<PublicUserProfile>(
       future: _future,
       builder: (context, snapshot) {
@@ -50,9 +50,9 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Unable to load this profile.'),
+                const Text('Không thể tải hồ sơ này.'),
                 const SizedBox(height: AppSpacing.md),
-                ElevatedButton(onPressed: _retry, child: const Text('Retry')),
+                ElevatedButton(onPressed: _retry, child: const Text('Thử lại')),
               ],
             ),
           );
@@ -73,7 +73,10 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    ProfileAvatar(label: title, avatarStorageKey: profile.avatarStorageKey),
+                    ProfileAvatar(
+                      label: title,
+                      avatarStorageKey: profile.avatarStorageKey,
+                    ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       title,
@@ -90,7 +93,7 @@ class _PublicUserProfileScreenState extends State<PublicUserProfileScreen> {
                       FilledButton.icon(
                         onPressed: widget.onMessage,
                         icon: const Icon(Icons.chat_bubble_outline),
-                        label: const Text('Nháº¯n tin'),
+                        label: const Text('Nhắn tin'),
                       ),
                     ],
                     if (bio != null && bio.isNotEmpty) ...[

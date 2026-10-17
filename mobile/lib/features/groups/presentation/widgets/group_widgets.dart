@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/l10n/domain_labels.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../data/models/group_models.dart';
@@ -129,7 +130,7 @@ class GroupRoleBadge extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         child: Text(
-          role.name.toUpperCase(),
+          role.label,
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w700,
@@ -158,14 +159,14 @@ class GroupsBottomNavigation extends StatelessWidget {
     onTap: onTap,
     type: BottomNavigationBarType.fixed,
     items: [
-      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-      BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Groups'),
-      BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Chat'),
+      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Trang chủ'),
+      BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Nhóm'),
+      BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Tin nhắn'),
       BottomNavigationBarItem(
         icon: Icon(Icons.calendar_today),
-        label: 'Calendar',
+        label: 'Lịch',
       ),
-      BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+      BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Hồ sơ'),
     ],
   );
 }

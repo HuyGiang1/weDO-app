@@ -52,7 +52,7 @@ void main() {
     expect(find.text('huy@wedo.social'), findsOneWidget);
     expect(find.text('+84987654321'), findsOneWidget);
     expect(find.text('Building weDO.'), findsOneWidget);
-    expect(find.text('Verified'), findsOneWidget);
+    expect(find.text('Đã xác minh'), findsOneWidget);
   });
 
   testWidgets('omits nullable optional fields without fabricating values', (
@@ -60,8 +60,8 @@ void main() {
   ) async {
     await tester.pumpWidget(subject(() async => user(phone: null, bio: '   ')));
     await tester.pumpAndSettle();
-    expect(find.text('Phone'), findsNothing);
-    expect(find.text('Bio'), findsNothing);
+    expect(find.text('Số điện thoại'), findsNothing);
+    expect(find.text('Giới thiệu'), findsNothing);
   });
 
   testWidgets('shows an error and retries loading', (tester) async {
@@ -74,8 +74,8 @@ void main() {
       }),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Unable to load your profile.'), findsOneWidget);
-    await tester.tap(find.text('Retry'));
+    expect(find.text('Không thể tải hồ sơ của bạn.'), findsOneWidget);
+    await tester.tap(find.text('Thử lại'));
     await tester.pumpAndSettle();
     expect(attempts, 2);
     expect(find.text('Huy Giang'), findsOneWidget);
@@ -105,11 +105,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final edit = find.widgetWithText(ElevatedButton, 'Edit Profile');
+    final edit = find.widgetWithText(ElevatedButton, 'Chỉnh sửa hồ sơ');
     await tester.ensureVisible(edit);
     await tester.tap(edit);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pumpAndSettle();
 
     expect(loads, 1);
@@ -139,7 +139,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final edit = find.widgetWithText(ElevatedButton, 'Edit Profile');
+    final edit = find.widgetWithText(ElevatedButton, 'Chỉnh sửa hồ sơ');
     await tester.ensureVisible(edit);
     await tester.tap(edit);
     await tester.pumpAndSettle();
@@ -181,11 +181,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final change = find.text('Change Username');
+    final change = find.text('Đổi tên người dùng');
     await tester.ensureVisible(change);
     await tester.tap(change);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pumpAndSettle();
 
     expect(loads, 1);
@@ -219,7 +219,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final privacy = find.text('Privacy Settings');
+    final privacy = find.text('Cài đặt quyền riêng tư');
     await tester.ensureVisible(privacy);
     await tester.tap(privacy);
     await tester.pumpAndSettle();
@@ -252,7 +252,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final myQr = find.text('My QR');
+    final myQr = find.text('Mã QR của tôi');
     await tester.ensureVisible(myQr);
     await tester.tap(myQr);
     await tester.pumpAndSettle();

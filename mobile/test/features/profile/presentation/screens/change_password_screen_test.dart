@@ -67,7 +67,7 @@ void main() {
         next: ' new raw ',
         confirmation: ' new raw ',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Change password'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Đổi mật khẩu'));
       await tester.pump();
 
       expect(current, ' current raw ');
@@ -95,9 +95,9 @@ void main() {
         next: 'abcdefgh',
         confirmation: 'different',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Change password'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Đổi mật khẩu'));
       await tester.pump();
-      expect(find.text('Passwords do not match'), findsOneWidget);
+      expect(find.text('Mật khẩu không khớp'), findsOneWidget);
       expect(remoteCalls, 0);
 
     final oversizedUtf8 = List.filled(25, '\u1e7f').join();
@@ -107,9 +107,9 @@ void main() {
         next: oversizedUtf8,
         confirmation: oversizedUtf8,
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Change password'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Đổi mật khẩu'));
       await tester.pump();
-      expect(find.text('Password must not exceed 72 bytes'), findsOneWidget);
+      expect(find.text('Mật khẩu không được vượt quá 72 byte'), findsOneWidget);
       expect(remoteCalls, 0);
     },
   );
@@ -141,10 +141,10 @@ void main() {
         next: 'NewPassword456!',
         confirmation: 'NewPassword456!',
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Change password'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Đổi mật khẩu'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Current password is incorrect'), findsOneWidget);
+      expect(find.text('Mật khẩu hiện tại không đúng'), findsOneWidget);
       expect(invalidationCalls, 0);
     },
   );
@@ -170,13 +170,13 @@ void main() {
       next: 'NewPassword456!',
       confirmation: 'NewPassword456!',
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Change password'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Đổi mật khẩu'));
     await tester.pump();
     request.completeError(StateError('network unavailable'));
     await tester.pump();
 
     expect(
-      find.text('Unable to change password. Please try again.'),
+      find.text('Không thể đổi mật khẩu. Vui lòng thử lại.'),
       findsOneWidget,
     );
     expect(invalidationCalls, 0);

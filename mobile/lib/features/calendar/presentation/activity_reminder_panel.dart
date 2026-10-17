@@ -79,7 +79,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
       return const Card(
         child: ListTile(
           leading: CircularProgressIndicator(),
-          title: Text('Personal reminder'),
+          title: Text('Nhắc nhở cá nhân'),
         ),
       );
     }
@@ -97,18 +97,18 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Personal reminder',
+              'Nhắc nhở cá nhân',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
-              const Text('Reminder settings could not be updated.'),
-              TextButton(onPressed: _load, child: const Text('Retry')),
+              const Text('Không thể cập nhật nhắc nhở.'),
+              TextButton(onPressed: _load, child: const Text('Thử lại')),
             ],
             if (reminder != null) ...[
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Remind me'),
+                title: const Text('Nhắc tôi'),
                 value: reminder.enabled,
                 onChanged: reminder.canConfigure && !_saving
                     ? (enabled) => _save(enabled: enabled)
@@ -117,7 +117,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
               if (reminder.canConfigure) ...[
                 Row(
                   children: [
-                    const Expanded(child: Text('Before activity')),
+                    const Expanded(child: Text('Trước hoạt động')),
                     DropdownButton<int>(
                       value: const [5, 15, 30, 60, 1440].contains(_offset)
                           ? _offset
@@ -127,7 +127,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
                             (minutes) => DropdownMenuItem(
                               value: minutes,
                               child: Text(
-                                minutes == 1440 ? '1 day' : '$minutes min',
+                                minutes == 1440 ? '1 ngày' : '$minutes phút',
                               ),
                             ),
                           )
@@ -151,7 +151,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
                 ),
               if (reminder.enabled && reminder.remindAt != null)
                 Text(
-                  'Reminder time: ${MaterialLocalizations.of(context).formatFullDate(reminder.remindAt!.toLocal())} ${TimeOfDay.fromDateTime(reminder.remindAt!.toLocal()).format(context)}',
+                  'Thời gian nhắc: ${MaterialLocalizations.of(context).formatFullDate(reminder.remindAt!.toLocal())} ${TimeOfDay.fromDateTime(reminder.remindAt!.toLocal()).format(context)}',
                 ),
               if (_saving) const LinearProgressIndicator(),
             ],
@@ -162,14 +162,14 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
   }
 
   String _reason(String? reason) => switch (reason) {
-    'GROUP_ARCHIVED' => 'Reminders are unavailable for archived groups.',
+    'GROUP_ARCHIVED' => 'Không thể đặt nhắc nhở trong nhóm đã lưu trữ.',
     'ACTIVITY_TERMINAL' =>
-      'Reminders are unavailable for completed or cancelled activities.',
+      'Không thể đặt nhắc nhở cho hoạt động đã hoàn thành hoặc hủy.',
     'ACTIVITY_IN_PROGRESS' =>
-      'Reminders are unavailable after an activity starts.',
+      'Không thể đặt nhắc nhở sau khi hoạt động bắt đầu.',
     'ACTIVITY_UNSCHEDULED' =>
-      'Add a date and time before configuring a reminder.',
-    'ACTIVITY_ALREADY_STARTED' => 'This activity has already started.',
-    _ => 'Reminder settings are unavailable.',
+      'Thêm ngày giờ trước khi đặt nhắc nhở.',
+    'ACTIVITY_ALREADY_STARTED' => 'Hoạt động đã bắt đầu.',
+    _ => 'Cài đặt nhắc nhở chưa khả dụng.',
   };
 }

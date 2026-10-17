@@ -35,25 +35,25 @@ void main() {
   testWidgets('validates blank and overlong display names', (tester) async {
     await pumpScreen(tester);
     await tester.enterText(find.byType(TextFormField).at(0), '   ');
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pump();
-    expect(find.text('Display name is required'), findsOneWidget);
+    expect(find.text('Vui lòng nhập tên hiển thị'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).at(0), 'a' * 101);
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pump();
-    expect(find.text('Display name must not exceed 100 characters'), findsOneWidget);
+    expect(find.text('Tên hiển thị không được vượt quá 100 ký tự'), findsOneWidget);
   });
 
   testWidgets('validates overlong bio and phone values', (tester) async {
     await pumpScreen(tester);
     await tester.enterText(find.byType(TextFormField).at(1), 'a' * 501);
     await tester.enterText(find.byType(TextFormField).at(2), '1' * 21);
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pump();
 
-    expect(find.text('Bio must not exceed 500 characters'), findsOneWidget);
-    expect(find.text('Phone must not exceed 20 characters'), findsOneWidget);
+    expect(find.text('Giới thiệu không được vượt quá 500 ký tự'), findsOneWidget);
+    expect(find.text('Số điện thoại không được vượt quá 20 ký tự'), findsOneWidget);
   });
 
   testWidgets('disables duplicate submission while a request is pending', (tester) async {
@@ -64,7 +64,7 @@ void main() {
       return completer.future;
     });
 
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pump();
     await tester.tap(find.byType(ElevatedButton));
     await tester.pump();
@@ -110,7 +110,7 @@ void main() {
     await tester.tap(find.text('Open editor'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), 'Updated name');
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pumpAndSettle();
 
     expect(sent!.displayName, 'Updated name');
@@ -129,7 +129,7 @@ void main() {
 
     await tester.enterText(find.byType(TextFormField).at(1), '');
     await tester.enterText(find.byType(TextFormField).at(2), '');
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pumpAndSettle();
 
     expect(sent!.bio, '');
@@ -139,10 +139,10 @@ void main() {
   testWidgets('renders safe request-level feedback when the API fails', (tester) async {
     await pumpScreen(tester, updateProfile: (_) async => throw StateError('offline'));
 
-    await tester.tap(find.text('Save changes'));
+    await tester.tap(find.text('Lưu thay đổi'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Unable to update your profile. Please try again.'), findsOneWidget);
+    expect(find.text('Không thể cập nhật hồ sơ. Vui lòng thử lại.'), findsOneWidget);
   });
 
   testWidgets('canceling does not submit', (tester) async {

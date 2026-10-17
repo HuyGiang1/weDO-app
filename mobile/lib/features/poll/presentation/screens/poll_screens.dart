@@ -633,6 +633,10 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
             ),
             if (poll.permissions.canVote)
               FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
+                ),
                 onPressed: _selectedOptionId == null ? null : () => _vote(poll),
                 child: const Text('Gửi bình chọn'),
               ),

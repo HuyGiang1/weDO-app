@@ -436,7 +436,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextFormField).at(0), ' A@B.C ');
       await tester.enterText(find.byType(TextFormField).at(1), ' raw ');
-      final login = find.widgetWithText(ElevatedButton, 'Login');
+      final login = find.widgetWithText(ElevatedButton, 'Đăng nhập');
       await tester.ensureVisible(login);
       await tester.tap(login);
       await tester.pumpAndSettle();
@@ -450,7 +450,7 @@ void main() {
       expect(holder.currentAccessToken, 'access');
       expect(coordinator.hasProfileCompletionToken, isFalse);
       expect(find.text('Signed in successfully.'), findsOneWidget);
-      expect(find.text('Welcome Back'), findsOneWidget);
+      expect(find.text('Chào mừng trở lại'), findsOneWidget);
       expect(api.currentUserCalls, 0);
     },
   );

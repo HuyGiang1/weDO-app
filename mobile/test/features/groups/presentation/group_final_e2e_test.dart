@@ -23,12 +23,12 @@ void main() {
 
     await tester.tap(find.text('member'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove member'));
+    await tester.tap(find.text('Xóa thành viên'));
     await tester.pumpAndSettle();
 
     expect(repo.kickGroupId, 'group-id');
     expect(repo.kickUserId, 'member');
-    expect(find.text('Member Management'), findsNothing);
+    expect(find.text('Quản lý thành viên'), findsNothing);
     expect(repo.memberLoadCount, 2);
     expect(find.text('member'), findsNothing);
   });

@@ -288,12 +288,14 @@ enum GroupInvitationStatus {
   static GroupInvitationStatus fromWire(String v) =>
       GroupInvitationStatus.values.firstWhere(
         (e) => e.wireValue == v,
-        orElse: () => throw FormatException('Unknown GroupInvitationStatus: $v'),
+        orElse: () =>
+            throw FormatException('Unknown GroupInvitationStatus: $v'),
       );
 }
 
 class GroupInvitationResponse {
   final String id, groupId, inviterUserId, inviteeUserId;
+  final String? groupName, groupAvatarStorageKey, inviterDisplayName;
   final GroupInvitationStatus status;
   final DateTime createdAt;
   final DateTime? respondedAt;
@@ -306,12 +308,18 @@ class GroupInvitationResponse {
     required this.status,
     required this.createdAt,
     this.respondedAt,
+    this.groupName,
+    this.groupAvatarStorageKey,
+    this.inviterDisplayName,
   });
 
   factory GroupInvitationResponse.fromJson(Map<String, dynamic> j) =>
       GroupInvitationResponse(
         id: _s(j, 'id'),
         groupId: _s(j, 'groupId'),
+        groupName: j['groupName'] as String?,
+        groupAvatarStorageKey: j['groupAvatarStorageKey'] as String?,
+        inviterDisplayName: j['inviterDisplayName'] as String?,
         inviterUserId: (j['inviterId'] ?? j['inviterUserId']) as String,
         inviteeUserId: (j['inviteeId'] ?? j['inviteeUserId']) as String,
         status: GroupInvitationStatus.fromWire(_s(j, 'status')),
@@ -346,7 +354,8 @@ class InviteLinkResponse {
     required this.createdAt,
   });
 
-  bool get isExpired => expiresAt != null && expiresAt!.isBefore(DateTime.now());
+  bool get isExpired =>
+      expiresAt != null && expiresAt!.isBefore(DateTime.now());
   bool get isExhausted => maxUses != null && usesCount >= maxUses!;
   bool get isValid => !isRevoked && !isExpired && !isExhausted;
 
@@ -395,10 +404,13 @@ class GroupInviteSummaryResponse {
       GroupInviteSummaryResponse(
         groupId: _s(j, 'groupId'),
         groupName: (j['name'] ?? j['groupName']) as String,
-        groupAvatarStorageKey: (j['avatarStorageKey'] ?? j['groupAvatarStorageKey']) as String?,
-        groupDescription: (j['description'] ?? j['groupDescription']) as String?,
+        groupAvatarStorageKey:
+            (j['avatarStorageKey'] ?? j['groupAvatarStorageKey']) as String?,
+        groupDescription:
+            (j['description'] ?? j['groupDescription']) as String?,
         joinPolicy: GroupJoinPolicy.fromWire(_s(j, 'joinPolicy')),
-        activeMemberCount: ((j['memberCount'] ?? j['activeMemberCount']) as num).toInt(),
+        activeMemberCount: ((j['memberCount'] ?? j['activeMemberCount']) as num)
+            .toInt(),
       );
 }
 
@@ -413,12 +425,14 @@ enum GroupJoinRequestStatus {
   static GroupJoinRequestStatus fromWire(String v) =>
       GroupJoinRequestStatus.values.firstWhere(
         (e) => e.wireValue == v,
-        orElse: () => throw FormatException('Unknown GroupJoinRequestStatus: $v'),
+        orElse: () =>
+            throw FormatException('Unknown GroupJoinRequestStatus: $v'),
       );
 }
 
 class JoinRequestResponse {
   final String id, groupId, requesterUserId;
+  final String? userDisplayName, userAvatarStorageKey;
   final GroupJoinRequestStatus status;
   final String? reviewedByUserId;
   final DateTime createdAt;
@@ -428,6 +442,8 @@ class JoinRequestResponse {
     required this.id,
     required this.groupId,
     required this.requesterUserId,
+    this.userDisplayName,
+    this.userAvatarStorageKey,
     required this.status,
     this.reviewedByUserId,
     required this.createdAt,
@@ -439,8 +455,11 @@ class JoinRequestResponse {
         id: _s(j, 'id'),
         groupId: _s(j, 'groupId'),
         requesterUserId: (j['userId'] ?? j['requesterUserId']) as String,
+        userDisplayName: j['userDisplayName'] as String?,
+        userAvatarStorageKey: j['userAvatarStorageKey'] as String?,
         status: GroupJoinRequestStatus.fromWire(_s(j, 'status')),
-        reviewedByUserId: (j['respondedBy'] ?? j['reviewedByUserId']) as String?,
+        reviewedByUserId:
+            (j['respondedBy'] ?? j['reviewedByUserId']) as String?,
         createdAt: _d(j, 'createdAt'),
         reviewedAt: _nd(j, 'respondedAt') ?? _nd(j, 'reviewedAt'),
       );
@@ -454,6 +473,7 @@ class BanMemberRequest {
 
 class GroupBanResponse {
   final String id, groupId, bannedUserId, bannedByUserId;
+  final String? username, displayName, avatarStorageKey;
   final String? reason;
   final DateTime createdAt;
 
@@ -462,6 +482,9 @@ class GroupBanResponse {
     required this.groupId,
     required this.bannedUserId,
     required this.bannedByUserId,
+    this.username,
+    this.displayName,
+    this.avatarStorageKey,
     this.reason,
     required this.createdAt,
   });
@@ -471,8 +494,10 @@ class GroupBanResponse {
     groupId: _s(j, 'groupId'),
     bannedUserId: (j['userId'] ?? j['bannedUserId']) as String,
     bannedByUserId: (j['bannedBy'] ?? j['bannedByUserId']) as String,
+    username: j['username'] as String?,
+    displayName: j['displayName'] as String?,
+    avatarStorageKey: j['avatarStorageKey'] as String?,
     reason: j['reason'] as String?,
     createdAt: _d(j, 'createdAt'),
   );
 }
-

@@ -148,20 +148,9 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryContainer.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.groups_rounded,
-                                size: 36,
-                                color: AppColors.primary,
-                              ),
-                            ),
+                          GroupAvatar(
+                            name: inv.groupName ?? 'Nhóm',
+                            avatarStorageKey: inv.groupAvatarStorageKey,
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -169,7 +158,9 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  inv.groupId,
+                                  inv.groupName?.trim().isNotEmpty == true
+                                      ? inv.groupName!
+                                      : 'Tên nhóm không khả dụng',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 15,
@@ -191,7 +182,9 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
                                           children: [
                                             const TextSpan(text: 'Được mời bởi '),
                                             TextSpan(
-                                              text: inv.inviterUserId,
+                                              text: inv.inviterDisplayName?.trim().isNotEmpty == true
+                                                  ? inv.inviterDisplayName!
+                                                  : 'Tên người mời không khả dụng',
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -237,7 +230,7 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
                                 if (ok && context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Joined group successfully!'),
+                                      content: Text('Đã tham gia nhóm!'),
                                     ),
                                   );
                                   widget.onAccepted?.call();
@@ -267,7 +260,7 @@ class _MyGroupInvitationsScreenState extends State<MyGroupInvitationsScreen> {
                                 if (ok && context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('Invitation declined'),
+                                      content: Text('Đã từ chối lời mời'),
                                     ),
                                   );
                                 }
@@ -320,7 +313,7 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Join Group by Code')),
+      appBar: AppBar(title: const Text('Tham gia nhóm bằng mã')),
       body: ValueListenableBuilder<GroupAsyncState<GroupInviteSummaryResponse>>(
         valueListenable: widget.controller,
         builder: (context, state, _) {
@@ -332,8 +325,8 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
-                  labelText: 'Invite Code',
-                  hintText: 'Enter 8-character invite code',
+                  labelText: 'Mã mời',
+                  hintText: 'Nhập mã mời gồm 8 ký tự',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.vpn_key),
                 ),
@@ -349,7 +342,7 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                         }
                       },
                 icon: const Icon(Icons.search),
-                label: const Text('Preview Group'),
+                label: const Text('Xem trước nhóm'),
               ),
               if (state.loading) ...[
                 const SizedBox(height: 24),
@@ -387,7 +380,7 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                             Column(
                               children: [
                                 const Text(
-                                  'Members',
+                                  'Thành viên',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
@@ -404,7 +397,7 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                             Column(
                               children: [
                                 const Text(
-                                  'Admission',
+                                  'Hình thức tham gia',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
@@ -413,8 +406,8 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                                 Chip(
                                   label: Text(
                                     summary.joinPolicy == GroupJoinPolicy.autoJoin
-                                        ? 'Auto Join'
-                                        : 'Approval Required',
+                                        ? 'Tham gia trực tiếp'
+                                        : 'Cần phê duyệt',
                                     style: const TextStyle(fontSize: 11),
                                   ),
                                   backgroundColor: summary.joinPolicy ==
@@ -439,8 +432,8 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                                     if (ok && context.mounted) {
                                       final msg = summary.joinPolicy ==
                                               GroupJoinPolicy.autoJoin
-                                          ? 'Joined group successfully!'
-                                          : 'Join request submitted! Awaiting admin approval.';
+                                          ? 'Đã tham gia nhóm!'
+                                          : 'Đã gửi yêu cầu tham gia. Đang chờ phê duyệt.';
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(content: Text(msg)),
                                       );
@@ -450,8 +443,8 @@ class _JoinByInviteCodeScreenState extends State<JoinByInviteCodeScreen> {
                                   },
                             child: Text(
                               summary.joinPolicy == GroupJoinPolicy.autoJoin
-                                  ? 'Join Group'
-                                  : 'Request to Join',
+                                  ? 'Tham gia nhóm'
+                                  : 'Yêu cầu tham gia',
                             ),
                           ),
                         ),
@@ -805,7 +798,11 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
                   ),
                   child: Theme(
                     data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      clipBehavior: Clip.antiAlias,
+                      child: ExpansionTile(
                       leading: const Icon(Icons.tune_rounded, color: AppColors.onSurfaceVariant),
                       title: const Text(
                         AppStrings.advancedInviteLinks,
@@ -940,6 +937,7 @@ class _GroupInviteLinksScreenState extends State<GroupInviteLinksScreen> {
                           }),
                       ],
                     ),
+                    ),
                   ),
                 ),
               ],
@@ -1020,7 +1018,7 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'No pending join requests',
+                    'Không có yêu cầu đang chờ duyệt',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1074,13 +1072,10 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
                     children: [
                       Row(
                         children: [
-                          CircleAvatar(
+                          GroupAvatar(
                             radius: 24,
-                            backgroundColor: AppColors.surfaceContainer,
-                            child: const Icon(
-                              Icons.person,
-                              color: AppColors.primary,
-                            ),
+                            name: req.userDisplayName ?? 'Người dùng',
+                            avatarStorageKey: req.userAvatarStorageKey,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -1088,7 +1083,9 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  req.requesterUserId,
+                                  req.userDisplayName?.trim().isNotEmpty == true
+                                      ? req.userDisplayName!
+                                      : 'Tên người yêu cầu chưa khả dụng',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 15,
@@ -1097,7 +1094,7 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '@${req.requesterUserId} • ${req.createdAt.toLocal().toString().split('.').first}',
+                                  'Ngày gửi: ${req.createdAt.toLocal().toString().split('.').first}',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: AppColors.onSurfaceVariant,
@@ -1228,7 +1225,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         title: const Text(
-          'Ban List',
+          'Danh sách cấm',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -1263,7 +1260,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'No banned users in this group',
+                    'Nhóm chưa có người dùng bị cấm',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1279,7 +1276,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
             children: [
               // Header Section
               const Text(
-                'Banned Users',
+                'Người dùng bị cấm',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
@@ -1289,7 +1286,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Review and manage users who have been restricted from WeDo groups.',
+                'Xem và quản lý người dùng bị cấm tham gia nhóm.',
                 style: TextStyle(
                   fontSize: 14,
                   color: AppColors.onSurfaceVariant,
@@ -1313,13 +1310,10 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                   ),
                   child: Row(
                     children: [
-                      CircleAvatar(
+                      GroupAvatar(
                         radius: 24,
-                        backgroundColor: AppColors.surfaceContainerLow,
-                        child: const Icon(
-                          Icons.person,
-                          color: AppColors.outline,
-                        ),
+                        name: ban.displayName ?? ban.username ?? 'Người dùng',
+                        avatarStorageKey: ban.avatarStorageKey,
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -1327,7 +1321,11 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              ban.bannedUserId,
+                              ban.displayName?.trim().isNotEmpty == true
+                                  ? ban.displayName!
+                                  : (ban.username?.trim().isNotEmpty == true
+                                        ? '@${ban.username}'
+                                        : 'Tên người dùng chưa khả dụng'),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 15,
@@ -1336,7 +1334,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Banned: ${ban.createdAt.toLocal().toString().split('.').first}',
+                              'Ngày cấm: ${ban.createdAt.toLocal().toString().split('.').first}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.onSurfaceVariant,
@@ -1353,7 +1351,7 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
-                                    ban.reason ?? 'By Admin',
+                                    ban.reason ?? 'Không có lý do được cung cấp',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: AppColors.outline,
@@ -1381,12 +1379,12 @@ class _GroupBansScreenState extends State<GroupBansScreen> {
                           );
                           if (ok && context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('User unbanned')),
+                              const SnackBar(content: Text('Đã bỏ cấm người dùng')),
                             );
                           }
                         },
                         child: const Text(
-                          'Unban',
+                          'Bỏ cấm',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,

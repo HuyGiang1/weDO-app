@@ -241,7 +241,7 @@ void main() {
       );
     await tester.pumpWidget(_screen(HomeController(gateway)));
     await tester.pumpAndSettle();
-    expect(find.text('Trang chủ'), findsOneWidget);
+    expect(find.text('Trang chủ'), findsNWidgets(2));
     expect(find.text('Nhóm gần đây'), findsOneWidget);
     expect(find.text('Hoạt động sắp tới'), findsOneWidget);
     expect(find.text('Tài chính'), findsOneWidget);

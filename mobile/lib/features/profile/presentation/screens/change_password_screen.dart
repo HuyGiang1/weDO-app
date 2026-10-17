@@ -47,27 +47,27 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   String? _validateCurrentPassword(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Current password is required';
+      return 'Vui lòng nhập mật khẩu hiện tại';
     }
     return null;
   }
 
   String? _validateNewPassword(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'New password is required';
+      return 'Vui lòng nhập mật khẩu mới';
     }
     if (value.length < 8 || value.length > 72) {
-      return 'Password must be between 8 and 72 characters';
+      return 'Mật khẩu phải có từ 8 đến 72 ký tự';
     }
     if (utf8.encode(value).length > 72) {
-      return 'Password must not exceed 72 bytes';
+      return 'Mật khẩu không được vượt quá 72 byte';
     }
     return null;
   }
 
   String? _validateConfirmation(String? value) {
     if (value != _newPasswordController.text) {
-      return 'Passwords do not match';
+      return 'Mật khẩu không khớp';
     }
     return null;
   }
@@ -93,24 +93,24 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       }
       setState(() {
         _submitting = false;
-        _submissionError = 'Password changed. Please sign in again.';
+        _submissionError = 'Đã đổi mật khẩu. Vui lòng đăng nhập lại.';
       });
     } on AuthException catch (exception) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
         _submissionError = switch (exception.failure.type) {
-          AuthFailureType.invalidCredentials => 'Current password is incorrect',
+          AuthFailureType.invalidCredentials => 'Mật khẩu hiện tại không đúng',
           _ when exception.failure.fieldErrors.isNotEmpty =>
             exception.failure.fieldErrors.values.first,
-          _ => 'Unable to change password. Please try again.',
+          _ => 'Không thể đổi mật khẩu. Vui lòng thử lại.',
         };
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        _submissionError = 'Unable to change password. Please try again.';
+        _submissionError = 'Không thể đổi mật khẩu. Vui lòng thử lại.';
       });
     }
   }
@@ -118,7 +118,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Change password')),
+      appBar: AppBar(title: const Text('Đổi mật khẩu')),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -126,7 +126,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
             padding: const EdgeInsets.all(AppSpacing.md),
             children: [
               const Text(
-                'Ensure your account uses a long, random password to stay secure.',
+                'Sử dụng mật khẩu dài và khó đoán để bảo vệ tài khoản.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -139,7 +139,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       enabled: !_submitting,
                       validator: _validateCurrentPassword,
                       decoration: _passwordDecoration(
-                        label: 'Current password',
+                        label: 'Mật khẩu hiện tại',
                         visible: _showCurrentPassword,
                         onToggle: () => setState(
                           () => _showCurrentPassword = !_showCurrentPassword,
@@ -154,10 +154,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Password requirements:'),
+                    Text('Yêu cầu mật khẩu:'),
                     SizedBox(height: 8),
-                    Text('• 8–72 characters'),
-                    Text('• No more than 72 UTF-8 bytes'),
+                    Text('• Từ 8 đến 72 ký tự'),
+                    Text('• Không quá 72 byte UTF-8'),
                   ],
                 ),
               ),
@@ -168,7 +168,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 enabled: !_submitting,
                 validator: _validateNewPassword,
                 decoration: _passwordDecoration(
-                  label: 'New password',
+                  label: 'Mật khẩu mới',
                   visible: _showNewPassword,
                   onToggle: () =>
                       setState(() => _showNewPassword = !_showNewPassword),
@@ -181,7 +181,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 enabled: !_submitting,
                 validator: _validateConfirmation,
                 decoration: _passwordDecoration(
-                  label: 'Confirm new password',
+                  label: 'Xác nhận mật khẩu mới',
                   visible: _showConfirmPassword,
                   onToggle: () => setState(
                     () => _showConfirmPassword = !_showConfirmPassword,
@@ -205,7 +205,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         width: 20,
                         child: CircularProgressIndicator(),
                       )
-                    : const Text('Change password'),
+                    : const Text('Đổi mật khẩu'),
               ),
             ],
           ),
@@ -221,7 +221,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }) => InputDecoration(
     labelText: label,
     suffixIcon: IconButton(
-      tooltip: visible ? 'Hide password' : 'Show password',
+      tooltip: visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
       onPressed: _submitting ? null : onToggle,
       icon: Icon(visible ? Icons.visibility_off : Icons.visibility),
     ),

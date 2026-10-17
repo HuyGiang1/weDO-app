@@ -99,37 +99,37 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
               );
             }
             final content = <Widget>[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'WeDo',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
-                          ),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'WeDo',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
                         ),
-                        SizedBox(height: 20),
-                        Text(
-                          AppStrings.myGroups,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      ),
+                      SizedBox(height: 20),
+                      Text(
+                        AppStrings.myGroups,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
                         ),
-                        SizedBox(height: 4),
-                        Text(AppStrings.myGroupsSubtitle),
-                      ],
-                    ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(AppStrings.myGroupsSubtitle),
+                    ],
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
+                  const SizedBox(height: 12),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 4,
+                    runSpacing: 4,
                     children: [
                       if (widget.onSearch != null)
                         IconButton(
@@ -224,9 +224,11 @@ class _GroupCard extends StatelessWidget {
         name: group.name,
         avatarStorageKey: group.avatarStorageKey,
       ),
-      title: Row(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(group.name)),
+          Text(group.name),
+          const SizedBox(height: 4),
           GroupRoleBadge(role: group.callerRole),
         ],
       ),

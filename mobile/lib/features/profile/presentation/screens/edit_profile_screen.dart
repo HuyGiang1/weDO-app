@@ -61,17 +61,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   String? _displayNameValidator(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Display name is required';
+      return 'Vui lòng nhập tên hiển thị';
     }
     if (value.length > 100) {
-      return 'Display name must not exceed 100 characters';
+      return 'Tên hiển thị không được vượt quá 100 ký tự';
     }
     return null;
   }
 
   String? _lengthValidator(String? value, int max, String label) {
     if ((value?.length ?? 0) > max) {
-      return '$label must not exceed $max characters';
+      return '$label không được vượt quá $max ký tự';
     }
     return null;
   }
@@ -103,7 +103,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         setState(() {
           _newAvatarStorageKey = null;
           _avatarPreview = null;
-          _requestError = 'Unable to update your profile. Please try again.';
+          _requestError = 'Không thể cập nhật hồ sơ. Vui lòng thử lại.';
         });
       }
     } finally {
@@ -126,7 +126,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!mounted) return;
     if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
       if (mounted) {
-        setState(() => _requestError = 'Choose an image smaller than 5 MiB.');
+        setState(() => _requestError = 'Chọn ảnh nhỏ hơn 5 MiB.');
       }
       return;
     }
@@ -145,7 +145,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       'image/webp',
     }.contains(contentType)) {
       if (mounted) {
-        setState(() => _requestError = 'Choose a JPEG, PNG, or WebP image.');
+        setState(() => _requestError = 'Chọn ảnh JPEG, PNG hoặc WebP.');
       }
       return;
     }
@@ -169,7 +169,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         setState(
           () => _requestError =
-              'Unable to upload your photo. Your current photo is unchanged.',
+              'Không thể tải ảnh lên. Ảnh hiện tại được giữ nguyên.',
         );
       }
     } finally {
@@ -181,7 +181,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Edit Profile')),
+    appBar: AppBar(title: const Text('Chỉnh sửa hồ sơ')),
     body: SafeArea(
       child: Form(
         key: _formKey,
@@ -205,7 +205,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     right: 0,
                     bottom: 0,
                     child: IconButton.filled(
-                      tooltip: 'Change profile photo',
+                      tooltip: 'Đổi ảnh hồ sơ',
                       onPressed: _uploadingAvatar || widget.uploadAvatar == null
                           ? null
                           : _pickAvatar,
@@ -230,23 +230,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     enabled: !_submitting,
                     validator: _displayNameValidator,
                     decoration: const InputDecoration(
-                      labelText: 'Display name',
+                      labelText: 'Tên hiển thị',
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   TextFormField(
                     controller: _bio,
                     enabled: !_submitting,
-                    validator: (value) => _lengthValidator(value, 500, 'Bio'),
+                    validator: (value) => _lengthValidator(value, 500, 'Giới thiệu'),
                     maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Bio'),
+                    decoration: const InputDecoration(labelText: 'Giới thiệu'),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   TextFormField(
                     controller: _phone,
                     enabled: !_submitting,
-                    validator: (value) => _lengthValidator(value, 20, 'Phone'),
-                    decoration: const InputDecoration(labelText: 'Phone'),
+                    validator: (value) => _lengthValidator(value, 20, 'Số điện thoại'),
+                    decoration: const InputDecoration(labelText: 'Số điện thoại'),
                   ),
                 ],
               ),
@@ -264,7 +264,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               style: profilePrimaryButtonStyle(),
               child: _submitting
                   ? const CircularProgressIndicator()
-                  : const Text('Save changes'),
+                  : const Text('Lưu thay đổi'),
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../../core/l10n/domain_labels.dart';
 
 import '../../groups/data/group_repository.dart';
 import '../../groups/presentation/widgets/group_widgets.dart';
@@ -133,39 +134,17 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
         ),
-        SizedBox(
-          height: 56,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Row(
-              children: List.generate(
-                _tabs.length,
-                (index) => Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: ChoiceChip(
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      labelPadding: EdgeInsets.zero,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 2,
-                        vertical: 6,
-                      ),
-                      label: SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          _tabs[index],
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                      selected: _tab == index,
-                      onSelected: (_) => _selectTab(index),
-                    ),
-                  ),
-                ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: List.generate(
+              _tabs.length,
+              (index) => ChoiceChip(
+                label: Text(_tabs[index]),
+                selected: _tab == index,
+                onSelected: (_) => _selectTab(index),
               ),
             ),
           ),
@@ -307,7 +286,7 @@ class _SearchScreenState extends State<SearchScreen> {
         avatarStorageKey: snapshot.data,
       ),
       title: Text(value.name),
-      subtitle: Text(value.status.name),
+      subtitle: Text(value.status.label),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => widget.onOpenGroup(value),
     ),
@@ -316,7 +295,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _activityTile(SearchActivity value) => ListTile(
     leading: const CircleAvatar(child: Icon(Icons.event_outlined)),
     title: Text(value.title),
-    subtitle: Text(value.location?.name ?? value.status.name),
+    subtitle: Text(value.location?.name ?? value.status.label),
     trailing: const Icon(Icons.chevron_right),
     onTap: () => widget.onOpenActivity(value),
   );

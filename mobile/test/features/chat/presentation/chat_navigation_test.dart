@@ -23,7 +23,7 @@ void main() {
       await tester.tap(find.text('Open Tam Đảo'));
       await tester.pumpAndSettle();
       expect(find.byType(GroupInfoScreen), findsOneWidget);
-      await tester.tap(find.text('Chat'));
+      await tester.tap(find.text('Tin nhắn'));
       await tester.pumpAndSettle();
 
       expect(find.byType(ChatHomeScreen), findsOneWidget);
@@ -58,7 +58,7 @@ void main() {
       expect(find.byType(ChatScreen), findsNothing);
 
       // Reselecting Chat must not reopen the conversation just visited.
-      await tester.tap(find.text('Chat'));
+      await tester.tap(find.text('Tin nhắn'));
       await tester.pumpAndSettle();
       expect(chat.histories, ['tam-dao-conversation']);
       expect(find.byType(ChatHomeScreen), findsOneWidget);
@@ -107,7 +107,7 @@ void main() {
         tester.widget<GroupInfoScreen>(find.byType(GroupInfoScreen)).groupId,
         'tam-dao',
       );
-      await tester.tap(find.text('Chat'));
+      await tester.tap(find.text('Tin nhắn'));
       await tester.pumpAndSettle();
       expect(observer.last.name, AppRoutes.chatHome);
       expect(observer.last.arguments, isA<ChatHomeRouteArgs>());

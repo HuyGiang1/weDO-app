@@ -93,6 +93,7 @@ void main() {
       expect(find.text('Đang lên kế hoạch'), findsWidgets);
       expect(find.text('Tham gia'), findsWidgets);
       expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.byTooltip('Tạo hoạt động'), findsNothing);
 
       await tester.tap(find.text('Weekend Soccer'));
       expect(openedId, 'act-1');
@@ -112,6 +113,10 @@ void main() {
       );
 
       expect(find.text('Chưa có hoạt động nào'), findsOneWidget);
+      expect(find.text('Tạo hoạt động'), findsOneWidget);
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(ActivityCreateRuntimeScreen), findsOneWidget);
     });
   });
 

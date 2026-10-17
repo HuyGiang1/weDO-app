@@ -92,24 +92,6 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
         ),
         backgroundColor: AppColors.surface,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: AppColors.primary),
-            tooltip: AppStrings.createActivity,
-            onPressed: () => Navigator.of(context)
-                .push(
-                  MaterialPageRoute<String?>(
-                    builder: (_) => ActivityCreateRuntimeScreen(
-                      groupId: widget.groupId,
-                      controller: widget.controller,
-                    ),
-                  ),
-                )
-                .then((newId) {
-                  if (newId != null) widget.onOpen(newId);
-                }),
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primary,
@@ -225,24 +207,6 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                               style: TextStyle(
                                 color: AppColors.onSurfaceVariant,
                               ),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: () => Navigator.of(context)
-                                  .push(
-                                    MaterialPageRoute<String?>(
-                                      builder: (_) =>
-                                          ActivityCreateRuntimeScreen(
-                                            groupId: widget.groupId,
-                                            controller: widget.controller,
-                                          ),
-                                    ),
-                                  )
-                                  .then((newId) {
-                                    if (newId != null) widget.onOpen(newId);
-                                  }),
-                              icon: const Icon(Icons.add),
-                              label: const Text(AppStrings.createActivity),
                             ),
                           ],
                         ),

@@ -8,11 +8,13 @@ class GroupDetailState {
   final bool loading;
   final GroupDetail? detail;
   final int? memberCount;
+  final GroupMember? owner;
   final GroupFailure? failure, memberCountFailure;
   const GroupDetailState({
     this.loading = false,
     this.detail,
     this.memberCount,
+    this.owner,
     this.failure,
     this.memberCountFailure,
   });
@@ -28,7 +30,12 @@ class GroupDetailController extends ValueNotifier<GroupDetailState> {
       value = GroupDetailState(detail: detail);
       try {
         final members = await repository.getMembers(id);
-        value = GroupDetailState(detail: detail, memberCount: members.length);
+        final owners = members.where((m) => m.userId == detail.ownerUserId);
+        value = GroupDetailState(
+          detail: detail,
+          memberCount: members.length,
+          owner: owners.firstOrNull,
+        );
       } on GroupException catch (e) {
         value = GroupDetailState(detail: detail, memberCountFailure: e.failure);
       }
@@ -45,6 +52,7 @@ class GroupDetailController extends ValueNotifier<GroupDetailState> {
       value = GroupDetailState(
         detail: old.detail,
         memberCount: old.memberCount,
+        owner: old.owner,
         failure: e.failure,
       );
       return false;

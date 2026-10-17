@@ -23,6 +23,43 @@ import 'package:mobile/features/social/presentation/widgets/user_avatar.dart';
 
 void main() {
   testWidgets(
+    'initial open and reopen show latest page, older history remains available',
+    (tester) async {
+      final adapter = _ChatScreenAdapter(
+        messages: [
+          for (var i = 1; i <= 120; i++)
+            _message(
+              id: 'm$i',
+              sequence: i,
+              authorId: 'peer',
+              name: 'Peer',
+              content: i == 120
+                  ? 'Message 120'
+                  : 'Message $i\n${List.filled(i % 5 == 0 ? 35 : 1, 'Variable height history').join('\n')}',
+              mine: false,
+            ),
+        ],
+      );
+      for (var open = 0; open < 2; open++) {
+        await tester.pumpWidget(_app(adapter));
+        await tester.pumpAndSettle();
+        expect(find.text('Message 120'), findsOneWidget);
+        final scrollable = tester.state<ScrollableState>(
+          find.byType(Scrollable).first,
+        );
+        expect(scrollable.position.pixels, 0);
+        scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Tin nhắn trước đó'));
+        await tester.pumpAndSettle();
+        expect(adapter.historyCursors.last, 91);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      }
+    },
+  );
+  testWidgets(
     'reconnect walks past one page and merges REST realtime overlap',
     (tester) async {
       final realtime = _FakeRealtimeClient();
@@ -75,11 +112,17 @@ void main() {
       realtime.emit(overlap);
       await tester.pumpAndSettle();
       expect(adapter.historyCursors, [null, null, 6]);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('chat-item-m1')),
+        500,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('Anchor'), findsOneWidget);
       expect(find.text('Recovered 2'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('chat-item-m105')),
-        500,
+        -500,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
@@ -782,7 +825,7 @@ void main() {
     expect(groups.loadedGroupIds, ['group-exact']);
     expect(find.text('Badminton'), findsOneWidget);
     expect(
-      tester.widget<GroupAvatar>(find.byType(GroupAvatar)).avatarStorageKey,
+      tester.widget<GroupAvatar>(find.byType(GroupAvatar).first).avatarStorageKey,
       'media/group.png',
     );
 

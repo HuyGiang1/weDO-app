@@ -230,6 +230,8 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
                       onDelete: comment.permissions.canDelete
                           ? () => _delete(comment)
                           : null,
+                      onEditReply: _edit,
+                      onDeleteReply: _delete,
                     ),
                   )
                   .toList(),
@@ -274,6 +276,7 @@ class DiscussionCommentTile extends StatelessWidget {
   final ActivityComment comment;
   final List<ActivityComment> replies;
   final VoidCallback? onReply, onEdit, onDelete;
+  final ValueChanged<ActivityComment>? onEditReply, onDeleteReply;
   const DiscussionCommentTile({
     super.key,
     required this.comment,
@@ -281,6 +284,8 @@ class DiscussionCommentTile extends StatelessWidget {
     required this.onReply,
     required this.onEdit,
     required this.onDelete,
+    this.onEditReply,
+    this.onDeleteReply,
   });
   @override
   Widget build(BuildContext context) => Padding(
@@ -323,9 +328,14 @@ class DiscussionCommentTile extends StatelessWidget {
                     if (value == 'edit') onEdit?.call();
                     if (value == 'delete') onDelete?.call();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Chỉnh sửa')),
-                    PopupMenuItem(value: 'delete', child: Text('Xóa')),
+                  itemBuilder: (_) => [
+                    if (onEdit != null)
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Text('Chỉnh sửa'),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(value: 'delete', child: Text('Xóa')),
                   ],
                 ),
           ],
@@ -345,42 +355,16 @@ class DiscussionCommentTile extends StatelessWidget {
         ...replies.map(
           (reply) => Padding(
             padding: const EdgeInsets.only(left: 28, top: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                UserAvatar(
-                  displayName: reply.author?.name ?? 'Member',
-                  avatarStorageKey: reply.author?.avatarStorageKey,
-                  radius: 13,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        reply.deleted
-                            ? 'Bình luận đã bị xóa'
-                            : reply.author?.name ?? 'Member',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        AppDateTimeFormatter.formatRelativeTime(reply.createdAt),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        reply.deleted
-                            ? 'Nội dung không còn khả dụng.'
-                            : reply.content,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            child: DiscussionCommentTile(
+              comment: reply,
+              replies: const [],
+              onReply: null,
+              onEdit: reply.permissions.canEdit && onEditReply != null
+                  ? () => onEditReply!(reply)
+                  : null,
+              onDelete: reply.permissions.canDelete && onDeleteReply != null
+                  ? () => onDeleteReply!(reply)
+                  : null,
             ),
           ),
         ),

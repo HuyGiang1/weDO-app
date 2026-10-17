@@ -47,8 +47,8 @@ void main() {
       await tester.ensureVisible(find.text('Login'));
       await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Forgot Password?'));
-      await tester.tap(find.text('Forgot Password?'));
+      await tester.ensureVisible(find.text('Quên mật khẩu?'));
+      await tester.tap(find.text('Quên mật khẩu?'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextFormField), ' User@Example.COM ');
@@ -85,7 +85,7 @@ void main() {
       expect(api.resetEmail, 'user@example.com');
       expect(api.resetCode, '001234');
       expect(api.resetNewPassword, '  Secret Pass  ');
-      expect(find.text('Welcome Back'), findsOneWidget);
+      expect(find.text('Chào mừng trở lại'), findsOneWidget);
       expect(
         find.text('Password updated. You can now log in.'),
         findsOneWidget,

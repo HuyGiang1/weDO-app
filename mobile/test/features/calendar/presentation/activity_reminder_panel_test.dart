@@ -30,7 +30,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Personal reminder'), findsOneWidget);
+    expect(find.text('Nhắc nhở cá nhân'), findsOneWidget);
     expect(find.byType(SwitchListTile), findsOneWidget);
     await tester.tap(find.byType(SwitchListTile));
     await tester.pumpAndSettle();

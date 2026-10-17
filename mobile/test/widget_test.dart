@@ -63,7 +63,7 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Chào mừng trở lại'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -101,7 +101,7 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome Back'), findsOneWidget);
+    expect(find.text('Chào mừng trở lại'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -117,7 +117,7 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    final forgotPassword = find.text('Forgot Password?');
+    final forgotPassword = find.text('Quên mật khẩu?');
     await tester.ensureVisible(forgotPassword);
     await tester.tap(forgotPassword);
     await tester.pumpAndSettle();
@@ -138,7 +138,7 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    final createAccountButton = find.text('Create Account');
+    final createAccountButton = find.text('Tạo tài khoản');
     await tester.ensureVisible(createAccountButton);
     await tester.tap(createAccountButton);
     await tester.pumpAndSettle();

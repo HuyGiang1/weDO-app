@@ -54,14 +54,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Email is required';
+    if (value == null || value.trim().isEmpty) return 'Vui lòng nhập email';
     return null;
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Password is required';
+    if (value == null || value.isEmpty) return 'Vui lòng nhập mật khẩu';
     if (utf8.encode(value).length > 72) {
-      return 'Password must not exceed 72 bytes';
+      return 'Mật khẩu không được vượt quá 72 byte';
     }
     return null;
   }
@@ -126,6 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.all(AppSpacing.xl),
                       child: Form(
                         key: _formKey,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,20 +156,20 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: AppSpacing.lg),
                             const Text(
-                              'Welcome Back',
+                              'Chào mừng trở lại',
                               style: AppTextStyles.headline,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             const Text(
-                              'Log in to reconnect with your vibe.',
+                              'Đăng nhập để tiếp tục kết nối cùng mọi người.',
                               style: AppTextStyles.bodyMedium,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.xl),
                             _LoginField(
-                              label: 'Email Address',
-                              hintText: 'Enter your email',
+                              label: 'Địa chỉ email',
+                              hintText: 'Nhập email',
                               controller: _emailController,
                               focusNode: _emailFocusNode,
                               validator: _validateEmail,
@@ -183,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               runSpacing: AppSpacing.xs,
                               children: [
                                 const Text(
-                                  'Password',
+                                  'Mật khẩu',
                                   style: AppTextStyles.label,
                                 ),
                                 TextButton(
@@ -197,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
                                   child: const Text(
-                                    'Forgot Password?',
+                                    'Quên mật khẩu?',
                                     style: AppTextStyles.link,
                                   ),
                                 ),
@@ -205,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             _LoginField(
-                              hintText: 'Enter your password',
+                              hintText: 'Nhập mật khẩu',
                               controller: _passwordController,
                               focusNode: _passwordFocusNode,
                               validator: _validatePassword,
@@ -221,8 +222,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                             !_obscurePassword,
                                       ),
                                 tooltip: _obscurePassword
-                                    ? 'Show password'
-                                    : 'Hide password',
+                                    ? 'Hiện mật khẩu'
+                                    : 'Ẩn mật khẩu',
                                 icon: Icon(
                                   _obscurePassword
                                       ? Icons.visibility_outlined
@@ -242,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 const Text(
-                                  "Don't have an account? ",
+                                  'Chưa có tài khoản? ',
                                   style: AppTextStyles.bodySmall,
                                 ),
                                 TextButton(
@@ -256,7 +257,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
                                   child: const Text(
-                                    'Create Account',
+                                    'Tạo tài khoản',
                                     style: AppTextStyles.link,
                                   ),
                                 ),
@@ -407,7 +408,7 @@ class _LoginButton extends StatelessWidget {
                   ),
                 ),
               )
-            : const Text('Login', style: AppTextStyles.buttonPrimary),
+            : const Text('Đăng nhập', style: AppTextStyles.buttonPrimary),
       ),
     );
   }

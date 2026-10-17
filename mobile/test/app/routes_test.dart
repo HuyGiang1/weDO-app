@@ -26,6 +26,9 @@ import 'package:mobile/features/chat/presentation/chat_home_screen.dart';
 import 'package:mobile/features/profile/presentation/screens/profile_screen.dart';
 import 'package:mobile/features/profile/data/profile_models.dart';
 import 'package:mobile/features/profile/presentation/screens/public_user_profile_screen.dart';
+import 'package:mobile/features/profile/data/profile_repository.dart';
+import 'package:mobile/features/search/data/search_api.dart';
+import 'package:mobile/features/chat/data/chat_repository.dart';
 
 void main() {
   group('AppRoutes Registry', () {
@@ -937,6 +940,53 @@ void main() {
   });
 
   group('Authenticated Home landing', () {
+    testWidgets('root tabs retain Search after a deep link omits Search args', (
+      tester,
+    ) async {
+      final repository = _RouteGroupRepository();
+      final store = _TestMemoryStore();
+      final holder = AccessTokenHolder();
+      final storage = SecureStorageService(store: store);
+      final session = AuthSessionController(
+        storage: storage,
+        accessTokenHolder: holder,
+        repository: AuthRepository(
+          api: _TestAuthApi(),
+          storage: storage,
+          accessTokenHolder: holder,
+        ),
+      )..markAuthenticated();
+      final searchArgs = SearchRouteArgs(
+        searchRepository: _RouteSearchRepository(),
+        profileRepository: _RouteProfileRepository(),
+        groupRepository: repository,
+        chatRepository: _RouteChatRepository(),
+      );
+      await tester.pumpWidget(WeDoApp(
+        authSessionController: session,
+        groupRepository: repository,
+        searchRouteArgs: searchArgs,
+      ));
+      await tester.pumpAndSettle();
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.pushNamed(AppRoutes.groups,
+        arguments: GroupsRouteArgs(repository: repository));
+      await tester.pumpAndSettle();
+      expect(tester.widget<MyGroupsScreen>(find.byType(MyGroupsScreen)).onSearch,
+        isNotNull);
+      final groupsArgs = ModalRoute.of(tester.element(find.byType(MyGroupsScreen)))!
+        .settings.arguments as GroupsRouteArgs;
+      expect(groupsArgs.repository, same(repository));
+      expect(groupsArgs.searchArgs, same(searchArgs));
+      navigator.pushNamed(AppRoutes.home,
+        arguments: HomeRouteArgs(repository: repository));
+      await tester.pumpAndSettle();
+      final homeArgs = ModalRoute.of(tester.element(find.byType(HomeScreen)))!
+        .settings.arguments as HomeRouteArgs;
+      expect(homeArgs.searchArgs, same(searchArgs));
+      expect(tester.takeException(), isNull);
+    });
+
     test('unauthenticated users cannot directly enter protected Home', () {
       expect(
         AppRoutes.onGenerateRoute(
@@ -1005,7 +1055,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Now on LoginScreen
-        expect(find.text('Welcome Back'), findsOneWidget);
+        expect(find.text('Chào mừng trở lại'), findsOneWidget);
         await tester.enterText(
           find.byType(TextField).at(0),
           'user@wedo.social',
@@ -1014,7 +1064,7 @@ void main() {
         await tester.pump();
 
         // Tap Login
-        final loginButton = find.widgetWithText(ElevatedButton, 'Login');
+        final loginButton = find.widgetWithText(ElevatedButton, 'Đăng nhập');
         await tester.ensureVisible(loginButton);
         await tester.tap(loginButton);
         await tester.pumpAndSettle();
@@ -1054,7 +1104,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(HomeScreen), findsOneWidget);
-        expect(find.text('Welcome Back'), findsNothing);
+        expect(find.text('Chào mừng trở lại'), findsNothing);
       },
     );
 
@@ -1106,7 +1156,7 @@ void main() {
               .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
               .items
               .map((item) => item.label),
-          ['Home', 'Groups', 'Chat', 'Calendar', 'Profile'],
+          ['Trang chủ', 'Nhóm', 'Tin nhắn', 'Lịch', 'Hồ sơ'],
         );
 
         Future<void> select(String label, int index) async {
@@ -1126,20 +1176,24 @@ void main() {
           expect(nav.canPop(), isFalse);
         }
 
-        await select('Groups', 1);
+        await select('Nhóm', 1);
         expect(find.byType(MyGroupsScreen), findsOneWidget);
-        await select('Chat', 2);
+        await select('Tin nhắn', 2);
         expect(find.byType(ChatHomeScreen), findsOneWidget);
-        await select('Calendar', 3);
+        await select('Lịch', 3);
         expect(find.byType(CalendarScreen), findsOneWidget);
-        await select('Profile', 4);
+        await select('Hồ sơ', 4);
         expect(find.byType(ProfileScreen), findsOneWidget);
-        await select('Home', 0);
+        await select('Trang chủ', 0);
         expect(find.byType(HomeScreen), findsOneWidget);
       },
     );
   });
 }
+
+class _RouteSearchRepository extends Fake implements SearchRepository {}
+class _RouteProfileRepository extends Fake implements ProfileRepository {}
+class _RouteChatRepository extends Fake implements ChatRepository {}
 
 Dio _homeDio() {
   final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));

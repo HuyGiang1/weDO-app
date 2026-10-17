@@ -19,6 +19,44 @@ import 'package:mobile/features/groups/presentation/screens/my_groups_screen.dar
 import 'package:mobile/features/groups/presentation/widgets/group_widgets.dart';
 
 void main() {
+  for (final role in ['OWNER', 'ADMIN', 'MEMBER']) {
+    testWidgets('owner identity is matched by ID for $role caller', (tester) async {
+      final controller = GroupDetailController(_repository(_Adapter({
+        '/api/v1/groups/g': _detail(role),
+        '/api/v1/groups/g/members': [
+          {..._member('other'), 'role': 'OWNER', 'displayName': 'Not the owner ID'},
+          {..._member('u'), 'displayName': 'Actual owner'},
+        ],
+      })));
+      await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(
+        groupId: 'g', controller: controller, onEdit: () {}, onMembers: () {},
+        onSettings: () {}, onActivityLog: () {}, onLeave: () {},
+      )));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Actual owner'), 200);
+      expect(find.text('Actual owner'), findsOneWidget);
+      expect(find.text('Group Admin'), findsNothing);
+      expect(find.text('Not the owner ID'), findsNothing);
+      expect(controller.value.owner?.userId, 'u');
+    });
+  }
+
+  testWidgets('missing owner projection has honest fallback, never UUID', (tester) async {
+    final controller = GroupDetailController(_repository(_Adapter({
+      '/api/v1/groups/g': _detail('MEMBER'),
+      '/api/v1/groups/g/members': [_member('other')],
+    })));
+    await tester.pumpWidget(MaterialApp(home: GroupInfoScreen(
+      groupId: 'g', controller: controller, onEdit: () {}, onMembers: () {},
+      onSettings: () {}, onActivityLog: () {}, onLeave: () {},
+    )));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Tên chủ nhóm chưa khả dụng'), 200);
+    expect(find.text('Tên chủ nhóm chưa khả dụng'), findsOneWidget);
+    expect(find.text('Group Admin'), findsNothing);
+    expect(controller.value.owner, isNull);
+  });
+
   testWidgets('role badges map OWNER, ADMIN and MEMBER explicitly', (
     tester,
   ) async {
@@ -33,9 +71,10 @@ void main() {
         ),
       ),
     );
-    expect(find.text('OWNER'), findsOneWidget);
-    expect(find.text('ADMIN'), findsOneWidget);
-    expect(find.text('MEMBER'), findsOneWidget);
+    expect(find.text('Chủ nhóm'), findsOneWidget);
+    expect(find.text('Quản trị viên'), findsOneWidget);
+    expect(find.text('Thành viên'), findsOneWidget);
+    expect(find.text('OWNER'), findsNothing);
   });
 
   testWidgets('My Groups shows a server group and forwards its exact id', (
@@ -147,8 +186,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
-    expect(find.text('Groups'), findsOneWidget);
-    final avatar = tester.widget<GroupAvatar>(find.byType(GroupAvatar));
+    expect(find.text('Nhóm'), findsOneWidget);
+    final avatar = tester.widget<GroupAvatar>(find.byType(GroupAvatar).first);
     expect(avatar.avatarStorageKey, 'avatars/canonical-group.png');
     expect(
       avatar.resolvedUrl,

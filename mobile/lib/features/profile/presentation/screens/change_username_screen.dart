@@ -45,12 +45,12 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
 
   String? _validateUsername(String? _) {
     final value = _canonicalUsername;
-    if (value.isEmpty) return 'Username is required';
+    if (value.isEmpty) return 'Vui lòng nhập tên người dùng';
     if (value.length < 3 || value.length > 30) {
-      return 'Username must be between 3 and 30 characters';
+      return 'Tên người dùng phải có từ 3 đến 30 ký tự';
     }
     if (!_usernamePattern.hasMatch(value)) {
-      return 'Username must contain only letters, numbers, and underscores';
+      return 'Tên người dùng chỉ gồm chữ cái, số và dấu gạch dưới';
     }
     return null;
   }
@@ -70,14 +70,14 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
       if (mounted) {
         setState(() {
           _requestError = error.code == 'USERNAME_ALREADY_EXISTS'
-              ? 'Username is already taken.'
-              : 'Unable to update your username. Please try again.';
+              ? 'Tên người dùng đã được sử dụng.'
+              : 'Không thể đổi tên người dùng. Vui lòng thử lại.';
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _requestError = 'Unable to update your username. Please try again.';
+          _requestError = 'Không thể đổi tên người dùng. Vui lòng thử lại.';
         });
       }
     } finally {
@@ -87,7 +87,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Change Username')),
+    appBar: AppBar(title: const Text('Đổi tên người dùng')),
     body: SafeArea(
       child: Form(
         key: _formKey,
@@ -97,7 +97,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
             const Icon(Icons.badge_outlined, size: 44),
             const SizedBox(height: AppSpacing.sm),
             const Text(
-              'Choose a unique username to represent yourself on WeDo.',
+              'Chọn tên người dùng duy nhất cho bạn trên weDO.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -109,7 +109,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Current username'),
+                        const Text('Tên người dùng hiện tại'),
                         const SizedBox(height: AppSpacing.xs),
                         Text('@${widget.initialUser.username ?? ''}'),
                       ],
@@ -123,7 +123,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
                     enableSuggestions: false,
                     validator: _validateUsername,
                     decoration: const InputDecoration(
-                      labelText: 'New username',
+                      labelText: 'Tên người dùng mới',
                       prefixText: '@',
                     ),
                   ),
@@ -147,7 +147,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
               style: profilePrimaryButtonStyle(),
               child: _submitting
                   ? const CircularProgressIndicator()
-                  : const Text('Update Username'),
+                  : const Text('Cập nhật tên người dùng'),
             ),
           ],
         ),

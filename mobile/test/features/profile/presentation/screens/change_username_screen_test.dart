@@ -41,12 +41,12 @@ void main() {
 
     for (final invalid in ['', 'ab', 'a' * 31, 'hello world', 'giảng']) {
       await tester.enterText(field, invalid);
-      await tester.tap(find.text('Update Username'));
+      await tester.tap(find.text('Cập nhật tên người dùng'));
       await tester.pump();
     }
 
     expect(
-      find.text('Username must contain only letters, numbers, and underscores'),
+      find.text('Tên người dùng chỉ gồm chữ cái, số và dấu gạch dưới'),
       findsOneWidget,
     );
   });
@@ -64,7 +64,7 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextFormField), '  New_Name  ');
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pump();
 
     expect(sent!.username, 'new_name');
@@ -83,7 +83,7 @@ void main() {
       },
     );
 
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pump();
     await tester.tap(find.byType(ElevatedButton));
     await tester.pump();
@@ -128,7 +128,7 @@ void main() {
 
     await tester.tap(find.text('Open username editor'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pumpAndSettle();
 
     expect(sent!.username, 'huy_giang');
@@ -141,18 +141,18 @@ void main() {
       updateUsername: (_) async =>
           throw const ApiException(code: 'USERNAME_ALREADY_EXISTS'),
     );
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pumpAndSettle();
-    expect(find.text('Username is already taken.'), findsOneWidget);
+    expect(find.text('Tên người dùng đã được sử dụng.'), findsOneWidget);
 
     await pumpScreen(
       tester,
       updateUsername: (_) async => throw StateError('offline'),
     );
-    await tester.tap(find.text('Update Username'));
+    await tester.tap(find.text('Cập nhật tên người dùng'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Unable to update your username. Please try again.'),
+      find.text('Không thể đổi tên người dùng. Vui lòng thử lại.'),
       findsOneWidget,
     );
   });

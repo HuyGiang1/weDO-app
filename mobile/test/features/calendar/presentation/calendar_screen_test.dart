@@ -33,7 +33,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sample event'), findsOneWidget);
-    expect(find.byTooltip('Previous month'), findsOneWidget);
+    expect(find.byTooltip('Tháng trước'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.view_agenda_outlined));
     await tester.pumpAndSettle();
     expect(find.text('Sample event'), findsOneWidget);
@@ -48,12 +48,12 @@ void main() {
     expect(adapter.calendarQueries.last, isNot(contains('rsvp')));
     expect(adapter.calendarQueries.last, isNot(contains('status')));
 
-    await _select(tester, 'calendar_rsvp_filter', 'Going');
+    await _select(tester, 'calendar_rsvp_filter', 'Tham gia');
     expect(adapter.calendarQueries.last['groupId'], 'group-1');
     expect(adapter.calendarQueries.last['rsvp'], 'GOING');
     expect(adapter.calendarQueries.last, isNot(contains('status')));
 
-    await _select(tester, 'calendar_status_filter', 'Planning');
+    await _select(tester, 'calendar_status_filter', 'Đang lên kế hoạch');
     expect(adapter.calendarQueries.last, {
       'from': adapter.calendarQueries.last['from'],
       'to': adapter.calendarQueries.last['to'],
@@ -67,26 +67,26 @@ void main() {
     expect(adapter.calendarQueries.last['rsvp'], 'GOING');
     expect(adapter.calendarQueries.last['status'], 'PLANNING');
 
-    await _select(tester, 'calendar_rsvp_filter', 'Maybe');
+    await _select(tester, 'calendar_rsvp_filter', 'Có thể tham gia');
     expect(adapter.calendarQueries.last['groupId'], 'group-2');
     expect(adapter.calendarQueries.last['rsvp'], 'MAYBE');
     expect(adapter.calendarQueries.last['status'], 'PLANNING');
 
-    await _select(tester, 'calendar_status_filter', 'Confirmed');
+    await _select(tester, 'calendar_status_filter', 'Đã xác nhận');
     expect(adapter.calendarQueries.last['groupId'], 'group-2');
     expect(adapter.calendarQueries.last['rsvp'], 'MAYBE');
     expect(adapter.calendarQueries.last['status'], 'CONFIRMED');
     expect(find.text('Group Two'), findsOneWidget);
-    expect(find.text('Maybe'), findsOneWidget);
-    expect(find.text('Confirmed'), findsOneWidget);
+    expect(find.text('Có thể tham gia'), findsOneWidget);
+    expect(find.text('Đã xác nhận'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Next month'));
+    await tester.tap(find.byTooltip('Tháng sau'));
     await tester.pumpAndSettle();
     expect(adapter.calendarQueries.last['groupId'], 'group-2');
     expect(adapter.calendarQueries.last['rsvp'], 'MAYBE');
     expect(adapter.calendarQueries.last['status'], 'CONFIRMED');
 
-    await _select(tester, 'calendar_rsvp_filter', 'All RSVP');
+    await _select(tester, 'calendar_rsvp_filter', 'Mọi phản hồi');
     expect(adapter.calendarQueries.last['groupId'], 'group-2');
     expect(adapter.calendarQueries.last['status'], 'CONFIRMED');
     expect(adapter.calendarQueries.last, isNot(contains('rsvp')));
@@ -97,9 +97,9 @@ void main() {
       'from': adapter.calendarQueries.last['from'],
       'to': adapter.calendarQueries.last['to'],
     });
-    expect(find.text('All groups'), findsOneWidget);
-    expect(find.text('All RSVP'), findsOneWidget);
-    expect(find.text('All Status'), findsOneWidget);
+    expect(find.text('Tất cả nhóm'), findsOneWidget);
+    expect(find.text('Mọi phản hồi'), findsOneWidget);
+    expect(find.text('Mọi trạng thái'), findsOneWidget);
     expect(find.byKey(const Key('calendar_clear_filters')), findsNothing);
 
     await tester.tap(find.byIcon(Icons.view_agenda_outlined));

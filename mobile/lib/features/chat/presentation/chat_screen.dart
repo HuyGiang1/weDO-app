@@ -503,7 +503,7 @@ class _ChatScreenState extends State<ChatScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scroll.hasClients) {
           _scroll.animateTo(
-            _scroll.position.maxScrollExtent,
+            0,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
           );
@@ -528,7 +528,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ));
       if (picked.isEmpty || !mounted) return;
       if (_pendingImages.length + picked.length > 4) {
-        _notice('Tin nháº¯n chá»‰ cÃ³ thá»ƒ Ä‘Ã­nh kÃ¨m tá»‘i Ä‘a 4 áº£nh.');
+        _notice('Tin nhắn chỉ có thể đính kèm tối đa 4 ảnh.');
         return;
       }
       final selected = <_PendingChatImage>[];
@@ -537,7 +537,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final type = _imageContentType(file.name, file.mimeType);
         if (type == null || bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
           _notice(
-            'Chá»‰ há»— trá»£ áº£nh JPEG, PNG hoáº·c WebP tá»‘i Ä‘a 10 MiB.',
+            'Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP tối đa 10 MiB.',
           );
           return;
         }
@@ -551,7 +551,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       if (mounted) setState(() => _pendingImages.addAll(selected));
     } catch (_) {
-      if (mounted) _notice('KhÃ´ng thá»ƒ chá»n áº£nh. Vui lÃ²ng thá»­ láº¡i.');
+      if (mounted) _notice('Không thể chọn ảnh. Vui lòng thử lại.');
     }
   }
 
@@ -854,10 +854,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? const Center(child: Text('Chưa có tin nhắn'))
                 : ListView.builder(
                     controller: _scroll,
+                    reverse: true,
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     itemCount: _messages.length + (_hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (_hasMore && index == 0) {
+                      if (_hasMore && index == _messages.length) {
                         return Center(
                           child: TextButton(
                             onPressed: _loadingEarlier ? null : _loadEarlier,
@@ -869,7 +870,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         );
                       }
-                      final messageIndex = index - (_hasMore ? 1 : 0);
+                      final messageIndex = _messages.length - 1 - index;
                       final message = _messages[messageIndex];
                       final previous = messageIndex > 0
                           ? _messages[messageIndex - 1]

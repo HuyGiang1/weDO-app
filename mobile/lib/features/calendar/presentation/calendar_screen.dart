@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/l10n/domain_labels.dart';
 
 import '../../../app/theme/app_colors.dart';
 import '../../activity/data/activity_models.dart';
@@ -121,11 +122,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.background,
     appBar: AppBar(
-      title: const Text('Calendar'),
+      title: const Text('Lịch'),
       backgroundColor: AppColors.background,
       actions: [
         IconButton(
-          tooltip: 'Refresh calendar',
+          tooltip: 'Làm mới lịch',
           onPressed: _loadActivities,
           icon: const Icon(Icons.refresh),
         ),
@@ -150,7 +151,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 Row(
                   children: [
                     IconButton(
-                      tooltip: 'Previous month',
+                      tooltip: 'Tháng trước',
                       onPressed: () => _changeMonth(-1),
                       icon: const Icon(Icons.chevron_left),
                     ),
@@ -165,7 +166,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Next month',
+                      tooltip: 'Tháng sau',
                       onPressed: () => _changeMonth(1),
                       icon: const Icon(Icons.chevron_right),
                     ),
@@ -199,12 +200,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         return DropdownButton<String?>(
                           key: const Key('calendar_group_filter'),
                           value: _groupId,
-                          hint: const Text('All groups'),
+                          hint: const Text('Tất cả nhóm'),
                           underline: const SizedBox.shrink(),
                           items: [
                             const DropdownMenuItem(
                               value: null,
-                              child: Text('All groups'),
+                              child: Text('Tất cả nhóm'),
                             ),
                             ...groups.map(
                               (g) => DropdownMenuItem(
@@ -220,26 +221,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     _filterDropdown(
                       key: const Key('calendar_rsvp_filter'),
                       value: _rsvp,
-                      hint: 'RSVP',
+                      hint: 'Mọi phản hồi',
                       values: const {
-                        'GOING': 'Going',
-                        'MAYBE': 'Maybe',
-                        'NOT_GOING': 'Not going',
-                        'NO_RESPONSE': 'No response',
+                        'GOING': 'Tham gia',
+                        'MAYBE': 'Có thể tham gia',
+                        'NOT_GOING': 'Không tham gia',
+                        'NO_RESPONSE': 'Chưa phản hồi',
                       },
                       onChanged: (value) => _changeFilter(rsvp: value),
                     ),
                     _filterDropdown(
                       key: const Key('calendar_status_filter'),
                       value: _status,
-                      hint: 'Status',
-                      values: const {
-                        'PLANNING': 'Planning',
-                        'CONFIRMED': 'Confirmed',
-                        'IN_PROGRESS': 'In progress',
-                        'COMPLETED': 'Completed',
-                        'CANCELLED': 'Cancelled',
-                      },
+                      hint: 'Mọi trạng thái',
+                      values: {for (final status in ActivityStatus.values) status.wire: status.label},
                       onChanged: (value) => _changeFilter(status: value),
                     ),
                     if (_groupId != null || _rsvp != null || _status != null)
@@ -247,7 +242,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         key: const Key('calendar_clear_filters'),
                         onPressed: _resetFilters,
                         icon: const Icon(Icons.filter_alt_off_outlined),
-                        label: const Text('Clear filters'),
+                        label: const Text('Xóa bộ lọc'),
                       ),
                   ],
                 ),
@@ -274,7 +269,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     hint: Text(hint),
     underline: const SizedBox.shrink(),
     items: [
-      DropdownMenuItem<String?>(value: null, child: Text('All $hint')),
+      DropdownMenuItem<String?>(value: null, child: Text(hint)),
       ...values.entries.map(
         (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
       ),
@@ -291,7 +286,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       children: [
         Row(
           children: [
-            for (final label in ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+            for (final label in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'])
               Expanded(
                 child: Center(
                   child: Text(
@@ -364,11 +359,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Calendar could not be loaded.'),
+            const Text('Không thể tải lịch.'),
             TextButton.icon(
               onPressed: _loadActivities,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: const Text('Thử lại'),
             ),
           ],
         ),
@@ -380,7 +375,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               .where((a) => _sameDay(a.startAt.toLocal(), _selectedDay))
               .toList();
     if (items.isEmpty) {
-      return const Center(child: Text('No activities for this date.'));
+      return const Center(child: Text('Không có hoạt động trong ngày này.'));
     }
     return ListView.separated(
       padding: const EdgeInsets.all(12),
@@ -398,7 +393,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              '${item.groupName} | ${TimeOfDay.fromDateTime(item.startAt.toLocal()).format(context)} | ${item.status.wire}',
+              '${item.groupName} | ${TimeOfDay.fromDateTime(item.startAt.toLocal()).format(context)} | ${item.status.label}',
             ),
             leading: Icon(
               item.reminderEnabled

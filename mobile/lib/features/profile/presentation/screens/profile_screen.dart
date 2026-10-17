@@ -70,7 +70,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: const Text('Hồ sơ')),
       bottomNavigationBar: widget.onHome == null
           ? null
           : GroupsBottomNavigation(
@@ -221,31 +221,31 @@ class _ProfileContent extends StatelessWidget {
                 ElevatedButton(
                   onPressed: onEdit,
                   style: profilePrimaryButtonStyle(),
-                  child: const Text('Edit Profile'),
+                  child: const Text('Chỉnh sửa hồ sơ'),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 ProfileActionRow(
                   icon: Icons.badge_outlined,
-                  label: 'Change Username',
+                  label: 'Đổi tên người dùng',
                   onTap: onChangeUsername,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 ProfileActionRow(
                   icon: Icons.lock_outline,
-                  label: 'Privacy Settings',
+                  label: 'Cài đặt quyền riêng tư',
                   onTap: () =>
                       Navigator.of(context).pushNamed(AppRoutes.privacy),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 ProfileActionRow(
                   icon: Icons.password_outlined,
-                  label: 'Change Password',
+                  label: 'Đổi mật khẩu',
                   onTap: onChangePassword,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 ProfileActionRow(
                   icon: Icons.qr_code_rounded,
-                  label: 'My QR',
+                  label: 'Mã QR của tôi',
                   onTap: () =>
                       Navigator.of(context).pushNamed(AppRoutes.personalQr),
                 ),
@@ -253,7 +253,7 @@ class _ProfileContent extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   ProfileActionRow(
                     icon: Icons.logout_rounded,
-                    label: 'Sign out',
+                    label: 'Đăng xuất',
                     onTap: onLogout!,
                   ),
                 ],
@@ -264,11 +264,11 @@ class _ProfileContent extends StatelessWidget {
                     children: [
                       _ProfileField(label: 'Email', value: user.email),
                       _ProfileField(
-                        label: 'Email verification',
-                        value: user.emailVerified ? 'Verified' : 'Not verified',
+                        label: 'Xác minh email',
+                        value: user.emailVerified ? 'Đã xác minh' : 'Chưa xác minh',
                       ),
                       if (_hasText(user.phone))
-                        _ProfileField(label: 'Phone', value: user.phone!),
+                        _ProfileField(label: 'Số điện thoại', value: user.phone!),
                     ],
                   ),
                 ),
@@ -317,12 +317,12 @@ class _ProfileError extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'Unable to load your profile.',
+            'Không thể tải hồ sơ của bạn.',
             style: AppTextStyles.bodyMedium,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.md),
-          ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+          ElevatedButton(onPressed: onRetry, child: const Text('Thử lại')),
         ],
       ),
     ),

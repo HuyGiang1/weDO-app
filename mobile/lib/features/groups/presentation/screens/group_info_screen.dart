@@ -114,6 +114,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           return _GroupInfoContent(
             group: group,
             memberCount: state.memberCount,
+            owner: state.owner,
             onEdit: widget.onEdit,
             onMembers: widget.onMembers,
             onSettings: widget.onSettings,
@@ -147,6 +148,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 class _GroupInfoContent extends StatelessWidget {
   final GroupDetail group;
   final int? memberCount;
+  final GroupMember? owner;
   final VoidCallback onEdit, onMembers, onSettings, onActivityLog, onLeave;
   final VoidCallback? onActivities;
   final VoidCallback? onExpenses;
@@ -161,6 +163,7 @@ class _GroupInfoContent extends StatelessWidget {
   const _GroupInfoContent({
     required this.group,
     required this.memberCount,
+    required this.owner,
     required this.onEdit,
     required this.onMembers,
     required this.onSettings,
@@ -293,7 +296,7 @@ class _GroupInfoContent extends StatelessWidget {
               child: _StatCard(
                 icon: Icons.event,
                 iconColor: AppColors.secondary,
-                value: "Est. '${group.createdAt.year % 100}",
+                value: '${group.createdAt.year}',
                 label: 'NGÀY TẠO',
               ),
             ),
@@ -316,12 +319,10 @@ class _GroupInfoContent extends StatelessWidget {
           ),
           child: Row(
             children: [
-              CircleAvatar(
+              GroupAvatar(
+                name: owner?.displayName ?? 'Chủ nhóm',
+                avatarStorageKey: owner?.avatarStorageKey,
                 radius: 24,
-                backgroundColor: AppColors.primaryContainer.withValues(
-                  alpha: 0.1,
-                ),
-                child: const Icon(Icons.person, color: AppColors.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -329,16 +330,20 @@ class _GroupInfoContent extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isOwner ? 'Nhóm trưởng (Owner)' : 'Ban Quản trị',
+                      'Chủ nhóm',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: AppColors.onSurface,
                       ),
                     ),
-                    const Text(
-                      'Group Admin',
-                      style: TextStyle(
+                    Text(
+                      owner == null
+                          ? 'Tên chủ nhóm chưa khả dụng'
+                          : (owner!.displayName.trim().isNotEmpty
+                                ? owner!.displayName
+                                : '@${owner!.username}'),
+                      style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.onSurfaceVariant,
                       ),

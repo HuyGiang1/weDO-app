@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/l10n/domain_labels.dart';
 
 import '../../../../app/theme/app_spacing.dart';
 import '../../data/privacy_models.dart';
@@ -50,7 +51,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Unable to load privacy settings.';
+          _error = 'Không thể tải cài đặt quyền riêng tư.';
         });
       }
     }
@@ -76,7 +77,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     } catch (_) {
       if (mounted) {
         setState(
-          () => _error = 'Unable to save privacy settings. Please try again.',
+          () => _error = 'Không thể lưu cài đặt quyền riêng tư. Vui lòng thử lại.',
         );
       }
     } finally {
@@ -97,14 +98,14 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     }
     if (_draft == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Privacy Settings')),
+        appBar: AppBar(title: const Text('Cài đặt quyền riêng tư')),
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_error ?? 'Unable to load privacy settings.'),
+              Text(_error ?? 'Không thể tải cài đặt quyền riêng tư.'),
               const SizedBox(height: AppSpacing.md),
-              ElevatedButton(onPressed: _load, child: const Text('Retry')),
+              ElevatedButton(onPressed: _load, child: const Text('Thử lại')),
             ],
           ),
         ),
@@ -112,19 +113,19 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     }
     final draft = _draft!;
     return Scaffold(
-      appBar: AppBar(title: const Text('Privacy Settings')),
+      appBar: AppBar(title: const Text('Cài đặt quyền riêng tư')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _SectionTitle('Searchability'),
+              const _SectionTitle('Khả năng tìm kiếm'),
               ProfileSurface(
                 child: Column(
                   children: [
                     _toggle(
-                      'Discover by username',
+                      'Tìm bằng tên người dùng',
                       draft.discoverByUsername,
                       (value) => _update(
                         (current) =>
@@ -132,21 +133,21 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                       ),
                     ),
                     _toggle(
-                      'Discover by QR',
+                      'Tìm bằng mã QR',
                       draft.discoverByQr,
                       (value) => _update(
                         (current) => current.copyWith(discoverByQr: value),
                       ),
                     ),
                     _toggle(
-                      'Discover by email',
+                      'Tìm bằng email',
                       draft.discoverByEmail,
                       (value) => _update(
                         (current) => current.copyWith(discoverByEmail: value),
                       ),
                     ),
                     _toggle(
-                      'Discover by phone',
+                      'Tìm bằng số điện thoại',
                       draft.discoverByPhone,
                       (value) => _update(
                         (current) => current.copyWith(discoverByPhone: value),
@@ -155,20 +156,20 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                   ],
                 ),
               ),
-              const _SectionTitle('Social / Requests'),
+              const _SectionTitle('Kết nối và lời mời'),
               ProfileSurface(
                 child: Column(
                   children: [
                     DropdownButtonFormField<DmPolicy>(
                       initialValue: draft.dmPolicy,
                       decoration: const InputDecoration(
-                        labelText: 'Direct message policy',
+                        labelText: 'Ai có thể nhắn tin',
                       ),
                       items: DmPolicy.values
                           .map(
                             (value) => DropdownMenuItem(
                               value: value,
-                              child: Text(value.wireValue),
+                              child: Text(value.label),
                             ),
                           )
                           .toList(),
@@ -187,13 +188,13 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                     DropdownButtonFormField<FriendRequestPolicy>(
                       initialValue: draft.friendRequestPolicy,
                       decoration: const InputDecoration(
-                        labelText: 'Friend request policy',
+                        labelText: 'Ai có thể gửi lời mời kết bạn',
                       ),
                       items: FriendRequestPolicy.values
                           .map(
                             (value) => DropdownMenuItem(
                               value: value,
-                              child: Text(value.wireValue),
+                              child: Text(value.label),
                             ),
                           )
                           .toList(),
@@ -212,19 +213,19 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                   ],
                 ),
               ),
-              const _SectionTitle('Presence'),
+              const _SectionTitle('Trạng thái trực tuyến'),
               ProfileSurface(
                 child: Column(
                   children: [
                     _toggle(
-                      'Show online status',
+                      'Hiện trạng thái trực tuyến',
                       draft.showOnlineStatus,
                       (value) => _update(
                         (current) => current.copyWith(showOnlineStatus: value),
                       ),
                     ),
                     _toggle(
-                      'Show last seen',
+                      'Hiện lần truy cập gần nhất',
                       draft.showLastSeen,
                       (value) => _update(
                         (current) => current.copyWith(showLastSeen: value),
@@ -249,7 +250,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                 style: profilePrimaryButtonStyle(),
                 child: _saving
                     ? const CircularProgressIndicator()
-                    : const Text('Save privacy settings'),
+                    : const Text('Lưu cài đặt quyền riêng tư'),
               ),
             ],
           ),

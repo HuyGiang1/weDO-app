@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'routes.dart';
 import 'theme/app_colors.dart';
@@ -68,10 +69,36 @@ class WeDoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    RouteSettings withRootSearch(RouteSettings settings) {
+      final args = settings.arguments;
+      if (settings.name == AppRoutes.home && args is HomeRouteArgs) {
+        return RouteSettings(
+          name: settings.name,
+          arguments: HomeRouteArgs(
+            repository: args.repository,
+            searchArgs: args.searchArgs ?? searchRouteArgs,
+          ),
+        );
+      }
+      if (settings.name == AppRoutes.groups && args is GroupsRouteArgs) {
+        return RouteSettings(
+          name: settings.name,
+          arguments: GroupsRouteArgs(
+            repository: args.repository,
+            searchArgs: args.searchArgs ?? searchRouteArgs,
+          ),
+        );
+      }
+      return settings;
+    }
+
     return MaterialApp(
       navigatorKey: navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'WeDo',
+      locale: const Locale('vi'),
+      supportedLocales: const [Locale('vi')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -151,7 +178,7 @@ class WeDoApp extends StatelessWidget {
                   chatRepository: chatRepository,
                 ),
               )
-            : settings,
+            : withRootSearch(settings),
         authStatus: authSessionController.status,
         coordinator: authFlowCoordinator,
       ),

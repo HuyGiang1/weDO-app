@@ -25,6 +25,7 @@ import java.util.UUID;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -35,7 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Profile("local")
 @ConditionalOnProperty(prefix = "wedo.local-test-data", name = "enabled", havingValue = "true")
 public class LocalTestDataSeeder implements ApplicationRunner {
-    static final String PASSWORD = "WeDOTest@123";
     static final String GROUP_NAME = "weDO QA Team";
 
     private final UserRepository users;
@@ -47,11 +47,13 @@ public class LocalTestDataSeeder implements ApplicationRunner {
     private final GroupMembershipRepository memberships;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
+    private final String seedPassword;
 
     public LocalTestDataSeeder(UserRepository users, UserCredentialRepository credentials,
             UserPrivacySettingsRepository privacySettings, UserNotificationSettingsRepository notifications,
             GroupRepository groups, GroupSettingsRepository groupSettings, GroupMembershipRepository memberships,
-            PasswordEncoder passwordEncoder, Clock clock) {
+            PasswordEncoder passwordEncoder, Clock clock,
+            @Value("${wedo.local-test-data.password:}") String seedPassword) {
         this.users = users;
         this.credentials = credentials;
         this.privacySettings = privacySettings;
@@ -61,6 +63,10 @@ public class LocalTestDataSeeder implements ApplicationRunner {
         this.memberships = memberships;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
+        if (seedPassword == null || seedPassword.isBlank()) {
+            throw new IllegalArgumentException("Set WEDO_LOCAL_TEST_PASSWORD before enabling local seed data");
+        }
+        this.seedPassword = seedPassword;
     }
 
     @Override
@@ -93,13 +99,13 @@ public class LocalTestDataSeeder implements ApplicationRunner {
         user.setUpdatedAt(now);
         users.save(user);
         credentials.findById(user.getId()).ifPresentOrElse(credential -> {
-            if (!passwordEncoder.matches(PASSWORD, credential.getPasswordHash())) {
-                credential.setPasswordHash(passwordEncoder.encode(PASSWORD));
+            if (!passwordEncoder.matches(seedPassword, credential.getPasswordHash())) {
+                credential.setPasswordHash(passwordEncoder.encode(seedPassword));
                 credential.setPasswordChangedAt(now);
                 credential.setUpdatedAt(now);
                 credentials.save(credential);
             }
-        }, () -> credentials.save(new UserCredentialEntity(user.getId(), passwordEncoder.encode(PASSWORD), 0, null, now, now, now)));
+        }, () -> credentials.save(new UserCredentialEntity(user.getId(), passwordEncoder.encode(seedPassword), 0, null, now, now, now)));
         privacySettings.findById(user.getId()).orElseGet(() -> privacySettings.save(UserPrivacySettingsEntity.createDefault(user.getId(), now)));
         notifications.findById(user.getId()).orElseGet(() -> notifications.save(UserNotificationSettingsEntity.createDefault(user.getId(), now)));
         return user;

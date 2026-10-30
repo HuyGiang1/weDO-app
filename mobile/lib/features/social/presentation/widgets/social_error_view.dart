@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
@@ -24,16 +23,16 @@ class SocialErrorView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline_rounded,
               size: 56.0,
-              color: AppColors.error,
+              color: Theme.of(context).colorScheme.error,
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
               message,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.onSurface,
+              style: AppTextStyles.of(context).bodyMedium.copyWith(
+                color: Theme.of(context).colorScheme.onSurface,
               ),
               textAlign: TextAlign.center,
             ),
@@ -43,8 +42,8 @@ class SocialErrorView extends StatelessWidget {
               icon: const Icon(Icons.refresh_rounded, size: 18.0),
               label: const Text('Thử lại'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.primary),
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                side: BorderSide(color: Theme.of(context).colorScheme.primary),
                 shape: const StadiumBorder(),
               ),
             ),

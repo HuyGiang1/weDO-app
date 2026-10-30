@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../core/realtime/realtime_binding.dart';
+import '../../../core/realtime/reliable_read.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../data/calendar_models.dart';
 import '../data/calendar_repository.dart';
 
@@ -18,64 +19,97 @@ class ActivityReminderPanel extends StatefulWidget {
   State<ActivityReminderPanel> createState() => _ActivityReminderPanelState();
 }
 
-class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
-  ActivityReminder? _reminder;
-  bool _loading = true, _saving = false;
-  Object? _error;
-  int _offset = 15;
+class _ActivityReminderPanelState extends State<ActivityReminderPanel>
+    with RealtimeBinding<ActivityReminderPanel> {
+  final _read = ReliableRead<ActivityReminder>();
+  bool _saving = false, _offsetDirty = false;
+  int _offset = 15, _accessEpoch = 0;
+
+  @override
+  String get realtimeScope => 'activity:${widget.activityId}';
+  @override
+  String get realtimePrefix => 'ACTIVITY_';
+  @override
+  String get realtimeAggregateId => widget.activityId;
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  @override
+  Future<void> reloadRealtime() => _load();
+  @override
+  void onRealtimeAccessLost() {
+    _accessEpoch++;
+    _saving = false;
+    _offsetDirty = false;
+    _read.denyAccess();
+  }
 
   @override
   void initState() {
     super.initState();
+    _read.addListener(_changed);
     _load();
   }
 
-  Future<void> _load() async {
-    try {
-      final value = await widget.repository.getReminder(widget.activityId);
-      if (!mounted) return;
-      setState(() {
-        _reminder = value;
-        _offset = value.offsetMinutes ?? 15;
-        _loading = false;
-        _error = null;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error;
-        _loading = false;
-      });
-    }
-  }
+  void _changed() { if (mounted) setState(() {}); }
+
+  Future<void> _load() => _read.load(
+    () => widget.repository.getReminder(widget.activityId),
+    onData: (value) {
+      if (!_offsetDirty) _offset = value.offsetMinutes ?? 15;
+    },
+  );
 
   Future<void> _save({required bool enabled, int? offset}) async {
+    if (_saving || _read.failure != null || _read.value.data?.canConfigure != true) return;
+    final access = _accessEpoch, generation = _read.generation;
     setState(() => _saving = true);
     try {
       final result = await widget.repository.updateReminder(
-        widget.activityId,
-        enabled: enabled,
-        offsetMinutes: offset ?? _offset,
-      );
-      if (!mounted) return;
-      setState(() {
-        _reminder = result;
+        widget.activityId, enabled: enabled, offsetMinutes: offset ?? _offset);
+      if (!mounted || access != _accessEpoch) return;
+      _offsetDirty = false;
+      if (_read.isCurrent(generation)) {
         _offset = result.offsetMinutes ?? _offset;
-        _saving = false;
-        _error = null;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = error;
-      });
+        _read.accept(result);
+      } else {
+        await _load();
+      }
+    } catch (error, stack) {
+      if (!mounted || access != _accessEpoch) return;
+      if (_read.isCurrent(generation)) {
+        await _read.load(() => Future<ActivityReminder>.error(error, stack));
+      } else if (ReadFailure.fromError(error) == null) {
+        FlutterError.reportError(FlutterErrorDetails(exception: error, stack: stack));
+      }
+    } finally {
+      if (mounted && access == _accessEpoch) setState(() => _saving = false);
     }
   }
 
   @override
+  void didUpdateWidget(covariant ActivityReminderPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activityId != widget.activityId || oldWidget.repository != widget.repository) {
+      _accessEpoch++;
+      _saving = false;
+      _offsetDirty = false;
+      _read.reset();
+      refreshRealtimeBindings();
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _accessEpoch++;
+    _read.removeListener(_changed);
+    _read.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (_read.value.connectionState == ConnectionState.waiting && !_read.value.hasData) {
       return const Card(
         child: ListTile(
           leading: CircularProgressIndicator(),
@@ -83,13 +117,13 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
         ),
       );
     }
-    final reminder = _reminder;
+    final reminder = _read.value.data;
     return Card(
-      color: AppColors.surfaceContainerLowest,
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: AppColors.outlineVariant, width: 0.8),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 0.8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -100,7 +134,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
               'Nhắc nhở cá nhân',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
-            if (_error != null) ...[
+            if (_read.failure != null) ...[
               const SizedBox(height: 8),
               const Text('Không thể cập nhật nhắc nhở.'),
               TextButton(onPressed: _load, child: const Text('Thử lại')),
@@ -110,7 +144,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Nhắc tôi'),
                 value: reminder.enabled,
-                onChanged: reminder.canConfigure && !_saving
+                onChanged: reminder.canConfigure && !_saving && _read.failure == null
                     ? (enabled) => _save(enabled: enabled)
                     : null,
               ),
@@ -132,11 +166,11 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
                             ),
                           )
                           .toList(),
-                      onChanged: _saving
+                      onChanged: _saving || _read.failure != null
                           ? null
                           : (value) {
                               if (value == null) return;
-                              setState(() => _offset = value);
+                              setState(() { _offset = value; _offsetDirty = true; });
                               if (reminder.enabled) {
                                 _save(enabled: true, offset: value);
                               }
@@ -147,7 +181,7 @@ class _ActivityReminderPanelState extends State<ActivityReminderPanel> {
               ] else
                 Text(
                   _reason(reminder.unavailableReason),
-                  style: const TextStyle(color: AppColors.onSurfaceVariant),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               if (reminder.enabled && reminder.remindAt != null)
                 Text(

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../../../core/realtime/realtime_binding.dart';
+import '../../../core/realtime/reliable_read.dart';
+
 import 'package:image_picker/image_picker.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/date_time_formatter.dart';
 import '../../groups/data/group_repository.dart';
 import '../../groups/data/models/group_models.dart';
@@ -11,6 +14,15 @@ import '../application/expense_controllers.dart';
 import '../data/expense_failure.dart';
 import '../data/expense_models.dart';
 import '../data/expense_repository.dart';
+
+ReadFailure? _financeReadFailure(Object error) {
+  if (error is ExpenseFailure) {
+    return error.apiError == null
+        ? ReadFailure(error.message)
+        : ReadFailure.fromError(error.apiError!);
+  }
+  return ReadFailure.fromError(error);
+}
 
 class ExpenseListScreen extends StatefulWidget {
   final String groupId;
@@ -27,10 +39,39 @@ class ExpenseListScreen extends StatefulWidget {
   State<ExpenseListScreen> createState() => _ExpenseListScreenState();
 }
 
-class _ExpenseListScreenState extends State<ExpenseListScreen> {
-  late final ExpenseListController _controller = ExpenseListController(
+class _ExpenseListScreenState extends State<ExpenseListScreen>
+    with RealtimeBinding<ExpenseListScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _controller.needsReadRecovery;
+  @override
+  Set<String> get realtimeAdditionalPrefixes => const {'SETTLEMENT_'};
+  @override
+  String? get realtimeScope => 'group:${widget.groupId}';
+  @override
+  String get realtimePrefix => 'EXPENSE_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _controller.load(widget.groupId, silent: true);
+  }
+
+  late ExpenseListController _controller = ExpenseListController(
     widget.repository,
   );
+
+  @override
+  void onRealtimeAccessLost() => _controller.denyAccess();
+
+  @override
+  void didUpdateWidget(covariant ExpenseListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupId != widget.groupId ||
+        oldWidget.repository != widget.repository) {
+      _controller.dispose();
+      _controller = ExpenseListController(widget.repository)
+        ..load(widget.groupId);
+      refreshRealtimeBindings();
+    }
+  }
 
   @override
   void initState() {
@@ -45,6 +86,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
   }
 
   Future<void> _create() async {
+    if (!_controller.state.canMutate) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => ExpenseFormScreen(
@@ -59,7 +101,7 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Chi tiêu'),
       actions: [
@@ -81,19 +123,22 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
         ),
       ],
     ),
-    floatingActionButton: FloatingActionButton.extended(
-      onPressed: _create,
-      icon: const Icon(Icons.add),
-      label: const Text('Thêm khoản chi'),
+    floatingActionButton: ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) => FloatingActionButton.extended(
+        onPressed: _controller.state.canMutate ? _create : null,
+        icon: const Icon(Icons.add),
+        label: const Text('Thêm khoản chi'),
+      ),
     ),
     body: ListenableBuilder(
       listenable: _controller,
       builder: (context, _) {
         final state = _controller.state;
-        if (state.loading && state.expenses.isEmpty) {
+        if (state.loading && !state.hasLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (state.failure != null && state.expenses.isEmpty) {
+        if (state.failure != null && !state.hasLoaded) {
           return _FailureState(
             message: state.failure!,
             onRetry: () => _controller.load(widget.groupId),
@@ -123,7 +168,9 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 ),
               if (state.failure != null)
                 _InlineFailure(
-                  message: state.failure!,
+                  message: state.stale
+                      ? 'Dữ liệu chưa được cập nhật. ${state.failure!}'
+                      : state.failure!,
                   onRetry: () => _controller.load(widget.groupId),
                 ),
               if (state.expenses.isEmpty)
@@ -135,18 +182,23 @@ class _ExpenseListScreenState extends State<ExpenseListScreen> {
                 ...state.expenses.map(
                   (expense) => _ExpenseRow(
                     expense: expense,
-                    onTap: () => Navigator.of(context)
-                        .push<void>(
-                          MaterialPageRoute(
-                            builder: (_) => ExpenseDetailScreen(
-                              groupId: widget.groupId,
-                              expenseId: expense.id,
-                              repository: widget.repository,
-                              groupRepository: widget.groupRepository,
+                    onTap: () {
+                      if (!_controller.state.canMutate) return;
+                      Navigator.of(context)
+                          .push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => ExpenseDetailScreen(
+                                groupId: widget.groupId,
+                                expenseId: expense.id,
+                                repository: widget.repository,
+                                groupRepository: widget.groupRepository,
+                              ),
                             ),
-                          ),
-                        )
-                        .then((_) => _controller.load(widget.groupId)),
+                          )
+                          .then((_) {
+                            if (mounted) _controller.load(widget.groupId);
+                          });
+                    },
                   ),
                 ),
             ],
@@ -172,17 +224,40 @@ class ExpenseDetailScreen extends StatefulWidget {
   State<ExpenseDetailScreen> createState() => _ExpenseDetailScreenState();
 }
 
-class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
-  late Future<ExpenseDetail> _future = widget.repository.detail(
-    widget.expenseId,
-  );
+class _ExpenseDetailScreenState extends State<ExpenseDetailScreen>
+    with RealtimeBinding<ExpenseDetailScreen> {
+  @override
+  String? get realtimeAggregateId => widget.expenseId;
+  @override
+  String? get realtimeScope => null;
+  @override
+  String get realtimePrefix => 'EXPENSE_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _reload();
+  }
+
+  final _read = ReliableRead<ExpenseDetail>(classify: _financeReadFailure);
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    _read.dispose();
+    super.dispose();
+  }
+
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
   bool _working = false;
 
-  Future<void> _reload() async {
-    setState(() {
-      _future = widget.repository.detail(widget.expenseId);
-    });
-  }
+  Future<void> _reload() => _read.load(
+    () => widget.repository.detail(widget.expenseId),
+    onData: (data) => bindRealtimeResource('group:${data.groupId}'),
+  );
 
   Future<void> _cancel(ExpenseDetail expense) async {
     final confirmed = await showDialog<bool>(
@@ -222,10 +297,11 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(title: const Text('Chi tiết khoản chi')),
-    body: FutureBuilder<ExpenseDetail>(
-      future: _future,
+    body: ReliableReadBuilder<ExpenseDetail>(
+      read: _read,
+      onRetry: _reload,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
@@ -562,7 +638,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: Text(
         widget.initial == null ? 'Thêm khoản chi' : 'Chỉnh sửa khoản chi',
@@ -755,8 +831,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                     : const Icon(Icons.receipt_long_outlined),
                 label: Text(
                   _receiptStorageKey == null
-                      ? 'Add receipt'
-                      : 'Replace receipt',
+                      ? 'Đính kèm hóa đơn'
+                      : 'Thay hóa đơn',
                 ),
               ),
               const SizedBox(height: 24),
@@ -791,9 +867,39 @@ class ExpenseBalanceScreen extends StatefulWidget {
   State<ExpenseBalanceScreen> createState() => _ExpenseBalanceScreenState();
 }
 
-class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
-  late final SettlementBalanceController _controller =
-      SettlementBalanceController(widget.repository);
+class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen>
+    with RealtimeBinding<ExpenseBalanceScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _controller.needsReadRecovery;
+  @override
+  Set<String> get realtimeAdditionalPrefixes => const {'SETTLEMENT_'};
+  @override
+  String? get realtimeScope => 'group:${widget.groupId}';
+  @override
+  String get realtimePrefix => 'EXPENSE_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _controller.load(widget.groupId, silent: true);
+  }
+
+  late SettlementBalanceController _controller = SettlementBalanceController(
+    widget.repository,
+  );
+
+  @override
+  void onRealtimeAccessLost() => _controller.denyAccess();
+
+  @override
+  void didUpdateWidget(covariant ExpenseBalanceScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupId != widget.groupId ||
+        oldWidget.repository != widget.repository) {
+      _controller.dispose();
+      _controller = SettlementBalanceController(widget.repository)
+        ..load(widget.groupId);
+      refreshRealtimeBindings();
+    }
+  }
 
   @override
   void initState() {
@@ -808,6 +914,7 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
   }
 
   Future<void> _openCreateSettlementDialog(ExpenseBalanceEntry entry) async {
+    if (!_controller.state.canMutate) return;
     final declarationType = entry.direction == 'YOU_OWE'
         ? 'I_PAID'
         : 'I_RECEIVED';
@@ -910,7 +1017,7 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Số dư nhóm'),
       actions: [
@@ -947,7 +1054,9 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
               _BalanceSummary(balances: balances),
               if (state.failure != null)
                 _InlineFailure(
-                  message: state.failure!,
+                  message: state.stale
+                      ? 'Dữ liệu chưa được cập nhật. ${state.failure!}'
+                      : state.failure!,
                   onRetry: () => _controller.load(widget.groupId),
                 ),
               const SizedBox(height: 16),
@@ -963,7 +1072,7 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
                   (entry) => Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     elevation: 0,
-                    color: AppColors.surfaceContainerLowest,
+                    color: Theme.of(context).colorScheme.surfaceContainerLowest,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1012,7 +1121,7 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: FilledButton.tonalIcon(
-                              onPressed: state.working
+                              onPressed: !state.canMutate
                                   ? null
                                   : () => _openCreateSettlementDialog(entry),
                               icon: Icon(
@@ -1045,20 +1154,23 @@ class _ExpenseBalanceScreenState extends State<ExpenseBalanceScreen> {
                 ...state.settlements.map(
                   (item) => _SettlementRow(
                     settlement: item,
-                    working: state.working,
-                    onTap: () => Navigator.of(context)
-                        .push<void>(
-                          MaterialPageRoute(
-                            builder: (_) => SettlementDetailScreen(
-                              groupId: widget.groupId,
-                              settlementId: item.id,
-                              repository: widget.repository,
+                    working: !state.canMutate,
+                    onTap: () {
+                      if (!_controller.state.canMutate) return;
+                      Navigator.of(context)
+                          .push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => SettlementDetailScreen(
+                                groupId: widget.groupId,
+                                settlementId: item.id,
+                                repository: widget.repository,
+                              ),
                             ),
-                          ),
-                        )
-                        .then((_) {
-                          if (mounted) _controller.load(widget.groupId);
-                        }),
+                          )
+                          .then((_) {
+                            if (mounted) _controller.load(widget.groupId);
+                          });
+                    },
                     onConfirm: item.permissions.canConfirm
                         ? () => _performAction(
                             () => _controller.confirm(widget.groupId, item.id),
@@ -1103,29 +1215,57 @@ class SettlementDetailScreen extends StatefulWidget {
   State<SettlementDetailScreen> createState() => _SettlementDetailScreenState();
 }
 
-class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
-  late Future<SettlementItem> _future = widget.repository.settlementDetail(
-    widget.settlementId,
-  );
+class _SettlementDetailScreenState extends State<SettlementDetailScreen>
+    with RealtimeBinding<SettlementDetailScreen> {
+  @override
+  String? get realtimeAggregateId => widget.settlementId;
+  @override
+  String? get realtimeScope => null;
+  @override
+  String get realtimePrefix => 'SETTLEMENT_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _reload();
+  }
+
+  final _read = ReliableRead<SettlementItem>(classify: _financeReadFailure);
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    _read.dispose();
+    super.dispose();
+  }
+
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
   bool _working = false;
 
-  Future<void> _reload() async {
-    setState(() {
-      _future = widget.repository.settlementDetail(widget.settlementId);
-    });
-  }
+  Future<void> _reload() => _read.load(
+    () => widget.repository.settlementDetail(widget.settlementId),
+    onData: (data) => bindRealtimeResource('group:${data.groupId}'),
+  );
 
   Future<void> _runAction(
     Future<SettlementItem> Function() action,
     String successMessage,
   ) async {
     setState(() => _working = true);
+    final readGeneration = _read.generation;
+    // Only the successful authoritative mutation response is published below;
+    // accepting it invalidates any older pending read.
     try {
       final updated = await action();
       if (!mounted) return;
-      setState(() {
-        _future = Future<SettlementItem>.value(updated);
-      });
+      if (!_read.isCurrent(readGeneration)) {
+        await _reload();
+        return;
+      }
+      _read.accept(updated);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(successMessage)));
     } on ExpenseFailure catch (error) {
@@ -1139,10 +1279,11 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(title: const Text('Chi tiết thanh toán')),
-    body: FutureBuilder<SettlementItem>(
-      future: _future,
+    body: ReliableReadBuilder<SettlementItem>(
+      read: _read,
+      onRetry: _reload,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
@@ -1169,7 +1310,7 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
             Text(
               settlement.amount.formatted,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1302,7 +1443,7 @@ class _DetailRow extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: AppColors.onSurfaceVariant),
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
         const SizedBox(width: 12),
@@ -1340,7 +1481,7 @@ class _SettlementRow extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 10),
     elevation: 0,
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     child: InkWell(
       onTap: onTap,
@@ -1460,7 +1601,7 @@ class _BalanceSummary extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: Material(
-      color: AppColors.surfaceContainerHigh,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -1565,7 +1706,11 @@ class _InlineFailure extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListTile(
     title: Text(message),
-    trailing: IconButton(onPressed: onRetry, icon: const Icon(Icons.refresh)),
+    trailing: IconButton(
+      tooltip: 'Thử lại',
+      onPressed: onRetry,
+      icon: const Icon(Icons.refresh),
+    ),
   );
 }
 

@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed."),
+    COMMUNITY_FEED_CURSOR_INVALID(HttpStatus.BAD_REQUEST, "Feed page expired or invalid. Refresh the feed."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access is denied."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "Resource was not found."),
@@ -83,6 +84,7 @@ public enum ErrorCode {
     TASK_DELETE_NOT_ALLOWED(HttpStatus.FORBIDDEN, "Task deletion is not allowed."),
     TASK_ALREADY_ASSIGNED(HttpStatus.CONFLICT, "Task is already assigned."),
     TASK_NOT_CLAIMABLE(HttpStatus.CONFLICT, "Task is not claimable."),
+    TASK_ASSIGNEE_NOT_PARTICIPANT(HttpStatus.CONFLICT, "Task assignee must be a going Activity participant."),
     EXPENSE_NOT_FOUND(HttpStatus.NOT_FOUND, "Expense was not found."),
     INVALID_EXPENSE_AMOUNT(HttpStatus.BAD_REQUEST, "Expense amount is invalid."),
     EXPENSE_SPLIT_TOTAL_MISMATCH(HttpStatus.BAD_REQUEST, "Expense shares must equal the total amount."),

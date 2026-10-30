@@ -41,12 +41,14 @@ class ActivityTaskHistory {
 
 class ActivityTaskPermissions {
   final bool canEdit, canManageAssignees, canClaim, canChangeStatus, canDelete;
+  final bool canCompleteWithoutEvidence;
   const ActivityTaskPermissions({
     required this.canEdit,
     required this.canManageAssignees,
     required this.canClaim,
     required this.canChangeStatus,
     required this.canDelete,
+    this.canCompleteWithoutEvidence=true,
   });
   factory ActivityTaskPermissions.fromJson(Map<String, dynamic>? json) =>
       ActivityTaskPermissions(
@@ -55,6 +57,7 @@ class ActivityTaskPermissions {
         canClaim: json?['canClaim'] as bool? ?? false,
         canChangeStatus: json?['canChangeStatus'] as bool? ?? false,
         canDelete: json?['canDelete'] as bool? ?? false,
+        canCompleteWithoutEvidence: json?['canCompleteWithoutEvidence'] as bool? ?? true,
       );
 }
 

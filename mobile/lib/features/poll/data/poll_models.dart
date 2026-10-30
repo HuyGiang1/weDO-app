@@ -79,7 +79,12 @@ class PollPermissions {
 }
 
 class Poll {
-  final String id, activityId, createdBy, question;
+  final int participantCount;
+  final List<PollParticipant> participantPreview;
+  final String id, createdBy, question;
+  final String? activityId, groupId;
+  String get realtimeScope =>
+      activityId != null ? 'activity:$activityId' : 'group:$groupId';
   final PollType type;
   final bool allowMemberAddOption, resultsVisible;
   final int? maxSelections;
@@ -92,8 +97,11 @@ class Poll {
   final List<String> callerOptionIds;
   final PollPermissions permissions;
   const Poll({
+    this.participantCount = 0,
+    this.participantPreview = const [],
     required this.id,
     required this.activityId,
+    this.groupId,
     required this.createdBy,
     required this.question,
     required this.type,
@@ -111,8 +119,19 @@ class Poll {
     required this.permissions,
   });
   factory Poll.fromJson(Map<String, dynamic> j) => Poll(
+    participantCount: (j['participantCount'] as num? ?? 0).toInt(),
+    participantPreview: j['voteVisibility'] == 'ANONYMOUS'
+        ? const []
+        : (j['participantPreview'] as List? ?? [])
+              .map(
+                (e) => PollParticipant.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList(),
     id: j['id'] as String,
-    activityId: j['activityId'] as String,
+    activityId: j['activityId'] as String?,
+    groupId: j['groupId'] as String?,
     createdBy: j['createdBy'] as String,
     question: j['question'] as String,
     type: PollTypeWire.parse(j['pollType'] as String),
@@ -148,6 +167,7 @@ class CreatePollDraft {
   final List<String> options;
   final bool allowMemberAddOption, anonymous, showResultsImmediately;
   final DateTime? deadlineAt;
+  final bool multipleChoice;
   const CreatePollDraft({
     required this.question,
     required this.options,
@@ -155,10 +175,13 @@ class CreatePollDraft {
     required this.anonymous,
     required this.showResultsImmediately,
     this.deadlineAt,
+    this.multipleChoice = false,
   });
   Map<String, dynamic> toJson() => {
     'question': question,
-    'pollType': PollType.singleChoice.wire,
+    'pollType': multipleChoice
+        ? PollType.multipleChoice.wire
+        : PollType.singleChoice.wire,
     'options': options,
     'allowMemberAddOption': allowMemberAddOption,
     'voteVisibility': anonymous ? 'ANONYMOUS' : 'PUBLIC',
@@ -170,9 +193,26 @@ class CreatePollDraft {
 class PollVoters {
   final String optionId;
   final List<String> userIds;
-  const PollVoters(this.optionId, this.userIds);
+  final List<PollParticipant> participants;
+  const PollVoters(this.optionId, this.userIds, [this.participants = const []]);
   factory PollVoters.fromJson(Map<String, dynamic> j) => PollVoters(
     j['optionId'] as String,
     (j['userIds'] as List? ?? const []).cast<String>(),
+    (j['participants'] as List? ?? [])
+        .map(
+          (e) => PollParticipant.fromJson(Map<String, dynamic>.from(e as Map)),
+        )
+        .toList(),
+  );
+}
+
+class PollParticipant {
+  final String id, displayName;
+  final String? avatarStorageKey;
+  const PollParticipant(this.id, this.displayName, this.avatarStorageKey);
+  factory PollParticipant.fromJson(Map<String, dynamic> j) => PollParticipant(
+    j['id'] as String,
+    j['displayName'] as String? ?? 'Người dùng',
+    j['avatarStorageKey'] as String?,
   );
 }

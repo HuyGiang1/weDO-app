@@ -59,6 +59,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class FundService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private static final BigDecimal ZERO = new BigDecimal("0.00");
     private static final BigDecimal CENT = new BigDecimal("0.01");
     private static final String DEFAULT_FUND_NAME = "Quỹ nhóm";
@@ -131,6 +133,7 @@ public class FundService {
             throw new BusinessException(ErrorCode.FUND_ALREADY_EXISTS);
         }
 
+        if (realtime != null) { realtime.group("FUND_CREATED", groupId, null); }
         return getFundByIdInternal(fundId, callerUserId);
     }
 
@@ -217,6 +220,7 @@ public class FundService {
         );
 
         FundRow updated = requireFundRow(fund.id());
+        if (realtime != null) { realtime.group("FUND_CLOSED", fund.groupId(), null); }
         return buildFundDetailResponse(updated, access, callerUserId);
     }
 
@@ -266,6 +270,7 @@ public class FundService {
             jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
         }
 
+        if (realtime != null) { realtime.group("FUND_MANAGER_CHANGED", fund.groupId(), null); }
         return loadManagers(fund.id(), fund.groupId()).stream()
                 .filter(m -> m.user().userId().equals(targetUserId))
                 .findFirst()
@@ -282,6 +287,7 @@ public class FundService {
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.update("DELETE FROM fund_managers WHERE fund_id = ? AND user_id = ?", fund.id(), targetUserId);
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
+        if (realtime != null) { realtime.group("FUND_MANAGER_CHANGED", fund.groupId(), null); }
         return loadManagers(fund.id(), fund.groupId());
     }
 
@@ -347,6 +353,7 @@ public class FundService {
             }
         }
         CollectionRow created = requireCollectionRow(collectionId);
+        if (realtime != null) { realtime.group("FUND_COLLECTION_CREATED", fund.groupId(), null); }
         return buildCollectionDetailResponse(fund, created, access, callerUserId);
     }
 
@@ -396,6 +403,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_COLLECTION_CLOSED", fund.groupId(), null); }
         return buildCollectionDetailResponse(fund, requireCollectionRow(collectionId), access, callerUserId);
     }
 
@@ -427,6 +435,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_COLLECTION_CANCELLED", fund.groupId(), null); }
         return buildCollectionDetailResponse(fund, requireCollectionRow(collectionId), access, callerUserId);
     }
 
@@ -494,6 +503,7 @@ public class FundService {
 
         ContributionRow created = requireContributionRow(contributionId);
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), Set.of(contributorUserId));
+        if (realtime != null) { realtime.group("FUND_CONTRIBUTION_CREATED", fund.groupId(), null); }
         return toContributionResponse(created, collection.title(), userMap, callerUserId, callerCanManage, fund.status(), access.group().getStatus());
     }
 
@@ -575,6 +585,7 @@ public class FundService {
 
         ContributionRow updated = requireContributionRow(contribution.id());
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), List.of(updated.userId(), callerUserId));
+        if (realtime != null) { realtime.group("FUND_CONTRIBUTION_APPROVED", fund.groupId(), null); }
         return toContributionResponse(updated, collection.title(), userMap, callerUserId, true, fund.status(), access.group().getStatus());
     }
 
@@ -604,6 +615,7 @@ public class FundService {
 
         ContributionRow updated = requireContributionRow(contribution.id());
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), List.of(updated.userId(), callerUserId));
+        if (realtime != null) { realtime.group("FUND_CONTRIBUTION_REJECTED", fund.groupId(), null); }
         return toContributionResponse(updated, collection.title(), userMap, callerUserId, true, fund.status(), access.group().getStatus());
     }
 
@@ -636,6 +648,7 @@ public class FundService {
 
         ContributionRow updated = requireContributionRow(contribution.id());
         Map<UUID, FundUserSummary> userMap = loadUserSummaries(fund.groupId(), List.of(updated.userId(), callerUserId));
+        if (realtime != null) { realtime.group("FUND_CONTRIBUTION_CANCELLED", fund.groupId(), null); }
         return toContributionResponse(updated, collection.title(), userMap, callerUserId, callerCanManage, fund.status(), access.group().getStatus());
     }
 
@@ -694,6 +707,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_EXPENSE_CREATED", fund.groupId(), null); }
         return listExpensesInternal(fund, access, callerUserId).stream()
                 .filter(e -> e.expenseId().equals(expenseId))
                 .findFirst()
@@ -741,6 +755,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_REIMBURSEMENT_CREATED", fund.groupId(), null); }
         return listReimbursementsInternal(fund, access, callerUserId, null).stream()
                 .filter(r -> r.reimbursementId().equals(reimbursementId))
                 .findFirst()
@@ -813,6 +828,7 @@ public class FundService {
             ));
         }
 
+        if (realtime != null) { realtime.group("FUND_REIMBURSEMENT_APPROVED", fund.groupId(), null); }
         return listReimbursementsInternal(fund, access, callerUserId, null).stream()
                 .filter(r -> r.reimbursementId().equals(reimbursement.id()))
                 .findFirst()
@@ -845,6 +861,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_REIMBURSEMENT_REJECTED", fund.groupId(), null); }
         return listReimbursementsInternal(fund, access, callerUserId, null).stream()
                 .filter(r -> r.reimbursementId().equals(reimbursement.id()))
                 .findFirst()
@@ -880,6 +897,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_REIMBURSEMENT_CANCELLED", fund.groupId(), null); }
         return listReimbursementsInternal(fund, access, callerUserId, null).stream()
                 .filter(r -> r.reimbursementId().equals(reimbursement.id()))
                 .findFirst()
@@ -954,6 +972,7 @@ public class FundService {
         );
         jdbc.update("UPDATE group_funds SET updated_at = ? WHERE id = ?", now, fund.id());
 
+        if (realtime != null) { realtime.group("FUND_TRANSACTION_REVERSED", fund.groupId(), null); }
         return listTransactionsInternal(fund, access, callerUserId, null, null).stream()
                 .filter(tx -> tx.transactionId().equals(reversalTxId))
                 .findFirst()

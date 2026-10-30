@@ -33,6 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class DiscussionService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private final M8ActivityAccessService access;
     private final ActivityCommentRepository comments;
     private final GroupActivityLogRepository logs;
@@ -63,6 +65,7 @@ public class DiscussionService {
         M8ActivityAccess activityAccess = mutable(activityId, actor);
         ActivityCommentEntity comment = comments.save(new ActivityCommentEntity(
                 UUID.randomUUID(), activityId, actor, null, request.content().trim(), clock.instant()));
+        if (realtime != null) realtime.activity("DISCUSSION_COMMENT_CREATED", activityId, activityAccess.activity().getGroupId(), actor);
         return response(comment, activityAccess, actor, authorFor(actor));
     }
 
@@ -74,6 +77,7 @@ public class DiscussionService {
         if (parent.isDeleted()) throw new BusinessException(ErrorCode.COMMENT_UPDATE_NOT_ALLOWED);
         ActivityCommentEntity reply = comments.save(new ActivityCommentEntity(
                 UUID.randomUUID(), parent.getActivityId(), actor, parentId, request.content().trim(), clock.instant()));
+        if (realtime != null) realtime.activity("DISCUSSION_REPLY_CREATED", parent.getActivityId(), activityAccess.activity().getGroupId(), actor);
         return response(reply, activityAccess, actor, authorFor(actor));
     }
 
@@ -85,6 +89,7 @@ public class DiscussionService {
             throw new BusinessException(ErrorCode.COMMENT_UPDATE_NOT_ALLOWED);
         }
         comment.edit(request.content().trim(), clock.instant());
+        if (realtime != null) realtime.activity("DISCUSSION_COMMENT_UPDATED", comment.getActivityId(), activityAccess.activity().getGroupId(), actor);
         return response(comment, activityAccess, actor, authorFor(comment.getAuthorId()));
     }
 
@@ -99,6 +104,7 @@ public class DiscussionService {
         if (!comment.isDeleted()) {
             Instant now = clock.instant();
             comment.delete(actor, now);
+            if (realtime != null) realtime.activity("DISCUSSION_COMMENT_DELETED", comment.getActivityId(), activityAccess.activity().getGroupId(), actor);
             if (moderator && !actor.equals(comment.getAuthorId())) {
                 logs.save(new GroupActivityLogEntity(UUID.randomUUID(), activityAccess.activity().getGroupId(), actor,
                         GroupActivityAction.ACTIVITY_COMMENT_MODERATED, comment.getAuthorId(), now));

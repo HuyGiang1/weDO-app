@@ -390,6 +390,7 @@ class GroupInviteSummaryResponse {
   final String? groupAvatarStorageKey, groupDescription;
   final GroupJoinPolicy joinPolicy;
   final int activeMemberCount;
+  final bool alreadyMember, requestPending;
 
   const GroupInviteSummaryResponse({
     required this.groupId,
@@ -398,10 +399,14 @@ class GroupInviteSummaryResponse {
     this.groupDescription,
     required this.joinPolicy,
     required this.activeMemberCount,
+    this.alreadyMember = false,
+    this.requestPending = false,
   });
 
   factory GroupInviteSummaryResponse.fromJson(Map<String, dynamic> j) =>
       GroupInviteSummaryResponse(
+        alreadyMember: j['alreadyMember'] == true,
+        requestPending: j['requestPending'] == true,
         groupId: _s(j, 'groupId'),
         groupName: (j['name'] ?? j['groupName']) as String,
         groupAvatarStorageKey:

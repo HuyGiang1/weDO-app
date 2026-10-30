@@ -1,9 +1,14 @@
+import '../../../journey/data/journey_api.dart';
+import '../../../journey/presentation/journey_screens.dart';
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
+import '../../../../core/realtime/reliable_read.dart';
+import '../../../../core/network/api_exception.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../groups/data/models/group_models.dart';
+import '../../../groups/data/group_failure.dart';
 import '../../data/task_models.dart';
 import '../../data/task_failure.dart';
 import '../../data/task_repository.dart';
@@ -26,8 +31,24 @@ class TaskListScreen extends StatefulWidget {
   State<TaskListScreen> createState() => _TaskListScreenState();
 }
 
-class _TaskListScreenState extends State<TaskListScreen> {
-  late Future<List<ActivityTask>> _future;
+class _TaskListScreenState extends State<TaskListScreen> with RealtimeBinding<TaskListScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  @override
+  String? get realtimeScope => 'activity:${widget.activityId}';
+  @override
+  String get realtimePrefix => 'TASK_';
+  @override
+  Future<void> reloadRealtime() async { await _refreshRealtime(); }
+
+  Future<void> _refreshRealtime() => _read.load(() => widget.repository.list(
+    widget.activityId, status: _filter, assignedToMe: _mine ? true : null,
+  ));
+  final _read = ReliableRead<List<ActivityTask>>();
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
+  @override
+  void dispose() { _read.dispose(); super.dispose(); }
   ActivityTaskStatus? _filter;
   bool _mine = false;
   String _query = '';
@@ -38,17 +59,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
     _load();
   }
 
-  void _load() => setState(() {
-    _future = widget.repository.list(
-      widget.activityId,
-      status: _filter,
-      assignedToMe: _mine ? true : null,
-    );
-  });
+  void _load({bool clear = false}) {
+    if (!mounted) return;
+    if (clear) _read.reset();
+    _refreshRealtime();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Công việc'),
       centerTitle: true,
@@ -93,7 +112,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 selected: _mine,
                 onSelected: (value) {
                   setState(() => _mine = value);
-                  _load();
+                  _load(clear: true);
                 },
               ),
               const SizedBox(width: 8),
@@ -107,7 +126,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       setState(
                         () => _filter = _filter == status ? null : status,
                       );
-                      _load();
+                      _load(clear: true);
                     },
                   ),
                 ),
@@ -117,10 +136,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: FutureBuilder<List<ActivityTask>>(
-            future: _future,
+          child: ReliableReadBuilder<List<ActivityTask>>(
+            read: _read, onRetry: _load,
             builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done)
+              if (snapshot.connectionState != ConnectionState.done && !snapshot.hasData)
                 return const Center(child: CircularProgressIndicator());
               if (snapshot.hasError) return _Failure(onRetry: _load);
               final tasks = (snapshot.data ?? [])
@@ -179,16 +198,12 @@ class CreateTaskScreen extends StatefulWidget {
 class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _title = TextEditingController();
   final _description = TextEditingController();
-  List<GroupMember> _members = const [];
   final Set<String> _assignees = {};
   DateTime? _dueAt;
   bool _saving = false;
   @override
   void initState() {
     super.initState();
-    widget.loadMembers().then((value) {
-      if (mounted) setState(() => _members = value);
-    });
   }
 
   @override
@@ -232,7 +247,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(centerTitle: true, title: const Text('Tạo công việc')),
     body: ListView(
       padding: const EdgeInsets.all(20),
@@ -260,7 +275,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         const SizedBox(height: 16),
         _Panel(
           child: ListTile(
-            leading: const Icon(Icons.people_outline, color: AppColors.primary),
+            leading: Icon(Icons.people_outline, color: Theme.of(context).colorScheme.primary),
             title: const Text('Phân công'),
             subtitle: Text(
               _assignees.isEmpty
@@ -269,24 +284,33 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
-              final selected = await _selectMembers(
-                context,
-                _members,
-                _assignees,
-              );
-              if (selected != null)
-                setState(() {
-                  _assignees
-                    ..clear()
-                    ..addAll(selected);
-                });
+              try {
+                final eligible = await widget.repository.eligibleAssignees(
+                  widget.activityId,
+                );
+                if (!context.mounted) return;
+                final selected = await _selectMembers(
+                  context,
+                  eligible,
+                  _assignees,
+                );
+                if (selected != null && mounted)
+                  setState(() {
+                    _assignees
+                      ..clear()
+                      ..addAll(selected);
+                  });
+              } catch (_) {
+                if (mounted)
+                  _message('Không tải được người tham gia. Vui lòng thử lại.');
+              }
             },
           ),
         ),
         const SizedBox(height: 12),
         _Panel(
           child: ListTile(
-            leading: const Icon(Icons.event_outlined, color: AppColors.primary),
+            leading: Icon(Icons.event_outlined, color: Theme.of(context).colorScheme.primary),
             title: const Text('Hạn hoàn thành'),
             subtitle: Text(
               _dueAt == null ? 'Không đặt hạn' : _dateText(_dueAt!),
@@ -346,21 +370,70 @@ class TaskDetailScreen extends StatefulWidget {
   State<TaskDetailScreen> createState() => _TaskDetailScreenState();
 }
 
-class _TaskDetailScreenState extends State<TaskDetailScreen> {
-  late Future<ActivityTask> _future;
+class _TaskDetailScreenState extends State<TaskDetailScreen> with RealtimeBinding<TaskDetailScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  @override
+  String? get realtimeAggregateId => widget.taskId;
+  Future<void> _refreshRealtime() => _read.load(
+    () => widget.repository.get(widget.taskId),
+    onData: (data) => bindRealtimeResource('activity:${data.activityId}'),
+  );
+  final _read = ReliableRead<ActivityTask>();
+  @override
+  void onRealtimeAccessLost() {
+    _memberGeneration++;
+    _members = const [];
+    _read.denyAccess();
+  }
+  @override
+  void dispose() { _memberGeneration++; _read.dispose(); super.dispose(); }
+  @override
+  String? get realtimeScope => null;
+  @override
+  String get realtimePrefix => 'TASK_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _refreshRealtime();
+    if (mounted && _read.value.hasData && _read.failure == null) await _loadMemberNames();
+  }
   List<GroupMember> _members = const [];
+  String? _membersError;
+  int _memberGeneration = 0;
   @override
   void initState() {
     super.initState();
     _reload();
-    widget.loadMembers().then((value) {
-      if (mounted) setState(() => _members = value);
-    });
+    _loadMemberNames();
   }
 
-  void _reload() => setState(() {
-    _future = widget.repository.get(widget.taskId);
-  });
+  // The adjacent initial name lookup must not leak a second async network
+  // exception after the primary Task read has already handled its own failure.
+  Future<void> _loadMemberNames() async {
+    if (!mounted) return;
+    final request = ++_memberGeneration;
+    final readGeneration = _read.generation;
+    try {
+      final members = await widget.loadMembers();
+      if (!mounted || request != _memberGeneration || !_read.isCurrent(readGeneration)) return;
+      setState(() { _members = members; _membersError = null; });
+    } on ApiException catch (error) {
+      if (!mounted || request != _memberGeneration || !_read.isCurrent(readGeneration)) return;
+      if (error.statusCode == 401 || error.statusCode == 403) _read.denyAccess();
+      setState(() { _membersError = 'Không thể tải tên thành viên. Vui lòng thử lại khi kết nối được khôi phục.'; });
+    } on GroupException catch (error) {
+      if (!mounted || request != _memberGeneration || !_read.isCurrent(readGeneration)) return;
+      if (error.failure.type == GroupFailureType.unauthorized ||
+          error.failure.type == GroupFailureType.insufficientPermission ||
+          error.failure.type == GroupFailureType.groupNotFound) _read.denyAccess();
+      setState(() { _membersError = error.failure.toVietnameseMessage(); });
+    } catch (error, stack) {
+      FlutterError.reportError(FlutterErrorDetails(exception: error, stack: stack,
+          library: 'Task', context: ErrorDescription('while loading Task member names')));
+    }
+  }
+
+  void _reload() { if (mounted) _refreshRealtime(); }
   Future<void> _status(ActivityTask task) async {
     final status = await showModalBottomSheet<ActivityTaskStatus>(
       context: context,
@@ -379,7 +452,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                   width: 48,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: AppColors.onSurfaceVariant.withValues(alpha: .25),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: .25),
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
@@ -390,31 +463,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
-              ...ActivityTaskStatus.values.map(
+              ...ActivityTaskStatus.values.where((value)=>value!=ActivityTaskStatus.done||task.permissions.canCompleteWithoutEvidence||task.status==ActivityTaskStatus.done).map(
                 (value) => ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                   selected: value == task.status,
-                  selectedTileColor: AppColors.primary.withValues(alpha: .10),
+                  selectedTileColor: Theme.of(context).colorScheme.primary.withValues(alpha: .10),
                   leading: Icon(
                     _statusIcon(value),
                     color: value == task.status
-                        ? AppColors.primary
-                        : AppColors.onSurfaceVariant,
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   title: Text(
                     _taskStatusText(value),
                     style: TextStyle(
-                      color: value == task.status ? AppColors.primary : null,
+                      color: value == task.status ? Theme.of(context).colorScheme.primary : null,
                       fontWeight: value == task.status
                           ? FontWeight.w700
                           : FontWeight.w500,
                     ),
                   ),
                   trailing: value == task.status
-                      ? const Icon(Icons.check, color: AppColors.primary)
+                      ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
                       : null,
                   onTap: () => Navigator.pop(context, value),
                 ),
@@ -434,13 +507,17 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Future<void> _edit(ActivityTask task) async {
-    final chosen = await _selectMembers(
-      context,
-      _members,
-      task.assigneeUserIds.toSet(),
-    );
-    if (chosen == null) return;
     try {
+      final eligible = await widget.repository.eligibleAssignees(
+        task.activityId,
+      );
+      if (!mounted) return;
+      final chosen = await _selectMembers(
+        context,
+        eligible,
+        task.assigneeUserIds.toSet(),
+      );
+      if (chosen == null) return;
       await widget.repository.update(
         task.id,
         ActivityTaskDraft(
@@ -495,10 +572,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
       ],
     ),
-    body: FutureBuilder<ActivityTask>(
-      future: _future,
+    body: ReliableReadBuilder<ActivityTask>(
+      read: _read, onRetry: _reload,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done)
+        if (snapshot.connectionState != ConnectionState.done && !snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError || !snapshot.hasData)
           return _Failure(onRetry: _reload);
@@ -509,11 +586,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            if (_membersError != null) Text(_membersError!),
             Text(
               task.title,
               style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 16),
+            FilledButton.tonalIcon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>TaskEvidenceScreen(api:JourneyApi(widget.repository.api.dio),task:task.id))),icon:const Icon(Icons.camera_alt_outlined),label:const Text('Minh chứng & hoàn thành')),
+            const SizedBox(height:16),
+            if(!task.permissions.canCompleteWithoutEvidence)const Padding(padding:EdgeInsets.only(bottom:12),child:Text('Công việc này hoàn thành qua mục Minh chứng; không đánh dấu xong trực tiếp.')),
             const Text(
               'Trạng thái',
               style: TextStyle(fontWeight: FontWeight.w700),
@@ -534,9 +615,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.people_outline,
-                      color: AppColors.primary,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     title: const Text('Người được giao'),
                     subtitle: Text(
@@ -554,9 +635,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         : null,
                   ),
                   ListTile(
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.event_outlined,
-                      color: AppColors.primary,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     title: const Text('Hạn hoàn thành'),
                     subtitle: Text(
@@ -639,16 +720,23 @@ Future<Set<String>?> _selectMembers(
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Chọn thành viên',
+                    'Chọn người tham gia',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
+              if (initial.any((id) => !members.any((m) => m.userId == id)))
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'Phân công trước khi rời hoạt động được giữ nguyên; không thêm người ngoài danh sách tham gia.',
+                  ),
+                ),
               Expanded(
                 child: members.isEmpty
                     ? const _Empty(
                         icon: Icons.people_outline,
-                        text: 'Không tải được thành viên nhóm.',
+                        text: 'Chưa có người đang tham gia hoạt động.',
                       )
                     : ListView(
                         children: members
@@ -705,9 +793,9 @@ class _TaskCard extends StatelessWidget {
   const _TaskCard({required this.task, required this.onTap});
   @override
   Widget build(BuildContext context) => Material(
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 1,
-    shadowColor: AppColors.softShadow,
+    shadowColor: Colors.transparent,
     borderRadius: BorderRadius.circular(12),
     child: InkWell(
       onTap: onTap,
@@ -716,7 +804,7 @@ class _TaskCard extends StatelessWidget {
         padding: const EdgeInsets.all(18),
         child: Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: AppColors.primary),
+            Icon(Icons.check_circle_outline, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -734,7 +822,7 @@ class _TaskCard extends StatelessWidget {
                     task.dueAt == null
                         ? 'Không đặt hạn'
                         : 'Hạn: ${_dateText(task.dueAt!)}',
-                    style: const TextStyle(color: AppColors.onSurfaceVariant),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -759,13 +847,13 @@ class _StatusPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: .10),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
           _taskStatusText(status),
-          style: const TextStyle(
-            color: AppColors.primary,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -782,9 +870,9 @@ class _TaskStatusSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 1,
-    shadowColor: AppColors.softShadow,
+    shadowColor: Colors.transparent,
     borderRadius: BorderRadius.circular(12),
     child: InkWell(
       onTap: onTap,
@@ -795,7 +883,7 @@ class _TaskStatusSection extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           child: Row(
             children: [
-              Icon(_statusIcon(status), color: AppColors.primary),
+              Icon(_statusIcon(status), color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
@@ -807,9 +895,9 @@ class _TaskStatusSection extends StatelessWidget {
                 ),
               ),
               if (onTap != null)
-                const Icon(
+                Icon(
                   Icons.chevron_right,
-                  color: AppColors.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
             ],
           ),
@@ -824,9 +912,9 @@ class _Panel extends StatelessWidget {
   const _Panel({required this.child});
   @override
   Widget build(BuildContext context) => Material(
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 1,
-    shadowColor: AppColors.softShadow,
+    shadowColor: Colors.transparent,
     borderRadius: BorderRadius.circular(12),
     child: child,
   );
@@ -843,7 +931,7 @@ class _Empty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 44, color: AppColors.primary),
+          Icon(icon, size: 44, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 12),
           Text(text, textAlign: TextAlign.center),
         ],

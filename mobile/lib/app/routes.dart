@@ -1,6 +1,14 @@
+import 'navigation/main_tabs.dart';
+import '../features/journey/data/journey_api.dart';
+import '../features/journey/presentation/journey_screens.dart';
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
+
+import '../features/moments/data/moments_api.dart';
+import '../features/community/data/community_api.dart';
+import '../features/community/presentation/community_screen.dart';
+import '../features/moments/presentation/memories_screen.dart';
 
 import 'auth_route_guard.dart';
 import '../features/auth/application/auth_session_controller.dart';
@@ -46,9 +54,6 @@ import '../features/poll/presentation/screens/poll_screens.dart';
 import '../features/task/data/task_api.dart';
 import '../features/task/data/task_repository.dart';
 import '../features/task/presentation/screens/task_screens.dart';
-import '../features/discussion/data/discussion_api.dart';
-import '../features/discussion/data/discussion_repository.dart';
-import '../features/discussion/presentation/widgets/activity_discussion_section.dart';
 import '../features/chat/data/chat_api.dart';
 import '../features/chat/data/chat_models.dart';
 import '../features/chat/data/chat_repository.dart';
@@ -78,6 +83,12 @@ import '../features/home/application/home_controller.dart';
 import '../features/home/data/home_models.dart';
 import '../features/home/data/home_repository.dart';
 import '../features/home/presentation/home_screen.dart';
+import '../features/social/application/social_controllers.dart';
+import '../features/social/data/social_api.dart';
+import '../features/social/data/social_repository.dart';
+import '../features/social/presentation/screens/blocked_users_screen.dart';
+import '../features/social/presentation/screens/friend_requests_screen.dart';
+import '../features/social/presentation/screens/friends_screen.dart';
 
 export 'auth_route_guard.dart';
 
@@ -119,6 +130,7 @@ class ProfileRouteArgs {
   changePassword;
   final Future<bool> Function() endSessionAfterPasswordChange;
   final Future<void> Function()? logout;
+  final VoidCallback? onScanQr;
 
   const ProfileRouteArgs({
     this.groupRepository,
@@ -130,6 +142,7 @@ class ProfileRouteArgs {
     required this.changePassword,
     required this.endSessionAfterPasswordChange,
     this.logout,
+    this.onScanQr,
   });
 }
 
@@ -159,24 +172,37 @@ class PrivacyRouteArgs {
 
 class PersonalQrRouteArgs {
   final Future<PersonalQr> Function() loadPersonalQr;
-  const PersonalQrRouteArgs({required this.loadPersonalQr});
+  final VoidCallback? onScanQr;
+  const PersonalQrRouteArgs({required this.loadPersonalQr, this.onScanQr});
 }
 
 class PublicUserProfileRouteArgs {
   final String userId;
   final Future<PublicUserProfile> Function(String userId) loadPublicProfile;
   final ChatRepository? chatRepository;
+  final SocialRepository? socialRepository;
   const PublicUserProfileRouteArgs({
     required this.userId,
     required this.loadPublicProfile,
     this.chatRepository,
+    this.socialRepository,
   });
+}
+
+class SocialRouteArgs {
+  final SocialRepository repository;
+  const SocialRouteArgs({required this.repository});
 }
 
 class GroupsRouteArgs {
   final GroupRepository repository;
   final SearchRouteArgs? searchArgs;
-  const GroupsRouteArgs({required this.repository, this.searchArgs});
+  final String? initialCode;
+  const GroupsRouteArgs({
+    required this.repository,
+    this.searchArgs,
+    this.initialCode,
+  });
 }
 
 class HomeRouteArgs {
@@ -196,6 +222,13 @@ class SearchRouteArgs {
     required this.groupRepository,
     required this.chatRepository,
   });
+}
+
+class MemoriesRouteArgs {
+  final MomentsApi api;
+  final String groupId;
+  final String? activityId;
+  const MemoriesRouteArgs(this.api, this.groupId, {this.activityId});
 }
 
 class GroupInfoRouteArgs {
@@ -314,6 +347,12 @@ final class AppRouteDefinition {
 }
 
 void _openTabRoot(BuildContext context, String route, {Object? arguments}) {
+  // Groups is now a Home destination, not a tab: keep retained roots below it.
+  if (route == AppRoutes.groups) {
+    Navigator.of(context).pushNamed(route, arguments: arguments);
+    return;
+  }
+  if (selectRetainedTab(context, RouteSettings(name: route, arguments: arguments))) return;
   Navigator.of(
     context,
   ).pushNamedAndRemoveUntil(route, (previous) => false, arguments: arguments);
@@ -333,11 +372,16 @@ abstract final class AppRoutes {
   static const String changePassword = '/profile/change-password';
   static const String privacy = '/profile/privacy';
   static const String personalQr = '/profile/qr';
+  static const String friends = '/profile/friends';
+  static const String friendRequests = '/profile/friend-requests';
+  static const String blockedUsers = '/profile/blocked-users';
   static const String publicUserProfile = '/users/profile';
   static const String groups = '/groups';
   static const String home = '/home';
   static const String createGroup = '/groups/create';
   static const String groupInfo = '/groups/info';
+  static const String memories = '/groups/memories';
+  static const String community = '/community';
   static const String groupActivityLog = '/groups/activity-log';
   static const String editGroup = '/groups/edit';
   static const String groupMembers = '/groups/members';
@@ -366,6 +410,17 @@ abstract final class AppRoutes {
   static const String search = '/search';
 
   static final Map<String, AppRouteDefinition> _routes = {
+    community: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final api = settings.arguments;
+        if (api is! CommunityApi) return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => CommunityScreen(api: api, rootTab: true),
+        );
+      },
+    ),
     home: AppRouteDefinition(
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
@@ -379,6 +434,9 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (context) => HomeScreen(
+            onCommunity: () =>
+                Navigator.of(context)
+                    .pushNamed(community, arguments: CommunityApi(dio)),
             controller: homeController,
             onOpenGroup: (id) => Navigator.of(context).pushNamed(
               groupInfo,
@@ -710,6 +768,7 @@ abstract final class AppRoutes {
                       searchArgs: loader.searchArgs,
                     ),
                   ),
+            onScanQr: loader.onScanQr,
           ),
           settings: settings,
         );
@@ -759,7 +818,72 @@ abstract final class AppRoutes {
         final args = settings.arguments;
         if (args is! PersonalQrRouteArgs) return null;
         return MaterialPageRoute<void>(
-          builder: (_) => PersonalQrScreen(loadPersonalQr: args.loadPersonalQr),
+          builder: (_) => PersonalQrScreen(
+            loadPersonalQr: args.loadPersonalQr,
+            onScanQr: args.onScanQr,
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    friends: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        final SocialRepository? repo = args is SocialRouteArgs
+            ? args.repository
+            : args is GroupsRouteArgs
+            ? SocialRepository(api: SocialApi(args.repository.api.dio))
+            : null;
+        if (repo == null) return null;
+        return MaterialPageRoute<void>(
+          builder: (context) => FriendsScreen(
+            controller: FriendsController(repository: repo),
+            onOpenFriendRequests: () => Navigator.of(context).pushNamed(
+              friendRequests,
+              arguments: SocialRouteArgs(repository: repo),
+            ),
+            onOpenBlockedUsers: () => Navigator.of(context).pushNamed(
+              blockedUsers,
+              arguments: SocialRouteArgs(repository: repo),
+            ),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    friendRequests: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        final SocialRepository? repo = args is SocialRouteArgs
+            ? args.repository
+            : args is GroupsRouteArgs
+            ? SocialRepository(api: SocialApi(args.repository.api.dio))
+            : null;
+        if (repo == null) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => FriendRequestsScreen(
+            controller: FriendRequestsController(repository: repo),
+          ),
+          settings: settings,
+        );
+      },
+    ),
+    blockedUsers: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        final SocialRepository? repo = args is SocialRouteArgs
+            ? args.repository
+            : args is GroupsRouteArgs
+            ? SocialRepository(api: SocialApi(args.repository.api.dio))
+            : null;
+        if (repo == null) return null;
+        return MaterialPageRoute<void>(
+          builder: (_) => BlockedUsersScreen(
+            controller: BlockedUsersController(repository: repo),
+          ),
           settings: settings,
         );
       },
@@ -774,6 +898,13 @@ abstract final class AppRoutes {
           builder: (context) => PublicUserProfileScreen(
             userId: args.userId,
             loadPublicProfile: args.loadPublicProfile,
+            socialRepository:
+                args.socialRepository ??
+                (args.chatRepository != null
+                    ? SocialRepository(
+                        api: SocialApi(args.chatRepository!.api.dio),
+                      )
+                    : null),
             onMessage: args.chatRepository == null
                 ? null
                 : () async {
@@ -975,6 +1106,22 @@ abstract final class AppRoutes {
         );
       },
     ),
+    memories: AppRouteDefinition(
+      access: AppRouteAccess.authenticated,
+      builder: (settings, coordinator) {
+        final args = settings.arguments;
+        if (args is! MemoriesRouteArgs || args.groupId.trim().isEmpty)
+          return null;
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => MemoriesScreen(
+            groupId: args.groupId,
+            activityId: args.activityId,
+            api: args.api,
+          ),
+        );
+      },
+    ),
     groupInfo: AppRouteDefinition(
       access: AppRouteAccess.authenticated,
       builder: (settings, coordinator) {
@@ -984,7 +1131,7 @@ abstract final class AppRoutes {
         }
         return MaterialPageRoute<void>(
           builder: (context) {
-            final detail = GroupDetailController(args.repository);
+            final detail = GroupDetailController(args.repository, readSettings: true);
             return GroupInfoScreen(
               groupId: args.groupId,
               controller: detail,
@@ -1013,6 +1160,7 @@ abstract final class AppRoutes {
                   Navigator.of(context)
                       .pushNamed(groupMembers, arguments: args)
                       .whenComplete(() => detail.load(args.groupId)),
+              onTransferOwnership: () => Navigator.of(context).pushNamed(transferOwnership, arguments: args).whenComplete(() => detail.load(args.groupId)),
               onSettings: () =>
                   Navigator.of(context)
                       .pushNamed(groupPermissions, arguments: args)
@@ -1027,6 +1175,13 @@ abstract final class AppRoutes {
                     api: ActivityApi(args.repository.api.dio),
                   ),
                   groupId: args.groupId,
+                ),
+              ),
+              onMemories: () => Navigator.of(context).pushNamed(
+                memories,
+                arguments: MemoriesRouteArgs(
+                  MomentsApi(args.repository.api.dio),
+                  args.groupId,
                 ),
               ),
               onCalendar: () => _openTabRoot(
@@ -1458,6 +1613,8 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (context) => ActivityDetailRuntimeScreen(
+            journeyOverview: JourneyOverview(api:JourneyApi(args.repository.api.dio),activity:args.activityId,onOpen:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>JourneyScreen(api:JourneyApi(args.repository.api.dio),activity:args.activityId)))),
+            onOpenJourney: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => JourneyScreen(api: JourneyApi(args.repository.api.dio), activity: args.activityId))),
             activityId: args.activityId,
             controller: ActivityDetailController(args.repository),
             reminder: ActivityReminderPanel(
@@ -1473,17 +1630,19 @@ abstract final class AppRoutes {
                 activityId: args.activityId,
               ),
             ),
+            onOpenMemories: (groupId) => Navigator.of(context).pushNamed(
+              memories,
+              arguments: MemoriesRouteArgs(
+                MomentsApi(args.repository.api.dio),
+                groupId,
+                activityId: args.activityId,
+              ),
+            ),
             onOpenTasks: () => Navigator.of(context).pushNamed(
               tasks,
               arguments: ActivityDetailRouteArgs(
                 repository: args.repository,
                 activityId: args.activityId,
-              ),
-            ),
-            discussion: ActivityDiscussionSection(
-              activityId: args.activityId,
-              repository: DiscussionRepository(
-                DiscussionApi(args.repository.api.dio),
               ),
             ),
           ),
@@ -1660,6 +1819,9 @@ abstract final class AppRoutes {
         return MaterialPageRoute<void>(
           builder: (context) => JoinByInviteCodeScreen(
             controller: JoinByCodeController(a.repository),
+            initialCode: a.initialCode,
+            onOpenGroup: (id) => Navigator.of(context).pushReplacementNamed(
+              groupInfo, arguments: GroupInfoRouteArgs(repository: a.repository, groupId: id, searchArgs: a.searchArgs)),
           ),
           settings: settings,
         );
@@ -1728,7 +1890,12 @@ abstract final class AppRoutes {
     if (decision != RouteGuardDecision.allow) {
       return null;
     }
-    return definition.builder(settings, coordinator);
+    final route = definition.builder(settings, coordinator);
+    if (route is MaterialPageRoute &&
+        {community, home, chatHome, calendar, profile}.contains(settings.name)) {
+      return MainTabRoute(settings: settings, tabBuilder: route.builder);
+    }
+    return route;
   }
 
   /// Evaluates route existence and authorization before building any target screen.

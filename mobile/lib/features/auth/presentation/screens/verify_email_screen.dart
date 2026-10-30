@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/ui/widgets/primary_button.dart';
@@ -146,16 +148,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
               child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight,
-                ),
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
@@ -178,7 +178,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                               height: 40.0,
                               child: IconButton(
                                 icon: const Icon(Icons.arrow_back_rounded),
-                                color: AppColors.onSurfaceVariant,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                                 padding: EdgeInsets.zero,
                                 onPressed: _isBusy ? null : widget.onBack,
                                 tooltip: 'Back',
@@ -191,17 +193,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                           Container(
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(24.0),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primaryShadow.withValues(
-                                    alpha: 0.08,
-                                  ),
-                                  blurRadius: 24.0,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             padding: EdgeInsets.symmetric(
                               horizontal: constraints.maxWidth < 380
@@ -219,32 +212,20 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                                     width: 64.0,
                                     height: 64.0,
                                     decoration: BoxDecoration(
-                                      borderRadius:
-                                          BorderRadius.circular(16.0),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: AppColors.primaryShadow,
-                                          blurRadius: 16.0,
-                                          offset: Offset(0, 4),
-                                        ),
-                                      ],
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: ClipRRect(
-                                      borderRadius:
-                                          BorderRadius.circular(16.0),
-                                      child: Image.asset(
-                                        'assets/images/wedo_logo.png',
-                                        fit: BoxFit.cover,
-                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: const WeDoBrandMark(size: 72),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: AppSpacing.md),
 
                                 // Title
-                                const Text(
+                                Text(
                                   'Check your email',
-                                  style: AppTextStyles.headline,
+                                  style: AppTextStyles.of(context).headline,
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
@@ -253,18 +234,21 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                                 Text.rich(
                                   TextSpan(
                                     text: 'We sent a verification code to ',
-                                    style: AppTextStyles.bodyMedium,
+                                    style: AppTextStyles.of(context).bodyMedium,
                                     children: [
                                       TextSpan(
                                         text: widget.email,
-                                        style: AppTextStyles.bodyMedium.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.onSurface,
-                                        ),
+                                        style: AppTextStyles.of(context)
+                                            .bodyMedium
+                                            .copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface,
+                                            ),
                                       ),
                                       const TextSpan(
-                                        text:
-                                            '. Please enter it below to verify your account.',
+                                        text: '. Please enter it below to verify your account.',
                                       ),
                                     ],
                                   ),
@@ -299,29 +283,36 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                                         WrapCrossAlignment.center,
                                     spacing: 4.0,
                                     children: [
-                                      const Text(
+                                      Text(
                                         "Didn't receive the code?",
-                                        style: AppTextStyles.bodySmall,
+                                        style: AppTextStyles.of(context)
+                                            .bodySmall,
                                       ),
                                       if (_cooldownSeconds > 0)
                                         Text(
                                           'Resend in ${_formatCooldown(_cooldownSeconds)}',
-                                          style: AppTextStyles.bodySmall.copyWith(
-                                            color: AppColors.onSurfaceVariant
-                                                .withValues(alpha: 0.6),
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                          style: AppTextStyles.of(context)
+                                              .bodySmall
+                                              .copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant
+                                                    .withValues(alpha: 0.6),
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                         )
                                       else if (_isResending)
-                                        const SizedBox(
+                                        SizedBox(
                                           width: 14.0,
                                           height: 14.0,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2.0,
                                             valueColor:
                                                 AlwaysStoppedAnimation<Color>(
-                                              AppColors.primary,
-                                            ),
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
                                           ),
                                         )
                                       else
@@ -332,12 +323,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                                           style: TextButton.styleFrom(
                                             padding: EdgeInsets.zero,
                                             minimumSize: Size.zero,
-                                            tapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
                                           ),
-                                          child: const Text(
+                                          child: Text(
                                             'Resend Code',
-                                            style: AppTextStyles.link,
+                                            style: AppTextStyles.of(context)
+                                                .link,
                                           ),
                                         ),
                                     ],
@@ -356,17 +348,18 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                                 // Bottom action: Change email address (NO "Wrong email?" prefix)
                                 Center(
                                   child: TextButton(
-                                    onPressed:
-                                        _isBusy ? null : widget.onChangeEmail,
+                                    onPressed: _isBusy
+                                        ? null
+                                        : widget.onChangeEmail,
                                     style: TextButton.styleFrom(
                                       padding: EdgeInsets.zero,
                                       minimumSize: Size.zero,
                                       tapTargetSize:
                                           MaterialTapTargetSize.shrinkWrap,
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'Change email address',
-                                      style: AppTextStyles.link,
+                                      style: AppTextStyles.of(context).link,
                                     ),
                                   ),
                                 ),

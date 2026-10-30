@@ -50,6 +50,11 @@ public class ChatService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private MediaReferenceService mediaReferences;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.wedo.backend.poll.service.PollService polls;
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     public ChatService(JdbcTemplate jdbc, GroupMembershipRepository memberships,
                        GroupRepository groups, GroupSettingsRepository settings,
                        FriendshipRepository friendships, UserBlockRepository blocks,
@@ -278,11 +283,42 @@ public class ChatService {
         return created;
     }
 
+    public ChatResponses.Message createPoll(UUID conversationId, UUID userId, ChatRequests.CreatePoll request) {
+        Access access = access(conversationId, userId, true);
+        ensureSendAllowed(access, userId);
+        if (!"GROUP".equals(access.type)) throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        // Serialize creation/idempotent retry with ordinary Chat sequence allocation.
+        jdbc.queryForObject("SELECT current_sequence FROM conversation_sequences WHERE conversation_id=? FOR UPDATE", Long.class, conversationId);
+        var existing = jdbc.queryForList("SELECT conversation_id,sender_id,type FROM messages WHERE id=?", request.clientMessageId());
+        if (!existing.isEmpty()) {
+            var row = existing.getFirst();
+            if (!conversationId.equals(row.get("conversation_id")) || !userId.equals(row.get("sender_id"))
+                    || !"POLL".equals(row.get("type"))) throw new BusinessException(ErrorCode.CONFLICT);
+            return messageById(request.clientMessageId(), userId);
+        }
+        if (request.activityId() != null) {
+            var activityGroups = jdbc.queryForList("SELECT group_id FROM activities WHERE id=?", UUID.class, request.activityId());
+            if (activityGroups.isEmpty() || !access.groupId.equals(activityGroups.getFirst()))
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        var poll = request.activityId() == null ? polls.createGroup(access.groupId, userId, request.poll())
+                : polls.create(request.activityId(), userId, request.poll());
+        entityManager.flush(); // JPA Poll must exist before the JDBC reference insert.
+        long sequence = jdbc.queryForObject("UPDATE conversation_sequences SET current_sequence=current_sequence+1,updated_at=now() WHERE conversation_id=? RETURNING current_sequence", Long.class, conversationId);
+        UUID id = request.clientMessageId();
+        jdbc.update("INSERT INTO messages(id,conversation_id,sender_id,sequence,type,content,poll_id) VALUES (?,?,?,?,'POLL',?,?)",
+                id, conversationId, userId, sequence, poll.question(), poll.id());
+        jdbc.update("UPDATE conversations SET updated_at=now() WHERE id=?", conversationId);
+        events.publishEvent(new com.wedo.backend.chat.realtime.ChatRealtimeEvents.DomainMutationEvent(
+                UUID.randomUUID(), "MESSAGE_CREATED", conversationId, id, sequence, id, userId, Instant.now()));
+        return messageById(id, userId);
+    }
+
     public ChatResponses.Message edit(UUID messageId, UUID userId, ChatRequests.EditMessage request) {
-        Map<String,Object> row=one("SELECT conversation_id,sender_id,content,status,created_at FROM messages WHERE id=?",messageId);
+        Map<String,Object> row=one("SELECT conversation_id,sender_id,content,status,created_at,type FROM messages WHERE id=?",messageId);
         UUID conversationId = (UUID) row.get("conversation_id");
         Access access=access(conversationId,userId,true);
-        if (!userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
+        if (String.valueOf(row.get("type")).startsWith("POLL") || !userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         String content=request.content().trim(); if(content.isEmpty()) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         jdbc.update("INSERT INTO message_edit_history(id,message_id,previous_content,edited_by) VALUES (?,?,?,?)",UUID.randomUUID(),messageId,row.get("content"),userId);
@@ -294,10 +330,10 @@ public class ChatService {
     }
 
     public ChatResponses.Message unsend(UUID messageId, UUID userId) {
-        Map<String,Object> row=one("SELECT conversation_id,sender_id,status,created_at FROM messages WHERE id=? FOR UPDATE",messageId);
+        Map<String,Object> row=one("SELECT conversation_id,sender_id,status,created_at,type FROM messages WHERE id=? FOR UPDATE",messageId);
         UUID conversationId = (UUID) row.get("conversation_id");
         access(conversationId,userId,true);
-        if (!userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
+        if (String.valueOf(row.get("type")).startsWith("POLL_") || !userId.equals(row.get("sender_id")) || !"ACTIVE".equals(row.get("status")) || Duration.between(toInstant(row.get("created_at")),Instant.now()).compareTo(MESSAGE_WINDOW)>=0)
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         jdbc.update("UPDATE messages SET status='UNSENT',content=NULL,unsent_at=now() WHERE id=?",messageId);
         jdbc.update("DELETE FROM message_pins WHERE message_id=?",messageId);
@@ -488,6 +524,12 @@ public class ChatService {
         Map<UUID,List<ChatResponses.Reaction>> reactions=new java.util.HashMap<>();
         Map<UUID,String> myReactions=new java.util.HashMap<>();
         Map<UUID,List<ChatResponses.MessageAttachment>> attachments = new java.util.HashMap<>();
+        Map<UUID,UUID> pollIds = new java.util.HashMap<>();
+        if (rows.stream().anyMatch(row -> row.type().startsWith("POLL"))) {
+            jdbc.query("SELECT id,poll_id FROM messages WHERE id IN ("+marks+") AND type IN ('POLL','POLL_VOTED','POLL_VOTE_CHANGED')", rs -> {
+                pollIds.put(rs.getObject("id",UUID.class), rs.getObject("poll_id",UUID.class));
+            }, rows.stream().map(MessageRow::id).toArray());
+        }
         jdbc.query("SELECT message_id,emoji,count(*) AS reaction_count,bool_or(user_id=?) AS mine FROM message_reactions WHERE message_id IN ("+marks+") GROUP BY message_id,emoji ORDER BY message_id,emoji",rs->{
             UUID messageId=rs.getObject("message_id",UUID.class); String emoji=rs.getString("emoji");
             boolean mine=rs.getBoolean("mine");
@@ -523,8 +565,8 @@ public class ChatService {
                     reactions.getOrDefault(row.id(),List.of()),
                     active ? attachments.getOrDefault(row.id(),List.of()) : List.of(),
                     new ChatResponses.Permissions(writable&&owner&&active&&within,
-                            writable&&owner&&active&&within,writable&&owner&&active&&within,
-                            writable,writable&&active,canPinMessages&&active,readOnly));
+                            writable&&owner&&active&&within&&!row.type().startsWith("POLL"),writable&&owner&&active&&within&&!row.type().startsWith("POLL_"),
+                            writable,writable&&active,canPinMessages&&active,readOnly), active ? pollIds.get(row.id()) : null);
         }).toList();
     }
 

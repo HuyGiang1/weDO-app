@@ -261,7 +261,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: AppSpacing.xl),
             ElevatedButton(
               onPressed: _submitting || _uploadingAvatar ? null : _submit,
-              style: profilePrimaryButtonStyle(),
+              style: profilePrimaryButtonStyle(context),
               child: _submitting
                   ? const CircularProgressIndicator()
                   : const Text('Lưu thay đổi'),

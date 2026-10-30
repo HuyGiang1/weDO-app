@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
-import '../../../../app/theme/app_text_styles.dart';
 
 /// Reusable form text input styled according to the WeDo design system.
 ///
-/// Features a pill-shaped container, dynamic focus background (#F2F4F6 -> white),
+/// Uses the shared outlined design system, focus background,
 /// leading/trailing icons, and integrated validation support.
 class AppTextField extends StatefulWidget {
   final String label;
@@ -85,10 +83,10 @@ class _AppTextFieldState extends State<AppTextField> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16.0, bottom: 8.0),
+          padding: const EdgeInsets.only(left: 0, bottom: 8.0),
           child: Text(
             widget.label,
-            style: AppTextStyles.label,
+            style: Theme.of(context).textTheme.labelLarge,
           ),
         ),
         TextFormField(
@@ -101,12 +99,12 @@ class _AppTextFieldState extends State<AppTextField> {
           onFieldSubmitted: widget.onFieldSubmitted,
           onChanged: widget.onChanged,
           enabled: widget.enabled,
-          style: AppTextStyles.input,
+          style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: AppTextStyles.inputHint,
+            hintStyle: Theme.of(context).inputDecorationTheme.hintStyle,
             filled: true,
-            fillColor: _isFocused ? AppColors.surface : AppColors.inputBackground,
+            fillColor: _isFocused ? Theme.of(context).colorScheme.surfaceContainerLowest : Theme.of(context).colorScheme.surfaceContainerLow,
             prefixIcon: widget.prefixIcon != null
                 ? Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -131,35 +129,11 @@ class _AppTextFieldState extends State<AppTextField> {
               horizontal: 20.0,
               vertical: 16.0,
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999.0),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999.0),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999.0),
-              borderSide: const BorderSide(
-                color: AppColors.primary,
-                width: 1.5,
-              ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999.0),
-              borderSide: const BorderSide(
-                color: AppColors.error,
-                width: 1.5,
-              ),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999.0),
-              borderSide: const BorderSide(
-                color: AppColors.error,
-                width: 2.0,
-              ),
-            ),
+
+
+
+
+
           ),
         ),
       ],

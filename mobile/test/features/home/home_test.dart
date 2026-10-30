@@ -1,3 +1,7 @@
+import 'package:mobile/core/network/api_exception.dart';
+import 'package:mobile/core/realtime/realtime_binding.dart';
+import 'package:mobile/core/realtime/realtime_sync.dart';
+import 'package:mobile/features/chat/data/chat_realtime_client.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -122,7 +126,27 @@ Widget _screen(
   ),
 );
 
+Future<void> _toggleSection(WidgetTester tester, String title) async {
+  await tester.scrollUntilVisible(find.text(title), 200,
+    scrollable: find.byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down));
+  await tester.tap(find.text(title));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  for (final eventType in ['GROUP_MEMBERSHIP_CHANGED','HOME_ACCESS_CHANGED']) { testWidgets('membership invalidation clears protected Home cache offline $eventType', (tester) async {
+    final gateway = _Gateway()..next = () async => _response();
+    final controller = HomeController(gateway);
+    final sync = RealtimeSync(const NoopChatRealtimeClient());
+    await tester.pumpWidget(RealtimeHost(sync:sync,child:_screen(controller)));
+    await tester.pumpAndSettle();expect(controller.value,isNotNull);
+    gateway.next=() async => throw const ApiException(transportFailure:ApiTransportFailure.network);
+    sync.accept({'type':'DOMAIN_CHANGED','eventId':'membership','eventType':eventType,'scope':'user:me','aggregateId':'me'});
+    await tester.pump(const Duration(milliseconds:100));await tester.pumpAndSettle();expect(controller.value,isNull);
+    await tester.pumpWidget(const SizedBox());await tester.runAsync(sync.dispose);
+  });
+  }
+
   test('Home DTO parses all sections and preserves decimal amounts', () {
     final data = HomeResponse.fromJson({
       'recentGroups': [
@@ -241,17 +265,120 @@ void main() {
       );
     await tester.pumpWidget(_screen(HomeController(gateway)));
     await tester.pumpAndSettle();
-    expect(find.text('Trang chủ'), findsNWidgets(2));
-    expect(find.text('Nhóm gần đây'), findsOneWidget);
+    expect(find.text('Không gian của bạn'), findsNothing);
+    expect(
+      find.text('Kết nối với nhóm. Cùng thực hiện những điều quan trọng.'),
+      findsNothing,
+    );
+    expect(find.text('Nhóm của bạn'), findsOneWidget);
     expect(find.text('Hoạt động sắp tới'), findsOneWidget);
     expect(find.text('Tài chính'), findsOneWidget);
     expect(find.text('Cần xử lý'), findsOneWidget);
-    expect(find.text('Cập nhật gần đây'), findsOneWidget);
-    expect(find.text('Chưa có nhóm nào.'), findsOneWidget);
+    expect(
+      find.text('Bạn chưa có nhóm nào. Cùng bắt đầu một kết nối mới.'),
+      findsOneWidget,
+    );
+    expect(find.text('Xem tất cả'), findsOneWidget);
+    expect(find.text('Tạo hoặc tham gia nhóm'), findsOneWidget);
+    expect(find.text('Không có việc cần xử lý.'), findsNothing);
+    await _toggleSection(tester, 'Cần xử lý');
     expect(find.text('Không có việc cần xử lý.'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Chưa có cập nhật nào.'), 200);
+    await _toggleSection(tester, 'Cần xử lý');
+    await _toggleSection(tester, 'Hoạt động sắp tới');
+    expect(find.text('Chưa có hoạt động sắp tới.'), findsOneWidget);
+    await _toggleSection(tester, 'Hoạt động sắp tới');
+    await _toggleSection(tester, 'Cập nhật gần đây');
+    expect(find.text('Cập nhật gần đây'), findsOneWidget);
     expect(find.text('Chưa có cập nhật nào.'), findsOneWidget);
   });
+
+  testWidgets('group preview offset is independent of vertical Home storage', (
+    t,
+  ) async {
+    await t.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    final base = _response();
+    final gateway = _Gateway()
+      ..next = () async => HomeResponse(
+        [for (var i = 0; i < 8; i++) HomeGroup('g$i', 'Nhóm $i', null)],
+        base.upcomingActivities,
+        base.financeSummary,
+        base.actionsRequired,
+        base.recentUpdates,
+      );
+    await t.pumpWidget(_screen(HomeController(gateway)));
+    await t.pumpAndSettle();
+    ScrollableState horizontal() => t.state<ScrollableState>(
+      find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.right,
+      ),
+    );
+    final vertical = t.state<ScrollableState>(
+      find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
+    );
+    expect(horizontal().position.pixels, 0);
+    vertical.position.jumpTo(vertical.position.maxScrollExtent);
+    await t.pumpAndSettle();
+    vertical.position.jumpTo(0);
+    await t.pumpAndSettle();
+    expect(horizontal().position.pixels, 0);
+    horizontal().position.jumpTo(120);
+    await t.pumpAndSettle();
+    vertical.position.jumpTo(vertical.position.maxScrollExtent);
+    await t.pumpAndSettle();
+    vertical.position.jumpTo(0);
+    await t.pumpAndSettle();
+    expect(horizontal().position.pixels, 120);
+    expect(gateway.calls, 1);
+  });
+
+  testWidgets(
+    'finance follows groups and independent folds retain state without fetching',
+    (t) async {
+      await t.binding.setSurfaceSize(const Size(500, 1500));
+      addTearDown(() => t.binding.setSurfaceSize(null));
+      final gateway = _Gateway()..next = () async => _response();
+      final controller = HomeController(gateway);
+      await t.pumpWidget(_screen(controller));
+      await t.pumpAndSettle();
+      expect(
+        t.getRect(find.text('Tài chính')).top,
+        greaterThan(
+          t.getRect(find.byKey(const ValueKey('home-your-groups'))).bottom,
+        ),
+      );
+      expect(
+        t.getRect(find.text('Cần xử lý')).top,
+        greaterThan(t.getRect(find.text('Tài chính')).bottom),
+      );
+      expect(find.byKey(const Key('home-action-poll-1')), findsNothing);
+      expect(find.byKey(const Key('home-activity-activity-1')), findsNothing);
+      expect(find.byKey(const Key('home-update-update-1')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const PageStorageKey('home-section-actions')),
+          matching: find.text('4'),
+        ),
+        findsOneWidget,
+      );
+      await _toggleSection(t, 'Cần xử lý');
+      await _toggleSection(t, 'Hoạt động sắp tới');
+      expect(find.byKey(const Key('home-action-poll-1')), findsOneWidget);
+      expect(find.byKey(const Key('home-activity-activity-1')), findsOneWidget);
+      await _toggleSection(t, 'Hoạt động sắp tới');
+      expect(find.byKey(const Key('home-action-poll-1')), findsOneWidget);
+      expect(gateway.calls, 1);
+      await controller.load(silent: true);
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('home-action-poll-1')), findsOneWidget);
+      expect(find.byKey(const Key('home-activity-activity-1')), findsNothing);
+      expect(gateway.calls, 2);
+      await _toggleSection(t, 'Cần xử lý');
+      expect(find.byKey(const Key('home-action-poll-1')), findsNothing);
+    },
+  );
 
   testWidgets('Home shows error and retries', (tester) async {
     final gateway = _Gateway()..next = () async => throw StateError('offline');
@@ -284,9 +411,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-group-group-1')));
+    await _toggleSection(tester, 'Hoạt động sắp tới');
     await tester.tap(find.byKey(const Key('home-activity-activity-1')));
+    await _toggleSection(tester, 'Hoạt động sắp tới');
     await tester.ensureVisible(find.byKey(const Key('home-balance-group-1')));
     await tester.tap(find.byKey(const Key('home-balance-group-1')));
+    await _toggleSection(tester, 'Cần xử lý');
     for (final id in ['activity-1', 'poll-1', 'task-1', 'settlement-1']) {
       await tester.ensureVisible(find.byKey(Key('home-action-$id')));
       await tester.tap(find.byKey(Key('home-action-$id')));
@@ -311,10 +441,17 @@ void main() {
       _screen(HomeController(gateway), update: (item) => opened = item),
     );
     await tester.pumpAndSettle();
+    await _toggleSection(tester, 'Cập nhật gần đây');
     await tester.scrollUntilVisible(
       find.byKey(const Key('home-update-update-1')),
       200,
+      scrollable: find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
     );
+    await tester.pumpAndSettle();
+    await Scrollable.ensureVisible(tester.element(find.byKey(const Key('home-update-update-1'))), alignment: .5);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home-update-update-1')));
     expect(opened?.notificationId, 'update-1');
     expect(opened?.target.targetId, 'group-1');

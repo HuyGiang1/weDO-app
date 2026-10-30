@@ -157,14 +157,16 @@ class GroupAdmissionControllersTest {
     @Test
     void resolveInviteCode_returns200() throws Exception {
         GroupInviteSummaryResponse response = new GroupInviteSummaryResponse(
-                UUID.randomUUID(), "Safe Group", "Desc", null, 15, GroupJoinPolicy.AUTO_JOIN
+                UUID.randomUUID(), "Safe Group", "Desc", null, 15, GroupJoinPolicy.AUTO_JOIN, true, false
         );
         when(admissionService.resolveInviteCode(eq("code-123"), eq(CALLER_USER_ID))).thenReturn(response);
 
         mvc.perform(get("/api/v1/group-invites/{code}", "code-123"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Safe Group"))
-                .andExpect(jsonPath("$.memberCount").value(15));
+                .andExpect(jsonPath("$.memberCount").value(15))
+                .andExpect(jsonPath("$.alreadyMember").value(true))
+                .andExpect(jsonPath("$.requestPending").value(false));
     }
 
     @Test

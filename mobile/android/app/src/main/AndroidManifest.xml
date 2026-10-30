@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:label="mobile"
@@ -25,9 +28,30 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="wedo-3304c.web.app" android:pathPrefix="/inv/" />
+                <data android:scheme="https" android:host="wedo-3304c.web.app" android:pathPrefix="/u/" />
+                <data android:scheme="https" android:host="wedo-3304c.firebaseapp.com" android:pathPrefix="/inv/" />
+                <data android:scheme="https" android:host="wedo-3304c.firebaseapp.com" android:pathPrefix="/u/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="wedo" android:host="inv" />
+                <data android:scheme="wedo" android:host="u" />
+                <data android:scheme="wedo" android:host="user" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

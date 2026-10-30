@@ -32,7 +32,7 @@ This runbook describes how to execute the **M2.16 Live Auth Client-Backend Integ
 Relevant variable names:
 - `WEDO_DB_URL`: JDBC URL (default: `jdbc:postgresql://localhost:5432/wedo`)
 - `WEDO_DB_USERNAME`: Database username (default: `wedo`)
-- `WEDO_DB_PASSWORD`: Database password (default: `wedo_local`)
+- `WEDO_DB_PASSWORD`: Database password (default: `<YOUR_GENERATED_LOCAL_DB_PASSWORD>`)
 - `WEDO_JWT_SECRET_BASE64`: 256-bit Base64 signing secret for JWT access tokens
 - `WEDO_AUTH_TOKEN_PEPPER_BASE64`: 256-bit Base64 pepper for auth tokens (OTP hashing)
 - `WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64`: Base64 signing secret for profile completion tokens

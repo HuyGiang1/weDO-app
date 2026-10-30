@@ -4,4 +4,8 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Local QA media uses HTTP on the Mac LAN. Native ExoPlayer obeys this
+         platform policy even when Dart REST/image traffic already works.
+         Keep the exception in debug builds; release requires HTTPS. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

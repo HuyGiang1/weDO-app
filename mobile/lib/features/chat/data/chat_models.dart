@@ -197,7 +197,7 @@ class ChatMessage {
   final bool isMine;
   final int sequence;
   final ChatUser? author;
-  final String? content, replyToMessageId, myReaction;
+  final String? content, replyToMessageId, myReaction, pollId;
   final DateTime createdAt;
   final DateTime? editedAt, unsentAt;
   final List<ChatReaction> reactions;
@@ -219,6 +219,7 @@ class ChatMessage {
     this.myReaction,
     this.editedAt,
     this.unsentAt,
+    this.pollId,
   });
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
     id: json['id'] as String,
@@ -232,6 +233,7 @@ class ChatMessage {
         ? ChatUser.fromJson(Map<String, dynamic>.from(json['author'] as Map))
         : null,
     content: json['content'] as String?,
+    pollId: json['pollId'] as String?,
     replyToMessageId: json['replyToMessageId'] as String?,
     createdAt: DateTime.parse(json['createdAt'] as String),
     editedAt: DateTime.tryParse(json['editedAt'] as String? ?? ''),

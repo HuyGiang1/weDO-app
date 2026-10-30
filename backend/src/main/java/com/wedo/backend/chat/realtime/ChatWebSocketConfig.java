@@ -50,6 +50,7 @@ public class ChatWebSocketConfig implements WebSocketConfigurer {
     @Bean
     public SmartLifecycle chatRedisSubscriptionRegistrar(
             ChatRealtimeCoordinator coordinator,
+            com.wedo.backend.realtime.DomainRealtimeCoordinator domain,
             @Autowired(required = false) RedisConnectionFactory connectionFactory
     ) {
         return new SmartLifecycle() {
@@ -68,6 +69,9 @@ public class ChatWebSocketConfig implements WebSocketConfigurer {
                         coordinator.onRedisMessage(payload);
                     };
                     c.addMessageListener(listener, new ChannelTopic(ChatRealtimeCoordinator.REDIS_FANOUT_CHANNEL));
+                    c.addMessageListener((message, pattern) -> domain.onRedisMessage(
+                            new String(message.getBody(), StandardCharsets.UTF_8)),
+                            new ChannelTopic(com.wedo.backend.realtime.DomainRealtimeCoordinator.CHANNEL));
                     c.afterPropertiesSet();
                     c.start();
                     this.container = c;

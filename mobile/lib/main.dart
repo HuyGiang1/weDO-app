@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'core/realtime/realtime_sync.dart';
+import 'core/realtime/realtime_binding.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'app/app.dart';
 import 'core/network/access_token_holder.dart';
@@ -38,15 +41,35 @@ import 'features/notification/data/notification_models.dart';
 import 'features/notification/data/notification_repository.dart';
 import 'features/notification/presentation/notification_target_router.dart';
 import 'features/search/data/search_api.dart';
+import 'features/social/data/social_api.dart';
+import 'features/social/data/social_repository.dart';
+import 'core/links/wedo_deep_link.dart';
+import 'core/network/api_exception.dart';
+
+import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   bool pushAvailable = false;
-  if (defaultTargetPlatform == TargetPlatform.android) {
+  const pushEnabled = bool.fromEnvironment('WEDO_PUSH_ENABLED', defaultValue: true);
+  final pushPlatform = !pushEnabled || kIsWeb
+      ? null
+      : notificationDevicePlatform(defaultTargetPlatform);
+  if (pushPlatform != null) {
     pushAvailable = await initializePushFirebase(() async {
       await Firebase.initializeApp();
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        // The existing onMessage SnackBar is our single foreground presenter.
+        // Background/terminated notification alerts remain native APNs/FCM.
+        await FirebaseMessaging.instance
+            .setForegroundNotificationPresentationOptions(
+              alert: false,
+              badge: false,
+              sound: false,
+            );
+      }
     });
   }
 
@@ -86,6 +109,13 @@ void main() async {
   final personalQrRepository = PersonalQrRepository(
     api: PersonalQrApi(dio.dio),
   );
+  final socialRepository = SocialRepository(api: SocialApi(dio.dio));
+  final searchRouteArgs = SearchRouteArgs(
+    searchRepository: searchRepository,
+    profileRepository: profileRepository,
+    groupRepository: groupRepository,
+    chatRepository: chatRepository,
+  );
   final sessionController = AuthSessionController(
     storage: storage,
     accessTokenHolder: holder,
@@ -118,6 +148,16 @@ void main() async {
   );
 
   await sessionController.restoreSession();
+  if (sessionController.isAuthenticated) {
+    try {
+      // Validate/rotate through the existing generation-aware interceptor before
+      // creating the authenticated root or dispatching a cold-start push tap.
+      await repository.getCurrentUser();
+    } on AuthException {
+      // Definitive failures already invalidate via AuthSessionInvalidator.
+      // Offline/timeout errors do not prove the persisted session is invalid.
+    }
+  }
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
@@ -126,16 +166,139 @@ void main() async {
     NotificationApi(dio.dio),
   );
   NotificationPushService? pushService;
+  final WeDoScanDeduplicator scanDeduplicator = WeDoScanDeduplicator();
+  String? pendingDeepLink;
 
-  Future<void> openPushNotification(FcmPushEvent event) async {
-    final NavigatorState? navigator = navigatorKey.currentState;
-    if (navigator == null) {
-      if (kDebugMode) debugPrint('FCM tap: navigator unavailable');
+  void safeNavigate(VoidCallback action) {
+    final phase = WidgetsBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      action();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => action());
+    }
+  }
+
+  Future<void> handleDeepLink(
+    String rawLink, {
+    bool fromScanner = false,
+  }) async {
+    final parsed = WeDoDeepLink.parse(rawLink);
+    if (parsed == null) {
+      if (fromScanner) {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text('Mã QR không hợp lệ hoặc không thuộc ứng dụng weDO.'),
+          ),
+        );
+      }
       return;
     }
+
+    if (!scanDeduplicator.shouldProcess(rawLink)) {
+      return;
+    }
+
+    if (!sessionController.isAuthenticated) {
+      pendingDeepLink = rawLink;
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng đăng nhập để mở liên kết weDO.'),
+        ),
+      );
+      navigatorKey.currentState?.pushNamed(AppRoutes.login);
+      return;
+    }
+
+    final navigator = navigatorKey.currentState;
+    if (navigator == null || !navigator.mounted) {
+      pendingDeepLink = rawLink;
+      return;
+    }
+
+    if (parsed is WeDoGroupInviteLink) {
+      safeNavigate(() {
+        final nav = navigatorKey.currentState;
+        if (nav == null || !nav.mounted) {
+          pendingDeepLink = rawLink;
+          return;
+        }
+        nav.pushNamed(
+          AppRoutes.joinGroupByCode,
+          arguments: GroupsRouteArgs(
+            repository: groupRepository,
+            searchArgs: searchRouteArgs,
+            initialCode: parsed.inviteCode,
+          ),
+        );
+      });
+      return;
+    }
+
+    if (parsed is WeDoFriendProfileLink) {
+      try {
+        final resolved = await personalQrRepository.resolveQr(
+          parsed.canonicalDeepLink,
+        );
+        safeNavigate(() {
+          final nav = navigatorKey.currentState;
+          if (nav == null || !nav.mounted) return;
+          nav.pushNamed(
+            AppRoutes.publicUserProfile,
+            arguments: PublicUserProfileRouteArgs(
+              userId: resolved.id,
+              loadPublicProfile: (userId) async => userId == resolved.id
+                  ? resolved
+                  : await profileRepository.getPublicProfile(userId),
+              chatRepository: chatRepository,
+              socialRepository: socialRepository,
+            ),
+          );
+        });
+      } on ApiException {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Không tìm thấy người dùng hoặc người dùng đã tắt tìm kiếm qua mã QR.',
+            ),
+          ),
+        );
+      } catch (_) {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(content: Text('Không thể mở hồ sơ từ liên kết này.')),
+        );
+      }
+    }
+  }
+
+  Future<void> scanAndOpenQr() async {
+    try {
+      final scanned = await WeDoPlatformLinks.scanQr();
+      if (scanned == null || scanned.isEmpty) return;
+      await handleDeepLink(scanned, fromScanner: true);
+    } on PlatformException catch (e) {
+      if (e.code == 'camera_permission_denied') {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text('Vui lòng cấp quyền máy ảnh để quét mã QR.'),
+          ),
+        );
+      } else if (e.code == 'camera_unavailable') {
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text('Không thể mở máy ảnh trên thiết bị này.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> openPushNotification(FcmPushEvent event) async {
     final int sessionGeneration = sessionController.sessionGeneration;
     if (!sessionController.isAuthenticated) return;
     final String? notificationId = event.notificationId;
+
+    bool targetHandled = false;
     try {
       if (notificationId != null && notificationId.isNotEmpty) {
         final NotificationItemModel item = await notificationRepository
@@ -145,36 +308,60 @@ void main() async {
           return;
         }
         if (kDebugMode) debugPrint('FCM tap: recipient target resolved');
-        if (navigator.mounted) {
-          await NotificationTargetRouter.open(
-            context: navigator.context,
-            item: item,
-            groupRepository: groupRepository,
-          );
+
+        final NavigatorState? navigator = navigatorKey.currentState;
+        if (navigator == null || !navigator.mounted) {
+          if (kDebugMode) debugPrint('FCM tap: navigator unavailable');
           return;
         }
+
+        targetHandled = true;
+        safeNavigate(() {
+          final NavigatorState? nav = navigatorKey.currentState;
+          if (nav == null || !nav.mounted) return;
+          if (!sessionController.isAuthenticated ||
+              sessionController.sessionGeneration != sessionGeneration) {
+            return;
+          }
+          unawaited(
+            NotificationTargetRouter.open(
+              context: nav.context,
+              navigator: nav,
+              item: item,
+              groupRepository: groupRepository,
+            ),
+          );
+        });
+        return;
       }
-    } catch (_) {
-      // The notification center remains available if live target resolution fails.
+    } catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('FCM tap: target resolution failed: $error\n$stack');
+      }
     }
+
+    if (targetHandled) return;
     if (!sessionController.isAuthenticated ||
         sessionController.sessionGeneration != sessionGeneration) {
       return;
     }
-    if (!navigator.mounted) return;
-    if (kDebugMode) debugPrint('FCM tap: falling back to notification center');
-    navigator.pushNamed(
-      AppRoutes.notifications,
-      arguments: GroupsRouteArgs(
-        repository: groupRepository,
-        searchArgs: SearchRouteArgs(
-          searchRepository: searchRepository,
-          profileRepository: profileRepository,
-          groupRepository: groupRepository,
-          chatRepository: chatRepository,
+
+    safeNavigate(() {
+      final NavigatorState? nav = navigatorKey.currentState;
+      if (nav == null || !nav.mounted) return;
+      if (!sessionController.isAuthenticated ||
+          sessionController.sessionGeneration != sessionGeneration) {
+        return;
+      }
+      if (kDebugMode) debugPrint('FCM tap: falling back to notification center');
+      nav.pushNamed(
+        AppRoutes.notifications,
+        arguments: GroupsRouteArgs(
+          repository: groupRepository,
+          searchArgs: searchRouteArgs,
         ),
-      ),
-    );
+      );
+    });
   }
 
   void showForegroundNotification(FcmPushEvent event) {
@@ -201,7 +388,7 @@ void main() async {
       registerDevice: ({required deviceId, required pushToken}) async {
         await notificationRepository.registerDevice(
           deviceId: deviceId,
-          platform: 'ANDROID',
+          platform: pushPlatform!,
           pushToken: pushToken,
         );
       },
@@ -234,18 +421,24 @@ void main() async {
       (route) => false,
       arguments: HomeRouteArgs(
         repository: groupRepository,
-        searchArgs: SearchRouteArgs(
-          searchRepository: searchRepository,
-          profileRepository: profileRepository,
-          groupRepository: groupRepository,
-          chatRepository: chatRepository,
-        ),
+        searchArgs: searchRouteArgs,
       ),
     );
+    final resumeLink = pendingDeepLink;
+    if (resumeLink != null) {
+      pendingDeepLink = null;
+      scanDeduplicator.reset();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(handleDeepLink(resumeLink));
+      });
+    }
   }
 
   runApp(
-    WeDoApp(
+    RealtimeSession(
+      sync: RealtimeSync(chatRepository.realtimeClient),
+      session: sessionController,
+      child: WeDoApp(
       authFlowCoordinator: AuthFlowCoordinator(
         repository,
         sessionController: sessionController,
@@ -254,28 +447,40 @@ void main() async {
       authSessionController: sessionController,
       groupRepository: groupRepository,
       chatRepository: chatRepository,
-      searchRouteArgs: SearchRouteArgs(
-        searchRepository: searchRepository,
-        profileRepository: profileRepository,
-        groupRepository: groupRepository,
-        chatRepository: chatRepository,
-      ),
+      socialRepository: socialRepository,
+      searchRouteArgs: searchRouteArgs,
       loadCurrentUser: repository.getCurrentUser,
       updateProfile: profileRepository.updateProfile,
       uploadAvatar: profileRepository.uploadAvatar,
       updateUsername: profileRepository.updateUsername,
       changePassword: repository.changePassword,
       endSessionAfterPasswordChange: endSessionAfterPasswordChange,
-      logout: pushService == null ? null : logout,
+      logout: logout,
       loadPrivacySettings: privacyRepository.getPrivacySettings,
       updatePrivacySettings: privacyRepository.updatePrivacySettings,
       loadPersonalQr: personalQrRepository.getPersonalQr,
       loadPublicProfile: profileRepository.getPublicProfile,
+      onScanQr: () => unawaited(scanAndOpenQr()),
       navigatorKey: navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
+      ),
     ),
   );
+  WeDoPlatformLinks.incomingLinks.listen((link) {
+    unawaited(handleDeepLink(link));
+  });
   WidgetsBinding.instance.addPostFrameCallback((_) {
     unawaited(pushService?.markAppReady());
+    unawaited(() async {
+      final initial = await WeDoPlatformLinks.getInitialLink();
+      if (initial != null) {
+        await handleDeepLink(initial);
+      } else if (pendingDeepLink != null && sessionController.isAuthenticated) {
+        final link = pendingDeepLink!;
+        pendingDeepLink = null;
+        scanDeduplicator.reset();
+        await handleDeepLink(link);
+      }
+    }());
   });
 }

@@ -38,12 +38,35 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class SettlementServiceIntegrationTest extends AbstractPostgresIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.FirebaseApp firebaseAdminApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.messaging.FirebaseMessaging firebaseMessaging;
     @Autowired ExpenseService expenses;
     @Autowired UserRepository users;
     @Autowired GroupRepository groups;
     @Autowired GroupMembershipRepository memberships;
     @Autowired GroupSettingsRepository settings;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.wedo.backend.realtime.DomainRealtimeCoordinator realtime;
+
+    @Test
+    void expenseAndSettlementChangesReachAuthorizedPeerAsIdentifiersOnly() throws Exception {
+        Fixture f = fixture();
+        try (var peer = new com.wedo.backend.realtime.RealtimeProbe(realtime, f.member(), "group:" + f.groupId())) {
+            var expense = expenses.create(f.groupId(), f.owner(), expenseRequest("100.00", f.owner(), List.of(f.member())));
+            String created = peer.await("EXPENSE_CREATED");
+            assertTrue(created.contains(expense.id().toString()));
+            expenses.update(expense.id(), f.owner(), expenseRequest("100.00", f.owner(), List.of(f.member())));
+            peer.await("EXPENSE_UPDATED");
+            var settlement = expenses.createSettlement(f.groupId(), f.member(),
+                    new CreateSettlementRequest(f.owner(), new BigDecimal("60.00"), "I_PAID"));
+            peer.await("SETTLEMENT_CREATED");
+            expenses.confirmSettlement(settlement.id(), f.owner());
+            String confirmed = peer.await("SETTLEMENT_CONFIRMED");
+            assertTrue(confirmed.contains(settlement.id().toString()));
+            assertFalse(confirmed.contains("60.00"));
+            assertEquals(new BigDecimal("40.00"), expenses.myBalances(f.groupId(), f.member()).totalOwedByMe());
+        }
+    }
 
     @Test
     void concurrentParticipantConfirmationsCompleteExactlyOnce() throws Exception {

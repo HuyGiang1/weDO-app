@@ -1,8 +1,9 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
+import '../../../../core/network/api_exception.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../core/utils/date_time_formatter.dart';
 import '../../../social/presentation/widgets/user_avatar.dart';
 import '../../data/discussion_models.dart';
@@ -21,8 +22,73 @@ class ActivityDiscussionSection extends StatefulWidget {
       _ActivityDiscussionSectionState();
 }
 
-class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
-  late Future<ActivityDiscussion> _future;
+class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> with RealtimeBinding<ActivityDiscussionSection> {
+  @override
+  String? get realtimeScope => 'activity:${widget.activityId}';
+  @override
+  String get realtimePrefix => 'DISCUSSION_';
+  @override
+  Future<void> reloadRealtime() => _load();
+  @override
+  void onRealtimeAccessLost() {
+    if (!mounted) return;
+    _request++;
+    setState(() {
+      _discussion = null;
+      _accessDenied = true;
+      _canComment = false;
+      _readOnly = true;
+      _loadError = 'Bạn không có quyền xem thảo luận.';
+    });
+  }
+
+  // Own the result/error immediately; never publish an unattached Future.error.
+  // Local reloads and realtime reloads share the same latest-request guard.
+  Future<void> _load() async {
+    final request = ++_request;
+    try {
+      final data = await widget.repository.list(widget.activityId);
+      if (!mounted || request != _request) return;
+      setState(() {
+        _discussion = data;
+        _accessDenied = false;
+        _loadError = null;
+        _canComment = data.permissions.canComment;
+        _readOnly = data.permissions.readOnly;
+      });
+    } on ApiException catch (error) {
+      if (!mounted || request != _request) return;
+      setState(() {
+        if (error.statusCode == 401 || error.statusCode == 403) {
+          _accessDenied = true;
+          _discussion = null;
+          _canComment = false;
+          _readOnly = true;
+          _loadError = error.statusCode == 401
+              ? 'Cần đăng nhập lại để xem thảo luận.'
+              : 'Bạn không có quyền xem thảo luận.';
+        } else {
+          if (_accessDenied) return;
+          _loadError = _discussion == null
+              ? 'Không thể tải bình luận. Thử lại'
+              : 'Không thể cập nhật bình luận. Đang hiển thị dữ liệu trước đó. Thử lại';
+        }
+      });
+    } catch (error, stack) {
+      // RealtimeBinding catches callback failures; explicitly report unexpected
+      // parsing/programming errors rather than disguising them as connectivity.
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'Discussion',
+        context: ErrorDescription('while loading authoritative Discussion state'),
+      ));
+    }
+  }
+  ActivityDiscussion? _discussion;
+  String? _loadError;
+  int _request = 0;
+  bool _accessDenied = false;
   final _composer = TextEditingController();
   bool _sending = false;
   bool _canComment = false;
@@ -35,13 +101,26 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
 
   @override
   void dispose() {
+    _request++;
     _composer.dispose();
     super.dispose();
   }
 
-  void _reload() => setState(() {
-    _future = widget.repository.list(widget.activityId);
-  });
+  @override
+  void didUpdateWidget(covariant ActivityDiscussionSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activityId != widget.activityId || oldWidget.repository != widget.repository) {
+      _discussion = null;
+      _accessDenied = false;
+      _loadError = null;
+      _canComment = false;
+      _readOnly = true;
+      refreshRealtimeBindings();
+      _reload();
+    }
+  }
+
+  void _reload() { if (mounted) _load(); }
   Future<void> _add() async {
     final content = _composer.text.trim();
     if (content.isEmpty || _sending) return;
@@ -158,15 +237,9 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
     margin: const EdgeInsets.only(top: 24),
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(16),
-      boxShadow: const [
-        BoxShadow(
-          color: AppColors.softShadow,
-          blurRadius: 20,
-          offset: Offset(0, 4),
-        ),
-      ],
+
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,41 +249,27 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 12),
-        FutureBuilder<ActivityDiscussion>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done)
+        if (_loadError != null)
+          TextButton(onPressed: _reload, child: Text(_loadError!)),
+        Builder(
+          builder: (context) {
+            final discussion = _discussion;
+            if (discussion == null && _loadError == null)
               return const Padding(
                 padding: EdgeInsets.all(20),
                 child: Center(child: CircularProgressIndicator()),
               );
-            if (snapshot.hasError)
-              return TextButton(
-                onPressed: _reload,
-                child: const Text('Không thể tải bình luận. Thử lại'),
-              );
-            final discussion = snapshot.data!;
-            if (_canComment != discussion.permissions.canComment ||
-                _readOnly != discussion.permissions.readOnly) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  setState(() {
-                    _canComment = discussion.permissions.canComment;
-                    _readOnly = discussion.permissions.readOnly;
-                  });
-                }
-              });
-            }
+            if (discussion == null) return const SizedBox.shrink();
             final comments = discussion.comments;
             final roots = comments
                 .where((comment) => comment.parentCommentId == null)
                 .toList();
             if (roots.isEmpty)
-              return const Padding(
+              return Padding(
                 padding: EdgeInsets.symmetric(vertical: 10),
                 child: Text(
                   'Chưa có bình luận nào.',
-                  style: TextStyle(color: AppColors.onSurfaceVariant),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               );
             return Column(
@@ -240,11 +299,11 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
         ),
         const Divider(height: 28),
         if (_readOnly)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 10),
             child: Text(
               'Thảo luận chỉ có thể xem ở trạng thái hiện tại.',
-              style: TextStyle(color: AppColors.onSurfaceVariant),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
         Row(
@@ -263,7 +322,7 @@ class _ActivityDiscussionSectionState extends State<ActivityDiscussionSection> {
             IconButton(
               tooltip: 'Gửi bình luận',
               onPressed: _canComment && !_sending ? _add : null,
-              icon: const Icon(Icons.send, color: AppColors.primary),
+              icon: Icon(Icons.send, color: Theme.of(context).colorScheme.primary),
             ),
           ],
         ),
@@ -313,9 +372,9 @@ class DiscussionCommentTile extends StatelessWidget {
                   ),
                   Text(
                     AppDateTimeFormatter.formatRelativeTime(comment.createdAt),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -345,8 +404,8 @@ class DiscussionCommentTile extends StatelessWidget {
           comment.deleted ? 'Nội dung không còn khả dụng.' : comment.content,
           style: TextStyle(
             color: comment.deleted
-                ? AppColors.onSurfaceVariant
-                : AppColors.onSurface,
+                ? Theme.of(context).colorScheme.onSurfaceVariant
+                : Theme.of(context).colorScheme.onSurface,
           ),
         ),
         if (!comment.deleted)

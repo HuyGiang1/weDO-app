@@ -24,6 +24,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest(properties = "wedo.local-test-data.enabled=true")
 @ActiveProfiles("local")
 class LocalTestDataSeederIntegrationTest extends AbstractPostgresIntegrationTest {
+    private static final String PASSWORD = "Synthetic!" + UUID.randomUUID();
+    @org.springframework.test.context.DynamicPropertySource
+    static void secretProperties(org.springframework.test.context.DynamicPropertyRegistry r) {
+        r.add("wedo.local-test-data.password", () -> PASSWORD);
+        for (String name : List.of("WEDO_JWT_SECRET_BASE64", "WEDO_AUTH_TOKEN_PEPPER_BASE64", "WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64")) {
+            byte[] bytes = new byte[32];
+            new java.security.SecureRandom().nextBytes(bytes);
+            String key = java.util.Base64.getEncoder().encodeToString(bytes);
+            r.add(name, () -> key);
+        }
+    }
     private static final List<String> EMAILS = List.of(
             "owner@wedo.local", "admin@wedo.local", "member1@wedo.local",
             "member2@wedo.local", "outsider@wedo.local");
@@ -42,8 +53,8 @@ class LocalTestDataSeederIntegrationTest extends AbstractPostgresIntegrationTest
             assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
             assertThat(user.getEmailVerifiedAt()).isNotNull();
             var credential = credentials.findById(user.getId()).orElseThrow();
-            assertThat(credential.getPasswordHash()).isNotEqualTo(LocalTestDataSeeder.PASSWORD);
-            assertThat(passwordEncoder.matches(LocalTestDataSeeder.PASSWORD, credential.getPasswordHash())).isTrue();
+            assertThat(credential.getPasswordHash()).isNotEqualTo(PASSWORD);
+            assertThat(passwordEncoder.matches(PASSWORD, credential.getPasswordHash())).isTrue();
         });
 
         var group = groups.findByName(LocalTestDataSeeder.GROUP_NAME).orElseThrow();

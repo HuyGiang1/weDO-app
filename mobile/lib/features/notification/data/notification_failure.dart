@@ -4,12 +4,19 @@ class NotificationFailure implements Exception {
   final String code;
   final String message;
   final int? statusCode;
+  final ApiTransportFailure? transportFailure;
+  final Object? cause;
 
   const NotificationFailure({
     required this.code,
     required this.message,
     this.statusCode,
+    this.transportFailure,
+    this.cause,
   });
+
+  bool get isTransient => transportFailure == ApiTransportFailure.network ||
+      transportFailure == ApiTransportFailure.timeout || (statusCode != null && statusCode! >= 500);
 
   factory NotificationFailure.fromException(Object error) {
     if (error is NotificationFailure) return error;
@@ -20,9 +27,11 @@ class NotificationFailure implements Exception {
         code: resolvedCode,
         message: mapMessage(resolvedCode, resolvedMessage),
         statusCode: error.statusCode,
+        transportFailure: error.transportFailure,
       );
     }
-    return const NotificationFailure(
+    return NotificationFailure(
+      cause: error,
       code: 'UNKNOWN_ERROR',
       message: 'Đã xảy ra lỗi khi tải thông báo. Vui lòng thử lại.',
     );

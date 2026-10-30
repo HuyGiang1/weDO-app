@@ -15,22 +15,29 @@ import '../data/notification_models.dart';
 
 abstract final class NotificationTargetRouter {
   static Future<void> open({
-    required BuildContext context,
+    BuildContext? context,
+    NavigatorState? navigator,
     required NotificationItemModel item,
     required GroupRepository? groupRepository,
   }) async {
+    final NavigatorState? nav =
+        navigator ?? (context != null ? Navigator.maybeOf(context) : null);
+    if (nav == null) return;
+
     final NotificationTargetModel target = item.target;
     if (!target.actionable) {
+      final BuildContext dialogContext = context ?? nav.context;
       await showDialog<void>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
+        context: dialogContext,
+        builder: (BuildContext dContext) => AlertDialog(
           title: const Text('Không thể mở liên kết'),
           content: Text(
-            target.nonActionableReason ?? 'Mục liên kết này không còn khả dụng hoặc đã bị xóa.',
+            target.nonActionableReason ??
+                'Mục liên kết này không còn khả dụng hoặc đã bị xóa.',
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () => Navigator.of(dContext).pop(),
               child: const Text('Đã hiểu'),
             ),
           ],
@@ -46,8 +53,16 @@ abstract final class NotificationTargetRouter {
     final String route = target.route.trim();
     final String type = target.targetType.toUpperCase();
 
+    if (type == 'SOCIAL') {
+      await nav.pushNamed(
+        AppRoutes.friends,
+        arguments: GroupsRouteArgs(repository: groups),
+      );
+      return;
+    }
+
     if (type == 'CONVERSATION' && (groupId == null || groupId.isEmpty)) {
-      await Navigator.of(context).pushNamed(
+      await nav.pushNamed(
         AppRoutes.chatHome,
         arguments: ChatHomeRouteArgs(
           ChatRepository(ChatApi(groups.api.dio)),
@@ -59,7 +74,7 @@ abstract final class NotificationTargetRouter {
     if (groupId == null) return;
 
     if (route == AppRoutes.groupFund) {
-      await Navigator.of(context).pushNamed(
+      await nav.pushNamed(
         AppRoutes.groupFund,
         arguments: FundRouteArgs(
           repository: FundRepository(FundApi(groups.api.dio)),
@@ -71,7 +86,7 @@ abstract final class NotificationTargetRouter {
       return;
     }
     if (route == AppRoutes.groupExpenses) {
-      await Navigator.of(context).pushNamed(
+      await nav.pushNamed(
         AppRoutes.groupExpenses,
         arguments: ExpenseRouteArgs(
           repository: ExpenseRepository(ExpenseApi(groups.api.dio)),
@@ -82,7 +97,7 @@ abstract final class NotificationTargetRouter {
       return;
     }
     if (type == 'EXPENSE' && _hasTargetId(target)) {
-      await Navigator.of(context).push<void>(
+      await nav.push<void>(
         MaterialPageRoute<void>(
           builder: (_) => ExpenseDetailScreen(
             groupId: groupId,
@@ -95,7 +110,7 @@ abstract final class NotificationTargetRouter {
       return;
     }
     if (type == 'SETTLEMENT' && _hasTargetId(target)) {
-      await Navigator.of(context).push<void>(
+      await nav.push<void>(
         MaterialPageRoute<void>(
           builder: (_) => SettlementDetailScreen(
             groupId: groupId,
@@ -107,14 +122,14 @@ abstract final class NotificationTargetRouter {
       return;
     }
     if (route == AppRoutes.groupInvitations) {
-      await Navigator.of(context).pushNamed(
+      await nav.pushNamed(
         AppRoutes.groupInvitations,
         arguments: GroupsRouteArgs(repository: groups),
       );
       return;
     }
     if (type == 'CONVERSATION') {
-      await Navigator.of(context).pushNamed(
+      await nav.pushNamed(
         AppRoutes.groupChat,
         arguments: ChatRouteArgs(
           repository: ChatRepository(ChatApi(groups.api.dio)),
@@ -132,7 +147,7 @@ abstract final class NotificationTargetRouter {
           ? target.targetId
           : target.params['activityId']?.toString();
       if (activityId != null && activityId.isNotEmpty) {
-        await Navigator.of(context).pushNamed(
+        await nav.pushNamed(
           AppRoutes.activityDetail,
           arguments: ActivityDetailRouteArgs(
             repository: activities,
@@ -140,7 +155,7 @@ abstract final class NotificationTargetRouter {
           ),
         );
       } else {
-        await Navigator.of(context).pushNamed(
+        await nav.pushNamed(
           AppRoutes.activities,
           arguments: ActivitiesRouteArgs(
             repository: activities,
@@ -150,7 +165,7 @@ abstract final class NotificationTargetRouter {
       }
       return;
     }
-    await Navigator.of(context).pushNamed(
+    await nav.pushNamed(
       AppRoutes.groupInfo,
       arguments: GroupInfoRouteArgs(repository: groups, groupId: groupId),
     );

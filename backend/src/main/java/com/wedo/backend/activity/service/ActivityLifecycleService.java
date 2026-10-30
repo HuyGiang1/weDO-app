@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ActivityLifecycleService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private final ActivityRepository activities;
     private final ActivityParticipantRepository participants;
     private final ActivityStatusHistoryRepository statusHistory;
@@ -249,6 +251,7 @@ public class ActivityLifecycleService {
     }
 
     private ActivityDetailResponse response(ActivityEntity activity, UUID actor) {
+        if (realtime != null) realtime.activity("ACTIVITY_UPDATED", activity.getId(), activity.getGroupId(), actor);
         return responses.detail(activity, actor, permissions.requireReadableMembership(activity.getGroupId(), actor));
     }
 }

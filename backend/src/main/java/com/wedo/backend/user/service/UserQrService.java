@@ -19,8 +19,10 @@ import java.util.regex.Pattern;
 @Transactional(readOnly = true)
 public class UserQrService {
 
+    public static final String CANONICAL_USER_LINK_PREFIX = "https://wedo-3304c.web.app/u/";
+
     private static final Pattern PERSONAL_QR_PATTERN = Pattern.compile(
-            "^wedo://user/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+            "^(?:https://(?:wedo-3304c\\.web\\.app|wedo-3304c\\.firebaseapp\\.com)/u/|wedo://(?:u|user)/)([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
     );
 
     private final UserService userService;
@@ -58,7 +60,7 @@ public class UserQrService {
     }
 
     private UUID parseTargetId(String deepLink) {
-        Matcher matcher = PERSONAL_QR_PATTERN.matcher(deepLink);
+        Matcher matcher = PERSONAL_QR_PATTERN.matcher(deepLink.trim());
         if (!matcher.matches()) {
             throw notFound();
         }
@@ -70,7 +72,7 @@ public class UserQrService {
     }
 
     private String toDeepLink(UUID userId) {
-        return "wedo://user/" + userId;
+        return CANONICAL_USER_LINK_PREFIX + userId;
     }
 
     private BusinessException notFound() {

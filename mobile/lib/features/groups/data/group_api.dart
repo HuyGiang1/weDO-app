@@ -246,16 +246,15 @@ class GroupApi {
   );
 
   // M6: Bans
-  Future<GroupBanResponse> banMember(
+  Future<void> banMember(
     String groupId,
     String userId,
     BanMemberRequest q,
-  ) => _call(
+  ) => _empty(
     () => dio.post(
       '/api/v1/groups/${Uri.encodeComponent(groupId)}/members/${Uri.encodeComponent(userId)}/ban',
       data: q.toJson(),
     ),
-    GroupBanResponse.fromJson,
   );
 
   Future<PagedResponse<GroupBanResponse>> listBans(

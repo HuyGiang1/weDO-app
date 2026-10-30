@@ -66,5 +66,35 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>weDO needs local network access to connect to the local development backend and media server.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>weDO cần quyền thêm ảnh để lưu ảnh trò chuyện bạn chọn vào thư viện.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>weDO needs photo library access to upload avatars and chat images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>weDO needs camera access to capture photos for avatars, chat images, and scanning friend QR codes.</string>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.wedo.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wedo</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

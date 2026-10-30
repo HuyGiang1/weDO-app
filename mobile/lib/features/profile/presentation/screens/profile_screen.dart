@@ -31,6 +31,7 @@ class ProfileScreen extends StatefulWidget {
   final Future<bool> Function() endSessionAfterPasswordChange;
   final Future<void> Function()? logout;
   final VoidCallback? onHome, onGroups, onChat, onCalendar;
+  final VoidCallback? onScanQr;
 
   const ProfileScreen({
     super.key,
@@ -45,6 +46,7 @@ class ProfileScreen extends StatefulWidget {
     this.onGroups,
     this.onChat,
     this.onCalendar,
+    this.onScanQr,
   });
 
   @override
@@ -67,10 +69,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
+  bool _logoutPending = false;
+
+  Future<void> _logout() async {
+    if (_logoutPending) return;
+    _logoutPending = true;
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Đăng xuất'),
+          content: const Text('Bạn có chắc muốn đăng xuất không?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Đăng xuất'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await widget.logout!();
+      if (mounted) {
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+      }
+    } finally {
+      _logoutPending = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Hồ sơ')),
+      appBar: AppBar(
+        title: const Text('Hồ sơ'),
+        actions: [
+          if (widget.logout != null)
+            Tooltip(
+              message: 'Đăng xuất',
+              child: TextButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Đăng xuất'),
+              ),
+            ),
+          if (widget.onScanQr != null)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+              tooltip: 'Quét QR',
+              onPressed: widget.onScanQr,
+            ),
+        ],
+      ),
       bottomNavigationBar: widget.onHome == null
           ? null
           : GroupsBottomNavigation(
@@ -134,17 +189,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     widget.endSessionAfterPasswordChange,
               ),
             ),
-            onLogout: widget.logout == null
-                ? null
-                : () async {
-                    await widget.logout!();
-                    if (context.mounted) {
-                      Navigator.of(context).pushNamedAndRemoveUntil(
-                        AppRoutes.login,
-                        (Route<dynamic> route) => false,
-                      );
-                    }
-                  },
+            onScanQr: widget.onScanQr,
+            onLogout: widget.logout == null ? null : _logout,
           );
         },
       ),
@@ -157,6 +203,7 @@ class _ProfileContent extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onChangeUsername;
   final VoidCallback onChangePassword;
+  final VoidCallback? onScanQr;
   final VoidCallback? onLogout;
 
   const _ProfileContent({
@@ -164,6 +211,7 @@ class _ProfileContent extends StatelessWidget {
     required this.onEdit,
     required this.onChangeUsername,
     required this.onChangePassword,
+    this.onScanQr,
     this.onLogout,
   });
 
@@ -189,13 +237,14 @@ class _ProfileContent extends StatelessWidget {
                 Center(
                   child: ProfileAvatar(
                     label: initial,
+                    radius: 36,
                     avatarStorageKey: user.avatarStorageKey,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   title,
-                  style: AppTextStyles.headline,
+                  style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
                 if (user.username != null &&
@@ -203,24 +252,23 @@ class _ProfileContent extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '@${user.username}',
-                    style: AppTextStyles.bodyMedium,
+                    style: AppTextStyles.of(context).bodyMedium,
                     textAlign: TextAlign.center,
                   ),
                 ],
-                const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.sm),
                 if (_hasText(user.bio))
                   ProfileSurface(
                     child: Text(
                       user.bio!,
-                      style: AppTextStyles.bodyMedium,
+                      style: AppTextStyles.of(context).bodyMedium,
                       textAlign: TextAlign.center,
                     ),
                   ),
-                const SizedBox(height: AppSpacing.md),
                 const SizedBox(height: AppSpacing.sm),
                 ElevatedButton(
                   onPressed: onEdit,
-                  style: profilePrimaryButtonStyle(),
+                  style: profilePrimaryButtonStyle(context),
                   child: const Text('Chỉnh sửa hồ sơ'),
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -249,6 +297,35 @@ class _ProfileContent extends StatelessWidget {
                   onTap: () =>
                       Navigator.of(context).pushNamed(AppRoutes.personalQr),
                 ),
+                if (onScanQr != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  ProfileActionRow(
+                    icon: Icons.qr_code_scanner_rounded,
+                    label: 'Quét QR',
+                    onTap: onScanQr!,
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.people_outline_rounded,
+                  label: 'Bạn bè',
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.friends),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.person_add_alt_1_outlined,
+                  label: 'Lời mời kết bạn',
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.friendRequests),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                ProfileActionRow(
+                  icon: Icons.block_outlined,
+                  label: 'Người dùng đã chặn',
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.blockedUsers),
+                ),
                 if (onLogout != null) ...[
                   const SizedBox(height: AppSpacing.xs),
                   ProfileActionRow(
@@ -265,10 +342,15 @@ class _ProfileContent extends StatelessWidget {
                       _ProfileField(label: 'Email', value: user.email),
                       _ProfileField(
                         label: 'Xác minh email',
-                        value: user.emailVerified ? 'Đã xác minh' : 'Chưa xác minh',
+                        value: user.emailVerified
+                            ? 'Đã xác minh'
+                            : 'Chưa xác minh',
                       ),
                       if (_hasText(user.phone))
-                        _ProfileField(label: 'Số điện thoại', value: user.phone!),
+                        _ProfileField(
+                          label: 'Số điện thoại',
+                          value: user.phone!,
+                        ),
                     ],
                   ),
                 ),
@@ -296,9 +378,9 @@ class _ProfileField extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTextStyles.label),
+        Text(label, style: AppTextStyles.of(context).label),
         const SizedBox(height: AppSpacing.xs),
-        Text(value, style: AppTextStyles.bodyMedium),
+        Text(value, style: AppTextStyles.of(context).bodyMedium),
       ],
     ),
   );
@@ -316,9 +398,9 @@ class _ProfileError extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'Không thể tải hồ sơ của bạn.',
-            style: AppTextStyles.bodyMedium,
+            style: AppTextStyles.of(context).bodyMedium,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.md),

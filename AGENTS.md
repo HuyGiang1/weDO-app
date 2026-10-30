@@ -40,3 +40,11 @@ git stash list
 - **Commit Requires Explicit User Approval**: Never stage or commit changes without explicit user authorization.
 - **Push Requires Separate Explicit User Approval**: Approval to commit is **never** approval to push. Always wait for separate explicit push authorization.
 - **Mandatory Handoff Update**: Before ending a session or handing work to another agent, update `docs/AGENT_CURRENT_HANDOFF.md` so the next agent inherits an accurate, verified worktree summary.
+
+## 5. Persistent Flutter Design System
+
+Before implementing or modifying any Flutter UI, read `docs/DESIGN_SYSTEM.md` and follow its tokens, components, navigation policy and accessibility rules. Do not invent a conflicting visual style.
+
+`docs/DESIGN_SYSTEM.md` is the single source of truth for visual standards. Keep implementation evidence and pending migration work in the current handoff and delivery reports; preserve the product/API/database and safety conventions above.
+
+Preserve Home's visible “Nhóm của bạn / Xem tất cả” access to the existing Group List. Keep the exact five tabs; immersive header/bottom-bar hiding belongs only to the main Community feed, following `docs/DESIGN_SYSTEM.md`.

@@ -186,7 +186,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('2'), findsOneWidget);
-    expect(find.text('Nhóm'), findsOneWidget);
+    expect(find.text('Cộng đồng'), findsOneWidget);
     final avatar = tester.widget<GroupAvatar>(find.byType(GroupAvatar).first);
     expect(avatar.avatarStorageKey, 'avatars/canonical-group.png');
     expect(

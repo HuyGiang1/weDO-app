@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../application/social_controllers.dart';
@@ -86,10 +85,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         toolbarHeight: 64.0,
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: Navigator.of(context).canPop()
@@ -97,7 +96,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 padding: const EdgeInsets.only(left: 8.0),
                 child: IconButton(
                   icon: const Icon(Icons.arrow_back_rounded),
-                  color: AppColors.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   tooltip: 'Quay lại',
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
@@ -105,10 +104,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             : null,
         title: Text(
           'Người dùng đã chặn',
-          style: AppTextStyles.headline.copyWith(
+          style: AppTextStyles.of(context).headline.copyWith(
             fontSize: 24.0,
             fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
       ),
@@ -119,8 +118,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             valueListenable: widget.controller.blockedUsers,
             builder: (context, state, _) {
               if (state.isLoading) {
-                return const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
+                return Center(
+                  child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                 );
               }
 
@@ -135,7 +134,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
               if (state.isEmpty || state.items.isEmpty) {
                 return RefreshIndicator(
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                   onRefresh: () =>
                       widget.controller.loadBlockedUsers(refresh: true),
                   child: ListView(
@@ -162,7 +161,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               }
 
               return RefreshIndicator(
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
                 onRefresh: () =>
                     widget.controller.loadBlockedUsers(refresh: true),
                 child: ListView.separated(
@@ -196,7 +195,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                           ),
                         );
                       }
-                      return const Padding(
+                      return Padding(
                         padding: EdgeInsets.all(AppSpacing.md),
                         child: Center(
                           child: SizedBox(
@@ -204,7 +203,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                             height: 24.0,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              color: AppColors.primary,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -217,15 +216,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLowest,
+                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
                         borderRadius: BorderRadius.circular(12.0),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: AppColors.softShadow,
-                            blurRadius: 20.0,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
+
                       ),
                       padding: const EdgeInsets.all(20.0),
                       child: Row(
@@ -243,10 +236,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                               children: [
                                 Text(
                                   item.blockedUser.displayName,
-                                  style: AppTextStyles.label.copyWith(
+                                  style: AppTextStyles.of(context).label.copyWith(
                                     fontSize: 14.0,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.onSurface,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -254,9 +247,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                                 const SizedBox(height: 2.0),
                                 Text(
                                   '@${item.blockedUser.username}',
-                                  style: AppTextStyles.bodyMedium.copyWith(
+                                  style: AppTextStyles.of(context).bodyMedium.copyWith(
                                     fontSize: 14.0,
-                                    color: AppColors.onSurfaceVariant,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -266,12 +259,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                           ),
                           const SizedBox(width: 12.0),
                           if (isUnblocking)
-                            const SizedBox(
+                            SizedBox(
                               width: 24.0,
                               height: 24.0,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.0,
-                                color: AppColors.primary,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             )
                           else
@@ -279,8 +272,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                               onPressed: () => _handleUnblock(item),
                               style: OutlinedButton.styleFrom(
                                 backgroundColor:
-                                    const Color(0x1A630ED4), // primary/10
-                                foregroundColor: AppColors.primary,
+                                    Theme.of(context).colorScheme.surfaceContainer, // primary/10
+                                foregroundColor: Theme.of(context).colorScheme.primary,
                                 side: BorderSide.none,
                                 elevation: 0,
                                 shadowColor: Colors.transparent,
@@ -292,10 +285,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                               ),
                               child: Text(
                                 'Bỏ chặn',
-                                style: AppTextStyles.label.copyWith(
+                                style: AppTextStyles.of(context).label.copyWith(
                                   fontSize: 14.0,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.primary,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                             ),
@@ -315,25 +308,25 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   Widget _buildInfoAlert() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12.0),
       ),
       padding: const EdgeInsets.all(20.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
+          Icon(
             Icons.info_rounded,
             size: 24.0,
-            color: AppColors.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(width: 16.0),
           Expanded(
             child: Text(
               'Người dùng bạn chặn sẽ không thể nhắn tin cho bạn, xem các nhóm hoặc tương tác với nội dung của bạn. Họ sẽ không nhận được thông báo rằng bạn đã chặn họ.',
-              style: AppTextStyles.bodyMedium.copyWith(
+              style: AppTextStyles.of(context).bodyMedium.copyWith(
                 fontSize: 14.0,
-                color: AppColors.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 height: 20.0 / 14.0,
               ),
             ),

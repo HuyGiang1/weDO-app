@@ -104,13 +104,31 @@ class GroupNotificationSettingsState {
 }
 
 class NotificationCenterController extends ValueNotifier<NotificationCenterState> {
+  bool _disposed = false;
+  int _loadGeneration = 0, _badgeGeneration = 0, _accessGeneration = 0;
+  bool readNeedsRecovery = false;
+  void denyAccess() {
+    if (_disposed) return;
+    _accessGeneration++; _loadGeneration++; _badgeGeneration++;
+    readNeedsRecovery = false;
+    value = const NotificationCenterState(errorMessage: 'Bạn không có quyền xem thông báo.');
+  }
+  void _reportUnexpected(NotificationFailure failure) {
+    if (failure.cause != null) {
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: failure.cause!, library: 'NotificationCenterController'));
+    }
+  }
   NotificationCenterController(this.repository)
     : super(const NotificationCenterState());
 
   final NotificationRepository repository;
 
-  Future<void> loadInbox({int page = 0, int size = 30}) async {
-    value = value.copyWith(isLoading: true, clearErrorMessage: true);
+  Future<void> loadInbox({int page = 0, int size = 30, bool silent = false}) async {
+    if (_disposed) return;
+    final generation = ++_loadGeneration;
+    _badgeGeneration++;
+    if (!silent) value = value.copyWith(isLoading: true, clearErrorMessage: true);
     try {
       final List<dynamic> results = await Future.wait<dynamic>(<Future<dynamic>>[
         repository.getInbox(page: page, size: size),
@@ -118,6 +136,8 @@ class NotificationCenterController extends ValueNotifier<NotificationCenterState
       ]);
       final NotificationInboxPageModel inbox = results[0] as NotificationInboxPageModel;
       final int unreadCount = results[1] as int;
+      if (_disposed || generation != _loadGeneration) return;
+      readNeedsRecovery = false;
       value = value.copyWith(
         isLoading: false,
         inbox: inbox,
@@ -125,8 +145,15 @@ class NotificationCenterController extends ValueNotifier<NotificationCenterState
         clearErrorMessage: true,
       );
     } on NotificationFailure catch (failure) {
-      value = value.copyWith(isLoading: false, errorMessage: failure.message);
-    } catch (_) {
+      if (_disposed || generation != _loadGeneration) return;
+      readNeedsRecovery = failure.isTransient;
+      _reportUnexpected(failure);
+      value = [401,403,404].contains(failure.statusCode)
+          ? NotificationCenterState(errorMessage: failure.message)
+          : value.copyWith(isLoading: false, errorMessage: failure.message);
+    } catch (error, stack) {
+      if (_disposed || generation != _loadGeneration) return;
+      FlutterError.reportError(FlutterErrorDetails(exception: error, stack: stack));
       value = value.copyWith(
         isLoading: false,
         errorMessage: 'Không thể tải danh sách thông báo.',
@@ -134,75 +161,53 @@ class NotificationCenterController extends ValueNotifier<NotificationCenterState
     }
   }
 
+  @override
+  void dispose() { _disposed = true; _loadGeneration++; _badgeGeneration++; _accessGeneration++; super.dispose(); }
+
   Future<void> refreshUnreadCount() async {
+    if (_disposed) return;
+    final generation = ++_badgeGeneration, load = _loadGeneration;
     try {
-      final int count = await repository.getUnreadCount();
+      final count = await repository.getUnreadCount();
+      if (_disposed || generation != _badgeGeneration || load != _loadGeneration) return;
       value = value.copyWith(unreadCount: count);
-    } catch (_) {
-      // Best-effort badge refresh
+    } on NotificationFailure catch (failure) {
+      _reportUnexpected(failure);
     }
   }
 
   Future<void> markRead(String notificationId) async {
-    final NotificationInboxPageModel? currentInbox = value.inbox;
-    if (currentInbox == null) {
-      return;
-    }
+    if (_disposed || value.inbox == null) return;
+    final access = _accessGeneration;
+    _loadGeneration++; _badgeGeneration++;
     try {
-      final MarkNotificationReadResult result = await repository.markRead(notificationId);
-      final List<NotificationItemModel> updatedItems = currentInbox.items
-          .map(
-            (NotificationItemModel item) => item.notificationId == notificationId
-                ? item.copyWith(isRead: result.isRead, readAt: result.readAt)
-                : item,
-          )
-          .toList(growable: false);
-      final int nextUnread = updatedItems
-          .where((NotificationItemModel item) => !item.isRead)
-          .length;
-      value = value.copyWith(
-        inbox: currentInbox.copyWith(items: updatedItems),
-        unreadCount: nextUnread,
-        clearErrorMessage: true,
-      );
-      await refreshUnreadCount();
+      await repository.markRead(notificationId);
+      if (_disposed || access != _accessGeneration) return;
+      await loadInbox(silent: true);
     } on NotificationFailure catch (failure) {
+      if (_disposed || access != _accessGeneration) return;
+      _reportUnexpected(failure);
       value = value.copyWith(errorMessage: failure.message);
-    } catch (_) {
-      value = value.copyWith(errorMessage: 'Không thể đánh dấu thông báo đã đọc.');
     }
   }
 
   Future<int> markAllRead() async {
+    if (_disposed) return 0;
+    final access = _accessGeneration;
+    _loadGeneration++; _badgeGeneration++;
     value = value.copyWith(isMutating: true, clearErrorMessage: true);
     try {
-      final int updatedCount = await repository.markAllRead();
-      final NotificationInboxPageModel? currentInbox = value.inbox;
-      final NotificationInboxPageModel? nextInbox = currentInbox?.copyWith(
-              items: currentInbox.items
-                  .map(
-                    (NotificationItemModel item) => item.copyWith(
-                      isRead: true,
-                      readAt: item.readAt ?? DateTime.now(),
-                    ),
-                  )
-                  .toList(growable: false),
-            );
-      value = value.copyWith(
-        isMutating: false,
-        inbox: nextInbox,
-        unreadCount: 0,
-        clearErrorMessage: true,
-      );
-      return updatedCount;
+      final updated = await repository.markAllRead();
+      if (_disposed || access != _accessGeneration) return updated;
+      // Canonical read preserves notifications created after the mark-all commit.
+      await loadInbox(silent: true);
+      if (!_disposed && access == _accessGeneration) value = value.copyWith(isMutating: false);
+      return updated;
     } on NotificationFailure catch (failure) {
-      value = value.copyWith(isMutating: false, errorMessage: failure.message);
-      rethrow;
-    } catch (_) {
-      value = value.copyWith(
-        isMutating: false,
-        errorMessage: 'Không thể đánh dấu tất cả đã đọc.',
-      );
+      if (!_disposed && access == _accessGeneration) {
+        _reportUnexpected(failure);
+        value = value.copyWith(isMutating: false, errorMessage: failure.message);
+      }
       rethrow;
     }
   }

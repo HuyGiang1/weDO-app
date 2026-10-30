@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../core/l10n/app_strings.dart';
 import '../../application/groups_controller.dart';
 import '../../data/models/group_models.dart';
@@ -39,11 +39,31 @@ class MyGroupsScreen extends StatefulWidget {
   State<MyGroupsScreen> createState() => _MyGroupsScreenState();
 }
 
-class _MyGroupsScreenState extends State<MyGroupsScreen> {
+class _MyGroupsScreenState extends State<MyGroupsScreen> with RealtimeBinding<MyGroupsScreen> {
+  @override
+  Set<String> get realtimeAdditionalPrefixes => const {'GROUP_LIST_CHANGED'};
+  @override
+  Set<String> get realtimeAdditionalScopes => {
+    for (final group in widget.controller.value.groups) 'group:${group.id}',
+  };
+  @override
+  String? get realtimeScope => 'user:self';
+  @override
+  String get realtimePrefix => 'GROUP_';
+  @override
+  Future<void> reloadRealtime() async { await widget.controller.resync(); }
+
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(refreshRealtimeBindings);
     widget.controller.load();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(refreshRealtimeBindings);
+    super.dispose();
   }
 
   @override
@@ -102,7 +122,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -110,7 +130,7 @@ class _MyGroupsScreenState extends State<MyGroupsScreen> {
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       SizedBox(height: 20),
@@ -245,7 +265,7 @@ class _GroupsEmpty extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: Column(
       children: [
-        const Icon(Icons.groups_3, size: 56, color: AppColors.primary),
+        Icon(Icons.groups_3, size: 56, color: Theme.of(context).colorScheme.primary),
         const Text(AppStrings.noGroups),
         ElevatedButton.icon(
           onPressed: onCreate,

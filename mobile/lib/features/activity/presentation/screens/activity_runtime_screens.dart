@@ -1,43 +1,26 @@
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../core/l10n/app_strings.dart';
 import '../../../../core/utils/date_time_formatter.dart';
 import '../../application/activity_controllers.dart';
 import '../../data/activity_failure.dart';
 import '../../data/activity_models.dart';
 
-Color _statusColor(ActivityStatus status) => switch (status) {
-  ActivityStatus.planning => AppColors.primary,
-  ActivityStatus.confirmed => AppColors.secondary,
-  ActivityStatus.inProgress => const Color(0xFFE65100),
-  ActivityStatus.completed => AppColors.onSurfaceVariant,
-  ActivityStatus.cancelled => AppColors.error,
+Color _statusColor(BuildContext context, ActivityStatus status) => switch (status) {
+  ActivityStatus.planning => Theme.of(context).colorScheme.primary,
+  ActivityStatus.confirmed || ActivityStatus.completed => AppSemanticColors.of(context).success,
+  ActivityStatus.inProgress => AppSemanticColors.of(context).warning,
+  ActivityStatus.cancelled => Theme.of(context).colorScheme.error,
 };
-
-Color _statusBgColor(ActivityStatus status) => switch (status) {
-  ActivityStatus.planning => AppColors.primaryFixed,
-  ActivityStatus.confirmed => const Color(0xFFE0F2F1),
-  ActivityStatus.inProgress => const Color(0xFFFFF3E0),
-  ActivityStatus.completed => AppColors.surfaceContainer,
-  ActivityStatus.cancelled => AppColors.errorContainer,
+Color _statusBgColor(BuildContext context, ActivityStatus status) => _statusColor(context, status).withValues(alpha: .12);
+Color _rsvpColor(BuildContext context, ActivityRsvpStatus rsvp) => switch (rsvp) {
+  ActivityRsvpStatus.going => AppSemanticColors.of(context).success,
+  ActivityRsvpStatus.maybe || ActivityRsvpStatus.waitlist => AppSemanticColors.of(context).warning,
+  ActivityRsvpStatus.notGoing || ActivityRsvpStatus.noResponse => Theme.of(context).colorScheme.onSurfaceVariant,
 };
-
-Color _rsvpColor(ActivityRsvpStatus rsvp) => switch (rsvp) {
-  ActivityRsvpStatus.going => const Color(0xFF006B5F),
-  ActivityRsvpStatus.maybe => const Color(0xFFA15100),
-  ActivityRsvpStatus.notGoing ||
-  ActivityRsvpStatus.noResponse => AppColors.onSurfaceVariant,
-  ActivityRsvpStatus.waitlist => AppColors.primary,
-};
-
-Color _rsvpBgColor(ActivityRsvpStatus rsvp) => switch (rsvp) {
-  ActivityRsvpStatus.going => const Color(0xFFE0F2F1),
-  ActivityRsvpStatus.maybe => const Color(0xFFFFF3E0),
-  ActivityRsvpStatus.notGoing ||
-  ActivityRsvpStatus.noResponse => AppColors.surfaceContainer,
-  ActivityRsvpStatus.waitlist => AppColors.primaryFixed,
-};
+Color _rsvpBgColor(BuildContext context, ActivityRsvpStatus rsvp) => _rsvpColor(context, rsvp).withValues(alpha: .1);
 
 String _statusVietnamese(ActivityStatus status) => switch (status) {
   ActivityStatus.planning => AppStrings.statusPlanning,
@@ -72,7 +55,13 @@ class ActivityListRuntimeScreen extends StatefulWidget {
       _ActivityListRuntimeScreenState();
 }
 
-class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
+class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> with RealtimeBinding<ActivityListRuntimeScreen> {
+  @override
+  String? get realtimeScope => 'group:${widget.groupId}';
+  @override
+  String get realtimePrefix => 'ACTIVITY_';
+  @override
+  Future<void> reloadRealtime() async { await widget.controller.resync(widget.groupId); }
   ActivityStatus? _selectedStatus;
 
   @override
@@ -84,18 +73,18 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           'Hoạt động',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         icon: const Icon(Icons.add),
         label: const Text(AppStrings.createActivity),
         onPressed: () => Navigator.of(context)
@@ -155,10 +144,10 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.error_outline,
                               size: 48,
-                              color: AppColors.error,
+                              color: Theme.of(context).colorScheme.error,
                             ),
                             const SizedBox(height: 12),
                             const Text(
@@ -187,10 +176,10 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.event_available,
                               size: 56,
-                              color: AppColors.outline,
+                              color: Theme.of(context).colorScheme.outline,
                             ),
                             const SizedBox(height: 16),
                             const Text(
@@ -201,11 +190,11 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            const Text(
+                            Text(
                               'Hãy bắt đầu lên kế hoạch vui vẻ cùng nhóm bạn!',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                color: AppColors.onSurfaceVariant,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -244,12 +233,12 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                             : '${item.goingCount} / ${item.maxParticipants} người tham gia';
 
                         return Card(
-                          color: AppColors.surfaceContainerLowest,
+                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
-                            side: const BorderSide(
-                              color: AppColors.outlineVariant,
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.outlineVariant,
                               width: 0.8,
                             ),
                           ),
@@ -271,7 +260,7 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _statusBgColor(item.status),
+                                          color: _statusBgColor(context, item.status),
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
@@ -279,7 +268,7 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                         child: Text(
                                           _statusVietnamese(item.status),
                                           style: TextStyle(
-                                            color: _statusColor(item.status),
+                                            color: _statusColor(context, item.status),
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -293,7 +282,7 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                             vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: _rsvpBgColor(
+                                            color: _rsvpBgColor(context,
                                               item.callerRsvpStatus,
                                             ),
                                             borderRadius: BorderRadius.circular(
@@ -305,7 +294,7 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                               item.callerRsvpStatus,
                                             ),
                                             style: TextStyle(
-                                              color: _rsvpColor(
+                                              color: _rsvpColor(context,
                                                 item.callerRsvpStatus,
                                               ),
                                               fontSize: 11,
@@ -318,26 +307,26 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                   const SizedBox(height: 8),
                                   Text(
                                     item.title,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
-                                      color: AppColors.onSurface,
+                                      color: Theme.of(context).colorScheme.onSurface,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.schedule,
                                         size: 16,
-                                        color: AppColors.onSurfaceVariant,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
                                         scheduleText,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13,
-                                          color: AppColors.onSurfaceVariant,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
@@ -347,10 +336,10 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.location_on_outlined,
                                           size: 16,
-                                          color: AppColors.onSurfaceVariant,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                         const SizedBox(width: 4),
                                         Expanded(
@@ -358,9 +347,9 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                             item.locationName!,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 13,
-                                              color: AppColors.onSurfaceVariant,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                             ),
                                           ),
                                         ),
@@ -374,18 +363,18 @@ class _ActivityListRuntimeScreenState extends State<ActivityListRuntimeScreen> {
                                     children: [
                                       Text(
                                         capacityText,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.primary,
+                                          color: Theme.of(context).colorScheme.primary,
                                         ),
                                       ),
                                       if (item.waitlistCount > 0)
                                         Text(
                                           '${item.waitlistCount} đang chờ',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 12,
-                                            color: AppColors.onSurfaceVariant,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                     ],
@@ -581,13 +570,13 @@ class _ActivityCreateRuntimeScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           AppStrings.createActivity,
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
       ),
       body: Form(
@@ -645,8 +634,8 @@ class _ActivityCreateRuntimeScreenState
                         : '${AppStrings.unscheduled} (thảo luận sau)',
                     style: TextStyle(
                       color: _scheduled
-                          ? AppColors.primary
-                          : AppColors.onSurfaceVariant,
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   value: _scheduled,
@@ -659,12 +648,12 @@ class _ActivityCreateRuntimeScreenState
                 ),
                 if (_scheduled) ...[
                   const Divider(height: 20),
-                  const Text(
+                  Text(
                     'Bắt đầu',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
-                      color: AppColors.onSurface,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -754,12 +743,12 @@ class _ActivityCreateRuntimeScreenState
                   ),
                   if (_hasEndTime) ...[
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Kết thúc',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
-                        color: AppColors.onSurface,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -889,12 +878,12 @@ class _ActivityCreateRuntimeScreenState
 
             // Progressive Disclosure: Advanced Options Card
             Card(
-              color: AppColors.surfaceContainerLowest,
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(
-                  color: AppColors.outlineVariant,
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
                   width: 0.8,
                 ),
               ),
@@ -902,31 +891,31 @@ class _ActivityCreateRuntimeScreenState
                 data: Theme.of(context)
                     .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.tune,
-                    color: AppColors.primary,
+                    color: Theme.of(context).colorScheme.primary,
                     size: 20,
                   ),
-                  title: const Text(
+                  title: Text(
                     AppStrings.advancedOptions,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Số lượng người tham gia và định dạng nâng cao',
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
-                    const Divider(
+                    Divider(
                       height: 1,
-                      color: AppColors.surfaceContainerHigh,
+                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
@@ -1037,12 +1026,12 @@ class _ActivityCreateRuntimeScreenState
                 key: const Key('activity-submit'),
                 onPressed: _submitting ? null : _submit,
                 child: _submitting
-                    ? const SizedBox(
+                    ? SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onPrimary,
                         ),
                       )
                     : const Text(
@@ -1066,11 +1055,11 @@ class _ActivityCreateRuntimeScreenState
     required List<Widget> children,
   }) {
     return Card(
-      color: AppColors.surfaceContainerLowest,
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.outlineVariant, width: 0.8),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 0.8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1079,14 +1068,14 @@ class _ActivityCreateRuntimeScreenState
           children: [
             Row(
               children: [
-                Icon(icon, color: AppColors.primary, size: 20),
+                Icon(icon, color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -1101,6 +1090,9 @@ class _ActivityCreateRuntimeScreenState
 }
 
 class ActivityDetailRuntimeScreen extends StatefulWidget {
+  final VoidCallback? onOpenJourney;
+  final Widget? journeyOverview;
+  final ValueChanged<String>? onOpenMemories;
   final String activityId;
   final ActivityDetailController controller;
   final VoidCallback? onOpenPolls;
@@ -1109,6 +1101,9 @@ class ActivityDetailRuntimeScreen extends StatefulWidget {
   final Widget? reminder;
 
   const ActivityDetailRuntimeScreen({
+    this.onOpenMemories,
+    this.onOpenJourney,
+    this.journeyOverview,
     super.key,
     required this.activityId,
     required this.controller,
@@ -1124,7 +1119,15 @@ class ActivityDetailRuntimeScreen extends StatefulWidget {
 }
 
 class _ActivityDetailRuntimeScreenState
-    extends State<ActivityDetailRuntimeScreen> {
+    extends State<ActivityDetailRuntimeScreen> with RealtimeBinding<ActivityDetailRuntimeScreen> {
+  @override
+  String? get realtimeScope => 'activity:${widget.activityId}';
+  @override
+  String get realtimePrefix => 'ACTIVITY_';
+  @override
+  Future<void> reloadRealtime() async { await widget.controller.resync(widget.activityId); }
+  @override
+  void onRealtimeAccessLost() => widget.controller.denyAccess();
   @override
   void initState() {
     super.initState();
@@ -1157,7 +1160,7 @@ class _ActivityDetailRuntimeScreenState
             child: const Text('Quay lại'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Hủy hoạt động'),
           ),
@@ -1216,13 +1219,13 @@ class _ActivityDetailRuntimeScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           'Chi tiết hoạt động',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         actions: [
           IconButton(
@@ -1245,13 +1248,19 @@ class _ActivityDetailRuntimeScreenState
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.error_outline,
                       size: 48,
-                      color: AppColors.error,
+                      color: Theme.of(context).colorScheme.error,
                     ),
                     const SizedBox(height: 12),
-                    const Text('Không thể tải chi tiết hoạt động.'),
+                    Text(switch (state.failure?.type) {
+                      ActivityFailureType.unauthorized => 'Cần đăng nhập lại để xem hoạt động.',
+                      ActivityFailureType.permission => 'Bạn không có quyền xem hoạt động này.',
+                      ActivityFailureType.notFound => 'Hoạt động không còn tồn tại hoặc bạn không có quyền truy cập.',
+                      ActivityFailureType.network => 'Không thể kết nối đến máy chủ. Vui lòng thử lại.',
+                      _ => 'Không thể tải chi tiết hoạt động.',
+                    }),
                     const SizedBox(height: 12),
                     OutlinedButton(
                       onPressed: () =>
@@ -1277,9 +1286,16 @@ class _ActivityDetailRuntimeScreenState
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
               children: [
+                // Keep section positions stable when connectivity changes.
+                state.failure == null ? const SizedBox.shrink() : const Padding(
+                    key: ValueKey('activity-offline-state'),
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text('Mất kết nối đến máy chủ. Đang hiển thị dữ liệu trước đó.'),
+                  ),
                 // Header & Status
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -1287,13 +1303,13 @@ class _ActivityDetailRuntimeScreenState
                         vertical: 5,
                       ),
                       decoration: BoxDecoration(
-                        color: _statusBgColor(detail.status),
+                        color: _statusBgColor(context, detail.status),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         _statusVietnamese(detail.status),
                         style: TextStyle(
-                          color: _statusColor(detail.status),
+                          color: _statusColor(context, detail.status),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1307,13 +1323,13 @@ class _ActivityDetailRuntimeScreenState
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: _rsvpBgColor(detail.callerRsvpStatus),
+                          color: _rsvpBgColor(context, detail.callerRsvpStatus),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           '${AppStrings.participationStatus}: ${_rsvpVietnamese(detail.callerRsvpStatus)}',
                           style: TextStyle(
-                            color: _rsvpColor(detail.callerRsvpStatus),
+                            color: _rsvpColor(context, detail.callerRsvpStatus),
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1324,10 +1340,10 @@ class _ActivityDetailRuntimeScreenState
                 const SizedBox(height: 12),
                 Text(
                   detail.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.onSurface,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 if (detail.description != null &&
@@ -1335,15 +1351,47 @@ class _ActivityDetailRuntimeScreenState
                   const SizedBox(height: 8),
                   Text(
                     detail.description!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: AppColors.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       height: 1.4,
                     ),
                   ),
                 ],
                 const SizedBox(height: 16),
 
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final width = (constraints.maxWidth - 8) / 2;
+                    Widget action(IconData icon, String label, VoidCallback? onTap) =>
+                        SizedBox(
+                          width: width,
+                          height: 54,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Theme.of(context).colorScheme.primary,
+                              backgroundColor: Theme.of(context).colorScheme.surface,
+                              side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: onTap,
+                            icon: Icon(icon, size: 18),
+                            label: Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ),
+                        );
+                    return Wrap(spacing: 8, runSpacing: 8, children: [
+                      if (widget.onOpenJourney != null)
+                        action(Icons.route_outlined, 'Lịch trình & Check-in', widget.onOpenJourney),
+                      action(Icons.task_alt_outlined, 'Công việc', widget.onOpenTasks),
+                      if (widget.onOpenMemories != null)
+                        action(Icons.photo_library_outlined, 'Khoảnh khắc', () => widget.onOpenMemories!(detail.groupId)),
+                      action(Icons.poll_outlined, 'Bình chọn', widget.onOpenPolls),
+                    ]);
+                  }),
+                ),
+                if(widget.journeyOverview!=null)widget.journeyOverview!,
                 // Creator & Schedule Card
                 _surfaceCard(
                   children: [
@@ -1383,41 +1431,7 @@ class _ActivityDetailRuntimeScreenState
                   const SizedBox(height: 16),
                 ],
 
-                _surfaceCard(
-                  children: [
-                    const Text(
-                      'Công cụ hoạt động',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(
-                        Icons.poll_outlined,
-                        color: AppColors.primary,
-                      ),
-                      title: const Text('Bình chọn'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: widget.onOpenPolls,
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(
-                        Icons.task_alt_outlined,
-                        color: AppColors.primary,
-                      ),
-                      title: const Text('Công việc'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: widget.onOpenTasks,
-                    ),
-                  ],
-                ),
                 if (widget.discussion != null) widget.discussion!,
-                const SizedBox(height: 16),
 
                 // Capacity & Progress Card
                 _surfaceCard(
@@ -1425,21 +1439,21 @@ class _ActivityDetailRuntimeScreenState
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        const Expanded(child: Text(
                           'Số lượng tham gia',
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                           ),
-                        ),
+                        )),
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
                             capacitySummary,
                             textAlign: TextAlign.end,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -1453,29 +1467,30 @@ class _ActivityDetailRuntimeScreenState
                           value: (detail.goingCount / detail.maxParticipants!)
                               .clamp(0.0, 1.0),
                           minHeight: 8,
-                          backgroundColor: AppColors.surfaceContainer,
-                          color: AppColors.primary,
+                          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       const SizedBox(height: 8),
                     ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
                       children: [
                         Text(
                           detail.maxParticipants == null
                               ? 'Mở cho tất cả thành viên'
                               : 'Còn ${(detail.maxParticipants! - detail.goingCount).clamp(0, detail.maxParticipants!)} chỗ',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.secondary,
+                            color: AppSemanticColors.of(context).success,
                           ),
                         ),
                         Text(
                           'Danh sách chờ: ${detail.waitlistCount} người',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.onSurfaceVariant,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -1488,35 +1503,40 @@ class _ActivityDetailRuntimeScreenState
                 if (detail.callerRsvpStatus == ActivityRsvpStatus.waitlist)
                   Card(
                     key: const ValueKey('waitlist-state'),
-                    color: AppColors.primaryFixed,
+                    color: Theme.of(context).colorScheme.primaryContainer,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: ListTile(
-                      leading: const Icon(
+                      leading: Icon(
                         Icons.hourglass_top,
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                       title: Text(
                         "Bạn đang trong danh sách chờ${detail.callerWaitlistPosition == null ? '' : ' (#${detail.callerWaitlistPosition})'}",
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       subtitle: const Text(
                         'Bạn sẽ được tự động tham gia nếu có vị trí trống.',
                       ),
-                      trailing: const Icon(
+                      trailing: Icon(
                         Icons.chevron_right,
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => ActivityWaitlistRuntimeScreen(
-                            detail: detail,
-                            onChangeRsvp: () => Navigator.of(context).pop(),
+                          builder: (_) => ValueListenableBuilder<ActivityDetailState>(
+                            valueListenable: widget.controller,
+                            builder: (_, current, _) => current.detail == null
+                                ? const Scaffold(body: Center(child: Text('Không thể tải hoạt động.')))
+                                : ActivityWaitlistRuntimeScreen(
+                                    detail: current.detail!,
+                                    onChangeRsvp: () => Navigator.of(context).pop(),
+                                  ),
                           ),
                         ),
                       ),
@@ -1537,11 +1557,11 @@ class _ActivityDetailRuntimeScreenState
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Chọn trạng thái tham gia của bạn:',
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -1568,7 +1588,7 @@ class _ActivityDetailRuntimeScreenState
                                 ? Icons.cancel_outlined
                                 : Icons.lock_outline,
                             size: 20,
-                            color: AppColors.onSurfaceVariant,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -1578,10 +1598,10 @@ class _ActivityDetailRuntimeScreenState
                                   : detail.status == ActivityStatus.cancelled
                                   ? 'Hoạt động đã bị hủy.'
                                   : 'Đăng ký tham gia đã đóng.',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.onSurfaceVariant,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -1592,9 +1612,9 @@ class _ActivityDetailRuntimeScreenState
                         const SizedBox(height: 8),
                         Text(
                           'Trạng thái của bạn: ${_rsvpVietnamese(detail.callerRsvpStatus)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
-                            color: AppColors.onSurfaceVariant,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -1608,11 +1628,11 @@ class _ActivityDetailRuntimeScreenState
                   children: [
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: const CircleAvatar(
-                        backgroundColor: AppColors.primaryFixed,
+                      leading: CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                         child: Icon(
                           Icons.people_outline,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       title: const Text(
@@ -1625,8 +1645,11 @@ class _ActivityDetailRuntimeScreenState
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => ActivityParticipantsRuntimeScreen(
-                            participants: state.participants,
+                          builder: (_) => ValueListenableBuilder<ActivityDetailState>(
+                            valueListenable: widget.controller,
+                            builder: (_, current, _) => ActivityParticipantsRuntimeScreen(
+                              participants: current.participants,
+                            ),
                           ),
                         ),
                       ),
@@ -1682,7 +1705,7 @@ class _ActivityDetailRuntimeScreenState
                           if (detail.permissions.canCancel)
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.error,
+                                foregroundColor: Theme.of(context).colorScheme.error,
                               ),
                               onPressed: _handleCancel,
                               icon: const Icon(Icons.cancel_outlined),
@@ -1703,11 +1726,11 @@ class _ActivityDetailRuntimeScreenState
 
   Widget _surfaceCard({required List<Widget> children}) {
     return Card(
-      color: AppColors.surfaceContainerLowest,
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.outlineVariant, width: 0.8),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 0.8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1723,14 +1746,14 @@ class _ActivityDetailRuntimeScreenState
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: AppColors.primary),
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
-              color: AppColors.onSurface,
+              color: Theme.of(context).colorScheme.onSurface,
               height: 1.3,
             ),
           ),
@@ -1939,13 +1962,13 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
         widget.detail.status == ActivityStatus.inProgress;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           'Chỉnh sửa hoạt động',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
       ),
       body: Form(
@@ -2021,8 +2044,8 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
                         : '${AppStrings.unscheduled} (thảo luận sau)',
                     style: TextStyle(
                       color: _scheduled
-                          ? AppColors.primary
-                          : AppColors.onSurfaceVariant,
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   value: _scheduled,
@@ -2035,12 +2058,12 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
                 ),
                 if (_scheduled) ...[
                   const Divider(height: 20),
-                  const Text(
+                  Text(
                     'Bắt đầu',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
-                      color: AppColors.onSurface,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2130,12 +2153,12 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
                   ),
                   if (_hasEndTime) ...[
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Kết thúc',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
-                        color: AppColors.onSurface,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -2258,12 +2281,12 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
             ),
             const SizedBox(height: 16),
             Card(
-              color: AppColors.surfaceContainerLowest,
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(
-                  color: AppColors.outlineVariant,
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
                   width: 0.8,
                 ),
               ),
@@ -2271,31 +2294,31 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
                 data: Theme.of(context)
                     .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.tune,
-                    color: AppColors.primary,
+                    color: Theme.of(context).colorScheme.primary,
                     size: 20,
                   ),
-                  title: const Text(
+                  title: Text(
                     AppStrings.advancedOptions,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Số lượng người tham gia và định dạng nâng cao',
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.onSurfaceVariant,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
-                    const Divider(
+                    Divider(
                       height: 1,
-                      color: AppColors.surfaceContainerHigh,
+                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
@@ -2366,12 +2389,12 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
               child: FilledButton(
                 onPressed: _saving ? null : _save,
                 child: _saving
-                    ? const SizedBox(
+                    ? SizedBox(
                         height: 20,
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onPrimary,
                         ),
                       )
                     : const Text(
@@ -2395,11 +2418,11 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
     required List<Widget> children,
   }) {
     return Card(
-      color: AppColors.surfaceContainerLowest,
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppColors.outlineVariant, width: 0.8),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 0.8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2408,14 +2431,14 @@ class _ActivityEditRuntimeScreenState extends State<ActivityEditRuntimeScreen> {
           children: [
             Row(
               children: [
-                Icon(icon, color: AppColors.primary, size: 20),
+                Icon(icon, color: Theme.of(context).colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -2453,13 +2476,13 @@ class _ActivityParticipantsRuntimeScreenState
         : widget.participants.where((p) => p.rsvpStatus == _filter).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text(
           'Người tham gia',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
       ),
       body: SafeArea(
@@ -2513,23 +2536,23 @@ class _ActivityParticipantsRuntimeScreenState
                             : '?';
 
                         return Card(
-                          color: AppColors.surfaceContainerLowest,
+                          color: Theme.of(context).colorScheme.surfaceContainerLowest,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            side: const BorderSide(
-                              color: AppColors.outlineVariant,
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.outlineVariant,
                               width: 0.6,
                             ),
                           ),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: AppColors.primaryFixed,
+                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                               child: Text(
                                 initials,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                             ),
@@ -2548,7 +2571,7 @@ class _ActivityParticipantsRuntimeScreenState
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: _rsvpBgColor(p.rsvpStatus),
+                                color: _rsvpBgColor(context, p.rsvpStatus),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
@@ -2557,7 +2580,7 @@ class _ActivityParticipantsRuntimeScreenState
                                     ? 'CHỜ · #${p.waitlistSequence}'
                                     : _rsvpVietnamese(p.rsvpStatus),
                                 style: TextStyle(
-                                  color: _rsvpColor(p.rsvpStatus),
+                                  color: _rsvpColor(context, p.rsvpStatus),
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -2593,10 +2616,10 @@ class ActivityWaitlistRuntimeScreen extends StatelessWidget {
         : '${detail.goingCount} / ${detail.maxParticipants} người tham gia';
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Danh sách chờ'),
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
       ),
       body: SafeArea(
@@ -2605,51 +2628,55 @@ class ActivityWaitlistRuntimeScreen extends StatelessWidget {
           child: Column(
             children: [
               const Spacer(),
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 44,
-                backgroundColor: AppColors.primaryFixed,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                 child: Icon(
                   Icons.hourglass_top,
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                   size: 44,
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Bạn đang trong danh sách chờ',
+              Text(
+                detail.callerRsvpStatus == ActivityRsvpStatus.waitlist
+                    ? 'Bạn đang trong danh sách chờ'
+                    : _rsvpVietnamese(detail.callerRsvpStatus),
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 detail.title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 16,
-                  color: AppColors.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 24),
               Text(
-                'Bạn đang ở vị trí #$position trong hàng đợi',
+                detail.callerRsvpStatus == ActivityRsvpStatus.waitlist
+                    ? 'Bạn đang ở vị trí #$position trong hàng đợi'
+                    : 'Trạng thái đăng ký đã được cập nhật',
                 key: const ValueKey('queue-position'),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 24),
               Card(
-                color: AppColors.surfaceContainerLowest,
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(
-                    color: AppColors.outlineVariant,
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
                     width: 0.8,
                   ),
                 ),
@@ -2665,12 +2692,12 @@ class ActivityWaitlistRuntimeScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Khi một người tham gia thay đổi trạng thái, thành viên đăng ký sớm nhất trong danh sách chờ sẽ được tự động tham gia.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           height: 1.4,
                         ),
                       ),

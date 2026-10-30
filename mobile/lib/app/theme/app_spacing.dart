@@ -1,5 +1,7 @@
 /// Minimal spacing and layout dimensions used across WeDo auth screens.
 abstract final class AppSpacing {
+  static const double xxs = 4.0;
+  static const double compact = 12.0;
   static const double xs = 8.0;
   static const double sm = 16.0;
   static const double md = 20.0;

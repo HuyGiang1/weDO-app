@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../app/theme/app_theme.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../core/utils/date_time_formatter.dart';
 import '../../application/group_activity_log_controller.dart';
 import '../../data/models/group_models.dart';
@@ -93,7 +93,7 @@ class _ActivityTimeline extends StatelessWidget {
         top: 0,
         bottom: 24,
         left: 23,
-        child: Container(width: 2, color: const Color(0xFFCCC3D8).withValues(alpha: .45)),
+        child: Container(width: 2, color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .45)),
       ),
       Column(
         children: [
@@ -109,7 +109,7 @@ class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.activity});
   @override
   Widget build(BuildContext context) {
-    final visual = activityVisual(activity.action);
+    final visual = activityVisual(activity.action, context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
       child: Row(
@@ -131,11 +131,9 @@ class _ActivityRow extends StatelessWidget {
               margin: const EdgeInsets.only(top: 4),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x0A7C3AED), blurRadius: 20, offset: Offset(0, 4)),
-                ],
+
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,7 +142,7 @@ class _ActivityRow extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     formatActivityTimestamp(activity.createdAt),
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF4A4455)),
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -163,22 +161,25 @@ class ActivityVisual {
   const ActivityVisual(this.icon, this.color, this.message);
 }
 
-ActivityVisual activityVisual(String action) => switch (action) {
-  'GROUP_CREATED' => const ActivityVisual(Icons.group_add, AppColors.primary, 'Nhóm được tạo'),
-  'GROUP_UPDATED' => const ActivityVisual(Icons.edit, AppColors.primary, 'Thông tin nhóm đã được cập nhật'),
-  'GROUP_SETTINGS_UPDATED' => const ActivityVisual(Icons.tune, Color(0xFF006B5F), 'Cài đặt nhóm đã được cập nhật'),
-  'GROUP_ADMIN_PROMOTED' => const ActivityVisual(Icons.admin_panel_settings, AppColors.primary, 'Một thành viên đã được nâng làm Quản trị viên'),
-  'GROUP_ADMIN_DEMOTED' => const ActivityVisual(Icons.person_outline, Color(0xFF006B5F), 'Một Quản trị viên đã chuyển thành Thành viên'),
-  'GROUP_MEMBER_KICKED' => const ActivityVisual(Icons.person_remove, Color(0xFF7D3D00), 'Một thành viên đã bị xóa khỏi nhóm'),
-  'GROUP_MEMBER_LEFT' => const ActivityVisual(Icons.logout, Color(0xFF7D3D00), 'Một thành viên đã rời nhóm'),
-  'GROUP_OWNERSHIP_TRANSFERRED' => const ActivityVisual(Icons.swap_horiz, AppColors.primary, 'Quyền sở hữu nhóm đã được chuyển giao'),
-  'ACTIVITY_CREATED' => const ActivityVisual(Icons.add_circle_outline, AppColors.primary, 'Hoạt động mới đã được tạo'),
-  'ACTIVITY_CONFIRMED' => const ActivityVisual(Icons.check_circle_outline, Color(0xFF006B5F), 'Hoạt động đã được xác nhận'),
-  'ACTIVITY_UPDATED' => const ActivityVisual(Icons.edit_calendar, AppColors.primary, 'Hoạt động đã được cập nhật'),
-  'ACTIVITY_CANCELLED' => const ActivityVisual(Icons.cancel_outlined, Color(0xFFBA1A1A), 'Hoạt động đã bị hủy'),
-  'ACTIVITY_COMPLETED' => const ActivityVisual(Icons.done_all, Color(0xFF006B5F), 'Hoạt động đã hoàn thành'),
-  _ => const ActivityVisual(Icons.info_outline, Color(0xFF4A4455), 'Hoạt động nhóm được cập nhật'),
+ActivityVisual activityVisual(String action, [BuildContext? context]) {
+  final colors = context == null ? AppTheme.light.colorScheme : Theme.of(context).colorScheme;
+  return switch (action) {
+  'GROUP_CREATED' => ActivityVisual(Icons.group_add, colors.primary, 'Nhóm được tạo'),
+  'GROUP_UPDATED' => ActivityVisual(Icons.edit, colors.primary, 'Thông tin nhóm đã được cập nhật'),
+  'GROUP_SETTINGS_UPDATED' => ActivityVisual(Icons.tune, colors.onSurfaceVariant, 'Cài đặt nhóm đã được cập nhật'),
+  'GROUP_ADMIN_PROMOTED' => ActivityVisual(Icons.admin_panel_settings, colors.primary, 'Một thành viên đã được nâng làm Quản trị viên'),
+  'GROUP_ADMIN_DEMOTED' => ActivityVisual(Icons.person_outline, colors.onSurfaceVariant, 'Một Quản trị viên đã chuyển thành Thành viên'),
+  'GROUP_MEMBER_KICKED' => ActivityVisual(Icons.person_remove, colors.onSurfaceVariant, 'Một thành viên đã bị xóa khỏi nhóm'),
+  'GROUP_MEMBER_LEFT' => ActivityVisual(Icons.logout, colors.onSurfaceVariant, 'Một thành viên đã rời nhóm'),
+  'GROUP_OWNERSHIP_TRANSFERRED' => ActivityVisual(Icons.swap_horiz, colors.primary, 'Quyền sở hữu nhóm đã được chuyển giao'),
+  'ACTIVITY_CREATED' => ActivityVisual(Icons.add_circle_outline, colors.primary, 'Hoạt động mới đã được tạo'),
+  'ACTIVITY_CONFIRMED' => ActivityVisual(Icons.check_circle_outline, colors.onSurfaceVariant, 'Hoạt động đã được xác nhận'),
+  'ACTIVITY_UPDATED' => ActivityVisual(Icons.edit_calendar, colors.primary, 'Hoạt động đã được cập nhật'),
+  'ACTIVITY_CANCELLED' => ActivityVisual(Icons.cancel_outlined, colors.error, 'Hoạt động đã bị hủy'),
+  'ACTIVITY_COMPLETED' => ActivityVisual(Icons.done_all, colors.onSurfaceVariant, 'Hoạt động đã hoàn thành'),
+  _ => ActivityVisual(Icons.info_outline, colors.onSurfaceVariant, 'Hoạt động nhóm được cập nhật'),
 };
+}
 
 String formatActivityTimestamp(DateTime value, {DateTime? now}) {
   return AppDateTimeFormatter.formatRelativeTime(value, clockNow: now);

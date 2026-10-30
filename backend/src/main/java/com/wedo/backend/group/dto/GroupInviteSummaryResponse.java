@@ -11,8 +11,15 @@ public record GroupInviteSummaryResponse(
         String description,
         String avatarStorageKey,
         long memberCount,
-        GroupJoinPolicy joinPolicy
+        GroupJoinPolicy joinPolicy,
+        boolean alreadyMember,
+        boolean requestPending
 ) {
+    public GroupInviteSummaryResponse(UUID groupId, String name, String description, String avatarStorageKey,
+                                      long memberCount, GroupJoinPolicy joinPolicy) {
+        this(groupId, name, description, avatarStorageKey, memberCount, joinPolicy, false, false);
+    }
+
     public static GroupInviteSummaryResponse of(GroupEntity group, long memberCount, GroupJoinPolicy joinPolicy) {
         return new GroupInviteSummaryResponse(
                 group.getId(),

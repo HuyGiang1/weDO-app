@@ -46,6 +46,12 @@ abstract class ChatRealtimeClient {
   void dispose();
 }
 
+abstract class ScopedRealtimeClient {
+  void subscribeScope(String scope);
+  void unsubscribeScope(String scope);
+  void retryDeniedScopes();
+}
+
 class NoopChatRealtimeClient implements ChatRealtimeClient {
   const NoopChatRealtimeClient();
 
@@ -88,7 +94,9 @@ class NoopChatRealtimeClient implements ChatRealtimeClient {
   void dispose() {}
 }
 
-class WebSocketChatRealtimeClient implements ChatRealtimeClient {
+class WebSocketChatRealtimeClient implements ChatRealtimeClient, ScopedRealtimeClient {
+  final Set<String> _scopes = <String>{};
+  final Set<String> _deniedScopes = <String>{};
   final String baseUrl;
   final String? Function() accessTokenProvider;
   final ChatSocketConnector _connector;
@@ -109,6 +117,8 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
   bool _shouldStayConnected = false;
   bool _disposed = false;
   int _reconnectAttempts = 0;
+  int _socketGeneration = 0;
+  bool _authRecoveryRequested = false;
 
   WebSocketChatRealtimeClient({
     required this.baseUrl,
@@ -152,6 +162,7 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
 
   Future<void> _openSocket({required bool reconnecting}) async {
     if (_disposed || !_shouldStayConnected) return;
+    final generation = ++_socketGeneration;
     final token = accessTokenProvider()?.trim();
     if (token == null || token.isEmpty) {
       _setState(ChatRealtimeConnectionState.disconnected);
@@ -169,25 +180,29 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
       final socket = await _connector(wsUrl, {
         'Authorization': 'Bearer $token',
       });
-      if (_disposed || !_shouldStayConnected) {
+      if (_disposed || !_shouldStayConnected || generation != _socketGeneration) {
         await socket.close();
         return;
       }
       _socket = socket;
+      _authRecoveryRequested = false;
       _reconnectAttempts = 0;
       _sentSubscribesOnSocket.clear();
       _setState(ChatRealtimeConnectionState.connected);
 
       _socketSubscription?.cancel();
       _socketSubscription = socket.stream.listen(
-        _onRawFrame,
-        onError: (_) => _handleSocketClosed(),
-        onDone: _handleSocketClosed,
+        (frame) { if (generation == _socketGeneration) _onRawFrame(frame); },
+        onError: (_) { if (generation == _socketGeneration) _handleSocketClosed(); },
+        onDone: () { if (generation == _socketGeneration) _handleSocketClosed(); },
         cancelOnError: true,
       );
 
       for (final conversationId in _subscribedConversations) {
         _sendSubscribeFrame(conversationId);
+      }
+      for (final scope in _scopes) {
+        _sendJson({'type': 'SUBSCRIBE_SCOPE', 'scope': scope});
       }
 
       _heartbeatTimer?.cancel();
@@ -195,8 +210,23 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
         const Duration(seconds: 25),
         (_) => _sendJson({'type': 'PING'}),
       );
-    } catch (_) {
-      _scheduleReconnect();
+    } catch (error) {
+      if (generation == _socketGeneration) {
+        // The initial reconnect resync may have failed while offline. A later
+        // reachable 401 must exercise REST's existing auth refresh once, rather
+        // than retrying the same expired handshake token forever. This signal
+        // grants no access and does not rotate/replay anything itself.
+        if (error is WebSocketException && error.httpStatusCode == 401 &&
+            !_authRecoveryRequested && !_disposed && _shouldStayConnected) {
+          _authRecoveryRequested = true;
+          _eventController.add(const ChatRealtimeEvent(
+            type: ChatRealtimeEventType.error,
+            rawType: 'ERROR',
+            errorCode: 'WS_HANDSHAKE_UNAUTHORIZED',
+          ));
+        }
+        _scheduleReconnect();
+      }
     }
   }
 
@@ -218,6 +248,14 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
       final event = ChatRealtimeEvent.fromJson(
         Map<String, dynamic>.from(decoded),
       );
+      final scope = decoded['scope'];
+      if (scope is String && _scopes.contains(scope)) {
+        if (decoded['type'] == 'SCOPE_DENIED' || decoded['type'] == 'SCOPE_REVOKED') {
+          _deniedScopes.add(scope);
+        } else if (decoded['type'] == 'SCOPE_SUBSCRIBED') {
+          _deniedScopes.remove(scope);
+        }
+      }
       if (event.eventId != null) {
         if (!_seenEventIds.add(event.eventId!)) return;
         if (_seenEventIds.length > 2000) {
@@ -234,6 +272,7 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
   }
 
   void _handleSocketClosed() {
+    _socketGeneration++;
     _heartbeatTimer?.cancel();
     _socketSubscription?.cancel();
     _socketSubscription = null;
@@ -286,6 +325,29 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
   }
 
   @override
+  void subscribeScope(String scope) {
+    final shouldSend = _scopes.add(scope) || _deniedScopes.contains(scope);
+    if (shouldSend && _state == ChatRealtimeConnectionState.connected) {
+      _sendJson({'type': 'SUBSCRIBE_SCOPE', 'scope': scope});
+    }
+  }
+
+  @override
+  void unsubscribeScope(String scope) {
+    _deniedScopes.remove(scope);
+    if (_scopes.remove(scope)) {
+      _sendJson({'type': 'UNSUBSCRIBE_SCOPE', 'scope': scope});
+    }
+  }
+
+  @override
+  void retryDeniedScopes() {
+    for (final scope in Set<String>.of(_deniedScopes)) {
+      _sendJson({'type': 'SUBSCRIBE_SCOPE', 'scope': scope});
+    }
+  }
+
+  @override
   void unsubscribeConversation(String conversationId) {
     _subscribedConversations.remove(conversationId);
     _sentSubscribesOnSocket.remove(conversationId);
@@ -331,6 +393,8 @@ class WebSocketChatRealtimeClient implements ChatRealtimeClient {
 
   @override
   Future<void> disconnect() async {
+    _socketGeneration++;
+    _authRecoveryRequested = false;
     _shouldStayConnected = false;
     _reconnectTimer?.cancel();
     _heartbeatTimer?.cancel();

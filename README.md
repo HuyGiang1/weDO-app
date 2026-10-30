@@ -2,6 +2,22 @@
 
 weDO is a mobile platform for private group communication, activities, collaboration and shared finance.
 
+For a separate Windows laptop + Android Emulator environment, use
+[the teammate onboarding guide](docs/TEAMMATE_WINDOWS_ANDROID.md). It includes
+generated local secrets, isolated Docker services, a no-Firebase core mode,
+and explicit MinIO licensing/optional FCM prerequisites. It does not reuse QA data.
+
+## Authentication configuration
+
+Runtime signing keys/pepper and local account passwords have **no committed
+fallbacks**. Windows developers should use the teammate guide above to generate
+an ignored `.env.teammate`. A platform-neutral generator is also available:
+`python scripts/generate-local-secrets.py --output .env.local` (refuses overwrite).
+Generated env files are data: load their values explicitly into the backend
+process environment; Spring does not automatically import arbitrary dotenv files.
+Never reuse historical Git values or copy QA credentials. Existing Git history
+still contains retired local defaults; history has not been rewritten.
+
 ## Tech Stack
 
 ### Mobile
@@ -76,7 +92,7 @@ Example:
 WEDO_DB_NAME=wedo
 WEDO_DB_URL=jdbc:postgresql://localhost:5432/wedo
 WEDO_DB_USERNAME=wedo
-WEDO_DB_PASSWORD=wedo_local
+WEDO_DB_PASSWORD=<YOUR_GENERATED_LOCAL_DB_PASSWORD>
 
 WEDO_REDIS_HOST=localhost
 WEDO_REDIS_PORT=6379

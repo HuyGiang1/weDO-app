@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
@@ -22,15 +24,8 @@ class WelcomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              AppColors.backgroundGradientStart,
-              AppColors.backgroundGradientEnd,
-            ],
-          ),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
         ),
         child: SafeArea(
           child: LayoutBuilder(
@@ -38,9 +33,7 @@ class WelcomeScreen extends StatelessWidget {
               return SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                  ),
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
@@ -85,9 +78,9 @@ class _BrandSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Text(
+    return Text(
       'WeDo',
-      style: AppTextStyles.brand,
+      style: AppTextStyles.of(context).brand,
       textAlign: TextAlign.center,
     );
   }
@@ -117,28 +110,16 @@ class _IllustrationSection extends StatelessWidget {
                   width: double.infinity,
                   height: double.infinity,
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(32.0),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: AppColors.primaryShadow,
-                        blurRadius: 24.0,
-                        offset: Offset(0, 8),
-                      ),
-                    ],
                   ),
                 ),
               ),
             ),
             // Foreground image asset
             ClipRRect(
-              borderRadius: BorderRadius.circular(24.0),
-              child: Image.asset(
-                'assets/images/wedo_logo.png',
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-              ),
+              borderRadius: BorderRadius.circular(12),
+              child: const WeDoBrandMark(size: 72),
             ),
           ],
         ),
@@ -152,17 +133,17 @@ class _CopySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       children: [
         Text(
           'Squad up.',
-          style: AppTextStyles.headline,
+          style: AppTextStyles.of(context).headline,
           textAlign: TextAlign.center,
         ),
         SizedBox(height: AppSpacing.xs),
         Text(
           'Coordinate, share, and settle up with your squad effortlessly.',
-          style: AppTextStyles.subtitle,
+          style: AppTextStyles.of(context).subtitle,
           textAlign: TextAlign.center,
         ),
       ],
@@ -185,29 +166,22 @@ class _ActionSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999.0),
-            boxShadow: const [
-              BoxShadow(
-                color: AppColors.primaryShadow,
-                blurRadius: 16.0,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
           child: SizedBox(
             height: AppSpacing.buttonHeight,
             child: ElevatedButton(
               onPressed: onCreateAccountPressed,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 elevation: 0,
-                shape: const StadiumBorder(),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
               ),
-              child: const Text(
+              child: Text(
                 'Create Account',
-                style: AppTextStyles.buttonPrimary,
+                style: AppTextStyles.of(context).buttonPrimary,
               ),
             ),
           ),
@@ -218,17 +192,19 @@ class _ActionSection extends StatelessWidget {
           child: OutlinedButton(
             onPressed: onLoginPressed,
             style: OutlinedButton.styleFrom(
-              backgroundColor: AppColors.surface,
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(
-                color: AppColors.outlineVariant,
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              foregroundColor: Theme.of(context).colorScheme.primary,
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
                 width: 1.0,
               ),
-              shape: const StadiumBorder(),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
             ),
-            child: const Text(
+            child: Text(
               'Login',
-              style: AppTextStyles.buttonSecondary,
+              style: AppTextStyles.of(context).buttonSecondary,
             ),
           ),
         ),

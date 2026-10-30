@@ -25,13 +25,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JwtServiceTest {
 
     // 256-bit Base64-encoded secret keys
-    private static final String SECRET_A = "HtYDoxLoUE6DB2ghGul6hVTMTMpg0ysFkJPvuDWf8aU=";
-    private static final String SECRET_B = "1WZTYD0Q6/LbmgH08YrpYg+Xwsn19ZXp2M3WObbPl/4=";
+    private static final String SECRET_A = freshTestKey();
+    private static final String SECRET_B = freshTestKey();
     private static final Duration TTL_15M = Duration.ofMinutes(15);
 
     private Instant t0;
     private Clock clockAtT0;
     private JwtService jwtService;
+
+    private static String freshTestKey() {
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getEncoder().encodeToString(bytes);
+    }
 
     @BeforeEach
     void setUp() {

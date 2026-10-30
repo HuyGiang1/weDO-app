@@ -10,6 +10,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 @Component
 public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatRealtimeCoordinator coordinator;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.wedo.backend.realtime.DomainRealtimeCoordinator domain;
 
     public ChatWebSocketHandler(ChatRealtimeCoordinator coordinator) {
         this.coordinator = coordinator;
@@ -23,21 +25,26 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         coordinator.registerSession(session, userId);
+        domain.register(session, userId);
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        coordinator.handleClientCommand(session, message.getPayload());
+        if (!domain.command(session, message.getPayload())) {
+            coordinator.handleClientCommand(session, message.getPayload());
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         coordinator.unregisterSession(session);
+        domain.unregister(session);
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
         coordinator.unregisterSession(session);
+        domain.unregister(session);
         if (session.isOpen()) {
             session.close(CloseStatus.SERVER_ERROR);
         }

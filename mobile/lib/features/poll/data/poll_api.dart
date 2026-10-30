@@ -1,11 +1,26 @@
 import 'package:dio/dio.dart';
 
+import 'dart:math';
+
 import '../../../core/network/api_exception.dart';
 import 'poll_models.dart';
 
 class PollApi {
+  static String newCommandId() {
+    final random = Random.secure();
+    final b = List.generate(16, (_) => random.nextInt(256));
+    b[6] = (b[6] & 15) | 64;
+    b[8] = (b[8] & 63) | 128;
+    final h = b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
+  }
+
   final Dio dio;
   PollApi(this.dio);
+  Future<List<Poll>> listGroup(String groupId) => _list(
+    () => dio.get('/api/v1/groups/${Uri.encodeComponent(groupId)}/polls'),
+    Poll.fromJson,
+  );
   Future<T> _object<T>(
     Future<Response<dynamic>> Function() call,
     T Function(Map<String, dynamic>) parse,
@@ -50,10 +65,17 @@ class PollApi {
     ),
     Poll.fromJson,
   );
-  Future<Poll> vote(String id, List<String> optionIds) => _object(
+  Future<Poll> vote(
+    String id,
+    List<String> optionIds, {
+    String? clientRequestId,
+  }) => _object(
     () => dio.put(
       '/api/v1/polls/${Uri.encodeComponent(id)}/vote',
-      data: {'optionIds': optionIds},
+      data: {
+        'optionIds': optionIds,
+        'clientRequestId': clientRequestId ?? newCommandId(),
+      },
     ),
     Poll.fromJson,
   );

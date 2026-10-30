@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class FriendshipService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private final FriendshipRepository friendshipRepository;
     private final UserRepository userRepository;
@@ -70,5 +72,6 @@ public class FriendshipService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.FRIENDSHIP_NOT_FOUND);
         }
+        if (realtime != null) { realtime.user("FRIEND_REMOVED", currentUserId); realtime.user("FRIEND_REMOVED", targetUserId); }
     }
 }

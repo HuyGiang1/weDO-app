@@ -37,6 +37,8 @@ import java.util.stream.Stream;
 @Service
 @Transactional
 public class FriendRequestService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private static final Duration DECLINE_COOLDOWN = Duration.ofHours(24);
 
@@ -46,6 +48,7 @@ public class FriendRequestService {
     private final UserRepository userRepository;
     private final UserPrivacySettingsRepository userPrivacySettingsRepository;
     private final MutualGroupChecker mutualGroupChecker;
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     public FriendRequestService(
             FriendRequestRepository friendRequestRepository,
@@ -53,7 +56,8 @@ public class FriendRequestService {
             UserBlockRepository userBlockRepository,
             UserRepository userRepository,
             UserPrivacySettingsRepository userPrivacySettingsRepository,
-            MutualGroupChecker mutualGroupChecker
+            MutualGroupChecker mutualGroupChecker,
+            org.springframework.context.ApplicationEventPublisher eventPublisher
     ) {
         this.friendRequestRepository = friendRequestRepository;
         this.friendshipRepository = friendshipRepository;
@@ -61,6 +65,7 @@ public class FriendRequestService {
         this.userRepository = userRepository;
         this.userPrivacySettingsRepository = userPrivacySettingsRepository;
         this.mutualGroupChecker = mutualGroupChecker;
+        this.eventPublisher = eventPublisher;
     }
 
     public FriendRequestResponse sendFriendRequest(UUID senderId, UUID targetUserId) {
@@ -117,6 +122,7 @@ public class FriendRequestService {
             throw new BusinessException(ErrorCode.FRIEND_REQUEST_ALREADY_PENDING);
         }
 
+        if (realtime != null) { realtime.user("FRIEND_REQUESTED", senderId); realtime.user("FRIEND_REQUESTED", targetUserId); }
         return FriendRequestResponse.of(
                 newRequest,
                 SocialUserSummaryDto.from(sender),
@@ -180,6 +186,18 @@ public class FriendRequestService {
         UserEntity sender = userRepository.findById(request.getSenderId()).orElse(null);
         UserEntity receiver = userRepository.findById(request.getReceiverId()).orElse(null);
 
+        // The atomic PENDING -> ACCEPTED transition above admits one winner.
+        // A stable per-request event key also deduplicates inbox delivery retries.
+        if (eventPublisher != null) {
+            String name = receiver == null ? "Người dùng" : receiver.getDisplayName();
+            eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
+                    "FRIEND_REQUEST_ACCEPTED:" + requestId, "FRIEND_REQUEST_ACCEPTED", "SOCIAL", "NORMAL", false,
+                    currentUserId, null, List.of(request.getSenderId()), "Lời mời kết bạn đã được chấp nhận",
+                    name + " đã chấp nhận lời mời kết bạn", "SOCIAL", null, "/profile/friends",
+                    Map.of("userId", currentUserId.toString()), now));
+        }
+
+        if (realtime != null) { realtime.user("FRIEND_ACCEPTED", request.getSenderId()); realtime.user("FRIEND_ACCEPTED", request.getReceiverId()); }
         return FriendRequestResponse.of(
                 request,
                 SocialUserSummaryDto.from(sender),
@@ -207,6 +225,7 @@ public class FriendRequestService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.CONFLICT);
         }
+        if (realtime != null) { realtime.user("FRIEND_DECLINED", request.getSenderId()); realtime.user("FRIEND_DECLINED", request.getReceiverId()); }
     }
 
     public void cancelFriendRequest(UUID currentUserId, UUID requestId) {
@@ -229,6 +248,7 @@ public class FriendRequestService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.CONFLICT);
         }
+        if (realtime != null) { realtime.user("FRIEND_CANCELLED", request.getSenderId()); realtime.user("FRIEND_CANCELLED", request.getReceiverId()); }
     }
 
     private PagedResponse<FriendRequestResponse> mapToPagedResponse(Page<FriendRequestEntity> page) {

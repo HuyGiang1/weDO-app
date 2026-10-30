@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../application/social_controllers.dart';
@@ -30,7 +30,14 @@ class FriendsScreen extends StatefulWidget {
   State<FriendsScreen> createState() => _FriendsScreenState();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
+class _FriendsScreenState extends State<FriendsScreen> with RealtimeBinding<FriendsScreen> {
+  @override
+  String? get realtimeScope => 'user:self';
+  @override
+  String get realtimePrefix => 'FRIEND_';
+  @override
+  Future<void> reloadRealtime() async { await widget.controller.loadFriends(refresh: true); }
+
   final ScrollController _scrollController = ScrollController();
   String? _unfriendingUserId;
 
@@ -90,32 +97,32 @@ class _FriendsScreenState extends State<FriendsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         toolbarHeight: 64.0,
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: Text(
           'Bạn bè',
-          style: AppTextStyles.headline.copyWith(
+          style: AppTextStyles.of(context).headline.copyWith(
             fontSize: 24.0,
             fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         actions: [
           if (widget.onOpenFriendRequests != null)
             IconButton(
               icon: const Icon(Icons.person_add_rounded),
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               tooltip: 'Lời mời kết bạn',
               onPressed: widget.onOpenFriendRequests,
             ),
           if (widget.onOpenBlockedUsers != null)
             IconButton(
               icon: const Icon(Icons.block_rounded),
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               tooltip: 'Đã chặn',
               onPressed: widget.onOpenBlockedUsers,
             ),
@@ -129,8 +136,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
             valueListenable: widget.controller.friends,
             builder: (context, state, _) {
               if (state.isLoading) {
-                return const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
+                return Center(
+                  child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                 );
               }
 
@@ -145,7 +152,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
               if (state.isEmpty || state.items.isEmpty) {
                 return RefreshIndicator(
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                   onRefresh: () => widget.controller.loadFriends(refresh: true),
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -165,7 +172,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               }
 
               return RefreshIndicator(
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
                 onRefresh: () => widget.controller.loadFriends(refresh: true),
                 child: ListView.separated(
                   controller: _scrollController,
@@ -190,7 +197,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                           ),
                         );
                       }
-                      return const Padding(
+                      return Padding(
                         padding: EdgeInsets.all(AppSpacing.md),
                         child: Center(
                           child: SizedBox(
@@ -198,7 +205,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                             height: 24.0,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              color: AppColors.primary,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -211,15 +218,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLowest,
+                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
                         borderRadius: BorderRadius.circular(12.0),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: AppColors.softShadow,
-                            blurRadius: 20.0,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
+
                       ),
                       padding: const EdgeInsets.all(16.0),
                       child: Row(
@@ -237,10 +238,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
                               children: [
                                 Text(
                                   item.friend.displayName,
-                                  style: AppTextStyles.label.copyWith(
+                                  style: AppTextStyles.of(context).label.copyWith(
                                     fontSize: 14.0,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.onSurface,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -248,9 +249,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
                                 const SizedBox(height: 2.0),
                                 Text(
                                   '@${item.friend.username}',
-                                  style: AppTextStyles.bodyMedium.copyWith(
+                                  style: AppTextStyles.of(context).bodyMedium.copyWith(
                                     fontSize: 14.0,
-                                    color: AppColors.onSurfaceVariant,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -260,21 +261,21 @@ class _FriendsScreenState extends State<FriendsScreen> {
                           ),
                           const SizedBox(width: 12.0),
                           if (isUnfriending)
-                            const SizedBox(
+                            SizedBox(
                               width: 24.0,
                               height: 24.0,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.0,
-                                color: AppColors.primary,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             )
                           else
                             OutlinedButton(
                               onPressed: () => _handleUnfriend(item),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.error,
-                                side: const BorderSide(
-                                  color: AppColors.outlineVariant,
+                                foregroundColor: Theme.of(context).colorScheme.error,
+                                side: BorderSide(
+                                  color: Theme.of(context).colorScheme.outlineVariant,
                                 ),
                                 shape: const StadiumBorder(),
                                 padding: const EdgeInsets.symmetric(
@@ -284,10 +285,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
                               ),
                               child: Text(
                                 'Hủy kết bạn',
-                                style: AppTextStyles.label.copyWith(
+                                style: AppTextStyles.of(context).label.copyWith(
                                   fontSize: 14.0,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.error,
+                                  color: Theme.of(context).colorScheme.error,
                                 ),
                               ),
                             ),

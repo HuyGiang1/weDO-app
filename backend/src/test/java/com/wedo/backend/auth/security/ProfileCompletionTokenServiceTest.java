@@ -25,13 +25,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProfileCompletionTokenServiceTest {
 
     // 256-bit Base64-encoded secret keys (32 bytes)
-    private static final String SECRET_A = "q9W8eR7tY6uI5oP4aD3fG2hJ1kL0zX9cV8bN7mQ6wE5=";
-    private static final String SECRET_B = "s4A8wY0D2eE6vK1L5oP9tQ3rF7mN8xZ2cT4vB6nI8uM=";
+    private static final String SECRET_A = freshTestKey();
+    private static final String SECRET_B = freshTestKey();
     private static final Duration TTL_15M = Duration.ofMinutes(15);
 
     private Instant t0;
     private Clock clockAtT0;
     private ProfileCompletionTokenService tokenService;
+
+    private static String freshTestKey() {
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getEncoder().encodeToString(bytes);
+    }
 
     @BeforeEach
     void setUp() {

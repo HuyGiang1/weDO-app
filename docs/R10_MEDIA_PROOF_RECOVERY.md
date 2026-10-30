@@ -1,0 +1,21 @@
+# R10 media / evidence / check-in recovery — 2026-10-28
+
+## Confirmed problems and bounded corrections
+
+1. QA iPhone media path denied by stale runtime allowlist: Mac<QA_LAN_IP>/Samsung<QA_LAN_IP> unchanged, but Bonjour resolves QA iPhone.local→<QA_LAN_IP> instead of previous<QA_LAN_IP>. Existing temporary relay allowed only the old device IP. Update exact QA iPhone entry, restart only relay PID25607→95800. `/tmp/wedo-r10-resume-media.py`, backup `/tmp/wedo-proof-relay-before.py`; allowlist now .116/.110/.101. No wildcard LAN access, signed URL rewrite, private authorization bypass, backend/storage/container recreation or data deletion.
+2. Shared JourneyCapture camera-action Wrap touched optional-caption floating label. Add16px vertical separator and8px wrap run spacing in `mobile/lib/features/journey/presentation/journey_screens.dart`. Same fix covers Task evidence and Stop check-in. Existing capture/gallery/source declaration, upload limits, command UUID/retry, permission/disposal handling remain unchanged. New `mobile/test/features/journey/capture_layout_test.dart` reproduces the original0px gap and verifies narrow320px/1.5× text/light+dark for both contexts. Pre-edit production copy `/tmp/wedo-proof-baseline-journey_screens.dart`.
+
+## Evidence — distinguish scopes
+
+- User QA iPhone physical: **“Ảnh ok.”**, then **“Gửi OK”** after being asked to retry actual “Gửi xác nhận” on the previously failing Minh chứng/Check-in item. Image loading and submission on that tested item are user-reported PASS. The reply does not identify both workflows separately; do not claim independently tested Task evidence AND Stop submission.
+- Existing authorized private image GET200 on Mac and Samsung (~1.1MB). Owner/Member Moment access200; wrong Community route404. Current source already routes check-in through Moment access and Task proof through Task-scoped EvidenceMediaApi. No production data/API route change needed.
+- Real Samsung network upload: existing QA Member authorization→presign MOMENT_IMAGE200→SamsungTCP client signedPUT200 (`/tmp/wedo-proof-upload-check.py`). One tiny named QA PNG object/upload intent added; metadata `/tmp/wedo-proof-upload-object.json`, not attached to a Task/check-in. No existing media overwritten or deleted. This is upload/network/API evidence, NOT physical Flutter camera/commit evidence.
+- Actual Samsung UI Group→R10 QA Lịch trình mở28-10→Journey→Ăn trưa cùng nhóm→Chụp check-in, screenshot `/tmp/wedo-proof-samsung-capture.png` directly inspected: no overlap, readable outline and separate camera action. No camera photo taken, no check-in or Task submitted/status changed. Existing Tasks on this QA Activity had canSubmit=false; do not override permissions/status to force a test.
+-29 focused Journey/media testsPASS3s, analyzer clean3.0s (`/tmp/wedo-proof-{tests,analyze}.log`). Includes existing upload/retry UUID/no duplicate uploaded object and4 new form layout cases. No full/backend suites or backend rebuild.
+- Android debug14.1s/build/install-rPASS; iOS Profile41.9s/35.6MB/build/install-in-place/launchPASS on QA iPhone. `/tmp/wedo-proof-{android,ios}{,-install,-launch}.log`; Android launch observed during navigation. API<QA_LAN_IP>. APK497def9449f71b732cff557cf7d0cecd6f880c328342465a5353e9cd287c4434; Runner82b42dec7ab46cb308ee2a87ece4866d58b7b3b3181cf2286dd2d9a65f0b125c. Native signing hashes unchanged ad773f3c…/cd88a3e2…; Firebase untouched.
+
+## Pending acceptance / preservation
+
+The previously failing QA iPhone submission is now user-accepted; do not repeat it or start another fix/build without a new defect. Explicit final iPhone caption-spacing approval and a separate run of any untested workflow remain unconfirmed. Submission evidence comes from the user’s “Gửi OK”, not an inference from image GET or Samsung upload200. Samsung Flutter camera→upload→commit flow not claimed complete. One additional QA upload remains intentionally unattached; do not delete existing media or run broad cleanup.
+
+Existing QA records, Task status, DB/volumes, runtime/backend and full dirty worktree retained. Source scope1 production presentation file +1 new test; design system/current handoff/report updated. Temporary relay and diagnostics are outside repository. R10 IN PROGRESS. No stage/commit/push/merge/reset/restore/stash/clean.

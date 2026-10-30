@@ -1,8 +1,11 @@
+import '../../../../app/theme/app_theme.dart';
+import '../../../../core/ui/widgets/app_management.dart';
 // ignore_for_file: curly_braces_in_flow_control_structures, deprecated_member_use
 
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 import '../../../../core/l10n/domain_labels.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -167,19 +170,19 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    border: Border.all(color: Colors.amber.shade300),
+                    color: AppSemanticColors.of(context).warning.withValues(alpha: .08),
+                    border: Border.all(color: AppSemanticColors.of(context).warning.withValues(alpha: .3)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, color: Colors.amber.shade900),
+                      Icon(Icons.info_outline, color: AppSemanticColors.of(context).warning),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           AppStrings.groupArchivedCannotMutate,
                           style: TextStyle(
-                            color: Colors.black87,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
@@ -196,7 +199,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade700,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -276,8 +279,8 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
                     _failureText(state.failure),
-                    style: const TextStyle(
-                      color: Colors.red,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -329,7 +332,14 @@ class GroupMembersScreen extends StatefulWidget {
   State<GroupMembersScreen> createState() => _GroupMembersScreenState();
 }
 
-class _GroupMembersScreenState extends State<GroupMembersScreen> {
+class _GroupMembersScreenState extends State<GroupMembersScreen> with RealtimeBinding<GroupMembersScreen> {
+  @override
+  String? get realtimeScope => 'group:${widget.groupId}';
+  @override
+  String get realtimePrefix => 'GROUP_';
+  @override
+  Future<void> reloadRealtime() async { await widget.controller.load(widget.groupId); }
+
   @override
   void initState() {
     super.initState();
@@ -347,14 +357,15 @@ class _GroupMembersScreenState extends State<GroupMembersScreen> {
         final members = s.data ?? const <GroupMember>[];
         return ListView(
           children: [
-            for (final m in members)
-              ListTile(
+            for (final m in members) ...[
+              AppSurface(child: AppManagementRow(
                 onTap: () => widget.onMember(m.userId),
-                leading: GroupAvatar(name: m.displayName),
-                title: Text(m.displayName),
-                subtitle: Text('@${m.username}'),
-                trailing: GroupRoleBadge(role: m.role),
-              ),
+                icon: Icons.person_outline,
+                leading: GroupAvatar(name: m.displayName, avatarStorageKey: m.avatarStorageKey, radius: 20),
+                title: m.displayName, subtitle: '@${m.username}', status: m.role.label,
+              )),
+              const SizedBox(height: 8),
+            ],
             if (s.failure != null) Center(child: Text(_failureText(s.failure))),
           ],
         );
@@ -424,6 +435,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
               ),
             if (canKick) ...[
               OutlinedButton(
+                style: OutlinedButton.styleFrom(foregroundColor: Theme.of(c).colorScheme.error),
                 onPressed: () async {
                   if (await widget.controller.kick(
                         widget.groupId,
@@ -463,7 +475,7 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                         ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
+                            backgroundColor: Theme.of(context).colorScheme.error,
                           ),
                           onPressed: () => Navigator.of(ctx).pop(true),
                           child: const Text('Cấm'),
@@ -483,9 +495,9 @@ class _MemberManagementScreenState extends State<MemberManagementScreen> {
                     }
                   }
                 },
-                child: const Text(
+                child: Text(
                   'Cấm thành viên',
-                  style: TextStyle(color: Colors.red),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             ],
@@ -546,19 +558,19 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  border: Border.all(color: Colors.amber.shade300),
+                  color: AppSemanticColors.of(context).warning.withValues(alpha: .08),
+                  border: Border.all(color: AppSemanticColors.of(context).warning.withValues(alpha: .3)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, color: Colors.amber.shade900),
+                    Icon(Icons.info_outline, color: AppSemanticColors.of(context).warning),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         AppStrings.groupArchivedCannotMutate,
                         style: TextStyle(
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -575,19 +587,19 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                 ),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border.all(color: Colors.blue.shade200),
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.lock_outline, color: Colors.blue.shade800),
+                    Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         AppStrings.groupOnlyOwnerCanChangeSettings,
                         style: TextStyle(
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -697,14 +709,14 @@ class _GroupPermissionsScreenState extends State<GroupPermissionsScreen> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  border: Border.all(color: Colors.red.shade200),
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  border: Border.all(color: Theme.of(context).colorScheme.error.withValues(alpha: .3)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   _failureText(s.failure),
                   style: TextStyle(
-                    color: Colors.red.shade900,
+                    color: Theme.of(context).colorScheme.onErrorContainer,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -820,16 +832,20 @@ class _TransferOwnershipScreenState extends State<TransferOwnershipScreen> {
         if (d == null) return Center(child: Text(_failureText(s.failure)));
         return ListView(
           children: [
+            if (d.group.callerRole != GroupRole.owner) const AppNotice('Chỉ trưởng nhóm có thể chuyển quyền.', tone: AppTone.warning),
             const Padding(
               padding: EdgeInsets.all(16),
               child: Text('Chọn thành viên hoặc quản trị viên đang hoạt động làm chủ nhóm mới.'),
             ),
             for (final m in d.members)
-              if (m.role != GroupRole.owner)
-                ListTile(
-                  title: Text(m.displayName),
-                  subtitle: Text(m.role.label),
+              if (d.group.callerRole == GroupRole.owner && m.role != GroupRole.owner)
+                AppManagementRow(
+                  icon: Icons.swap_horiz,
+                  title: m.displayName,
+                  subtitle: m.role.label,
                   onTap: () async {
+                    final confirmed = await showDialog<bool>(context: c, builder: (dialog) => AlertDialog(title: const Text('Chuyển quyền trưởng nhóm?'), content: Text('Chuyển quyền trưởng nhóm cho ${m.displayName}.'), actions: [TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Hủy')), FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Xác nhận'))]));
+                    if (confirmed != true || !c.mounted) return;
                     final r = await widget.controller.transfer(
                       widget.groupId,
                       m.userId,

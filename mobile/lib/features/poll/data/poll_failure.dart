@@ -1,5 +1,27 @@
 import '../../../core/network/api_exception.dart';
 
+String votePollFailureMessage(ApiException error) {
+  if (error.statusCode == 401) return 'Cần đăng nhập lại để bình chọn.';
+  if (error.statusCode == 403 || error.statusCode == 404) {
+    return 'Bạn không có quyền truy cập bình chọn này.';
+  }
+  if (error.transportFailure == ApiTransportFailure.network ||
+      error.transportFailure == ApiTransportFailure.timeout) {
+    return 'Không thể kết nối đến máy chủ. Bình chọn chưa được xác nhận. Vui lòng thử lại.';
+  }
+  return switch (error.code) {
+    'POLL_CLOSED' ||
+    'POLL_DEADLINE_PASSED' => 'Bình chọn đã đóng hoặc hết hạn.',
+    'POLL_OPTION_DISABLED' =>
+      'Lựa chọn này đã bị vô hiệu hóa. Vui lòng chọn lại.',
+    'INVALID_POLL_SELECTION' || 'MAX_POLL_SELECTIONS_EXCEEDED' =>
+      'Lựa chọn bình chọn không hợp lệ. Vui lòng chọn lại.',
+    'GROUP_ARCHIVED' ||
+    'ACTIVITY_CLOSED' => 'Hoạt động đã khóa, không thể cập nhật bình chọn.',
+    _ => 'Không thể cập nhật bình chọn. Vui lòng thử lại.',
+  };
+}
+
 String createPollFailureMessage(Object error) {
   if (error is! ApiException) return 'Không thể tạo bình chọn.';
 

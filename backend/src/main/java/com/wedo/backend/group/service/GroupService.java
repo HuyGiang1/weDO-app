@@ -40,6 +40,8 @@ import java.util.UUID;
 
 @Service
 public class GroupService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private final GroupRepository groupRepository;
     private final GroupSettingsRepository groupSettingsRepository;
@@ -99,6 +101,7 @@ public class GroupService {
                 UUID.randomUUID(), groupId, creatorId, GroupActivityAction.GROUP_CREATED, now
         ));
 
+        if (realtime != null) { realtime.user("GROUP_CREATED", creatorId); }
         return GroupResponse.from(group);
     }
 
@@ -162,6 +165,7 @@ public class GroupService {
         }
         group.updateMetadata(name, description, avatarStorageKey, clock.instant());
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_UPDATED, clock.instant()));
+        if (realtime != null) { realtime.group("GROUP_UPDATED", groupId, callerUserId); }
         return detailResponse(group, access.membership().getRole());
     }
 
@@ -184,6 +188,7 @@ public class GroupService {
                 clock.instant()
         );
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_SETTINGS_UPDATED, clock.instant()));
+        if (realtime != null) { realtime.group("GROUP_SETTINGS_CHANGED", groupId, callerUserId); }
         return GroupSettingsResponse.from(settings);
     }
 
@@ -219,6 +224,7 @@ public class GroupService {
         if (target.getRole() != GroupRole.MEMBER) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
         target.promoteToAdmin();
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_ADMIN_PROMOTED, targetUserId, clock.instant()));
+        if (realtime != null) { realtime.group("GROUP_ROLE_CHANGED", groupId, callerUserId); realtime.user("GROUP_ROLE_CHANGED", targetUserId); }
         return activeMemberResponse(groupId, targetUserId);
     }
 
@@ -230,6 +236,7 @@ public class GroupService {
         if (target.getRole() != GroupRole.ADMIN) throw new BusinessException(ErrorCode.INVALID_GROUP_ROLE_TRANSITION);
         target.demoteToMember();
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_ADMIN_DEMOTED, targetUserId, clock.instant()));
+        if (realtime != null) { realtime.group("GROUP_ROLE_CHANGED", groupId, callerUserId); realtime.user("GROUP_ROLE_CHANGED", targetUserId); }
         return activeMemberResponse(groupId, targetUserId);
     }
 
@@ -268,6 +275,7 @@ public class GroupService {
         Instant now = clock.instant();
         groupActivityLogRepository.save(new GroupActivityLogEntity(UUID.randomUUID(), groupId, callerUserId, GroupActivityAction.GROUP_OWNERSHIP_TRANSFERRED, targetUserId, now));
         GroupEntity group = groupRepository.findById(groupId).orElseThrow(() -> new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        if (realtime != null) { realtime.group("GROUP_ROLE_CHANGED", groupId, callerUserId); realtime.user("GROUP_ROLE_CHANGED", targetUserId); }
         return detailResponse(group, GroupRole.ADMIN);
     }
 

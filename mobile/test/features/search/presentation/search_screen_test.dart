@@ -61,6 +61,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump();
     expect(gateway.queries, ['ab']);
+    expect(find.byTooltip('Xóa tìm kiếm'), findsOneWidget);
+    await tester.tap(find.byTooltip('Xóa tìm kiếm'));
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    expect(find.byTooltip('Xóa tìm kiếm'), findsNothing);
+    expect(gateway.queries, ['ab']);
   });
 }
 

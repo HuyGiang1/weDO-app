@@ -4,12 +4,18 @@ class FundFailure implements Exception {
   final String code;
   final String message;
   final int? statusCode;
+  final ApiTransportFailure? transportFailure;
 
   const FundFailure({
     required this.code,
     required this.message,
     this.statusCode,
+    this.transportFailure,
   });
+
+  bool get isTransient => transportFailure == ApiTransportFailure.network ||
+      transportFailure == ApiTransportFailure.timeout ||
+      (statusCode != null && statusCode! >= 500);
 
   bool get isNotFound => code == 'FUND_NOT_FOUND' || statusCode == 404;
 
@@ -22,6 +28,7 @@ class FundFailure implements Exception {
         code: code,
         message: _localizedMessage(code, fallback),
         statusCode: error.statusCode,
+        transportFailure: error.transportFailure,
       );
     }
     return FundFailure(

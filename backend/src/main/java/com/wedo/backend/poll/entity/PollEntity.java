@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.util.UUID;
 @Entity @Table(name = "polls")
 public class PollEntity {
- @Id private UUID id; @Column(name="activity_id",nullable=false) private UUID activityId; @Column(name="created_by") private UUID createdBy;
+ @Id private UUID id; @Column(name="activity_id") private UUID activityId; @Column(name="created_by") private UUID createdBy;
+ @Column(name="group_id") private UUID groupId;
+ public UUID getGroupId(){return groupId;} public void linkGroup(UUID id){this.groupId=id;}
  @Column(nullable=false) private String question; @Enumerated(EnumType.STRING) @Column(name="poll_type",nullable=false) private PollType pollType;
  @Column(name="allow_member_add_option",nullable=false) private boolean allowMemberAddOption; @Column(name="max_selections") private Integer maxSelections;
  @Enumerated(EnumType.STRING) @Column(name="vote_visibility",nullable=false) private VoteVisibility voteVisibility; @Enumerated(EnumType.STRING) @Column(name="result_visibility",nullable=false) private ResultVisibility resultVisibility;

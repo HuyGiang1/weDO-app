@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'dart:typed_data';
 
-import '../../../../../app/theme/app_colors.dart';
 import '../../../../../app/theme/app_spacing.dart';
 import '../../../../../app/theme/app_text_styles.dart';
 import '../../../media/presentation/media_storage_image.dart';
@@ -21,19 +20,13 @@ class ProfileSurface extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: const [
-        BoxShadow(
-          color: AppColors.primaryShadow,
-          blurRadius: 18,
-          offset: Offset(0, 5),
-        ),
-      ],
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(12),
+
     ),
     child: Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       child: child,
     ),
   );
@@ -56,7 +49,7 @@ class ProfileAvatar extends StatelessWidget {
     final value = label.trim();
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.backgroundGradientEnd,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
       child: imageBytes != null
           ? ClipOval(
               child: Image.memory(
@@ -67,7 +60,7 @@ class ProfileAvatar extends StatelessWidget {
               ),
             )
           : avatarStorageKey == null || avatarStorageKey!.isEmpty
-          ? _fallback(value)
+          ? _fallback(context, value)
           : ClipOval(
               child: MediaStorageImage(
                 storageKey: avatarStorageKey!,
@@ -77,15 +70,15 @@ class ProfileAvatar extends StatelessWidget {
                 ),
                 width: radius * 2,
                 height: radius * 2,
-                fallback: (_) => _fallback(value),
+                fallback: (_) => _fallback(context, value),
               ),
             ),
     );
   }
 
-  Widget _fallback(String value) => Text(
+  Widget _fallback(BuildContext context, String value) => Text(
     value.isEmpty ? '?' : value.substring(0, 1).toUpperCase(),
-    style: AppTextStyles.headline,
+    style: AppTextStyles.of(context).headline,
   );
 }
 
@@ -103,21 +96,21 @@ class ProfileActionRow extends StatelessWidget {
   Widget build(BuildContext context) => ProfileSurface(
     padding: EdgeInsets.zero,
     child: ListTile(
-      leading: Icon(icon, color: AppColors.primary),
-      title: Text(label, style: AppTextStyles.label),
-      trailing: const Icon(
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+      title: Text(label, style: AppTextStyles.of(context).label),
+      trailing: Icon(
         Icons.chevron_right,
-        color: AppColors.onSurfaceVariant,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onTap: onTap,
     ),
   );
 }
 
-ButtonStyle profilePrimaryButtonStyle() => ElevatedButton.styleFrom(
+ButtonStyle profilePrimaryButtonStyle(BuildContext context) => ElevatedButton.styleFrom(
   minimumSize: const Size.fromHeight(AppSpacing.buttonHeight),
-  shape: const StadiumBorder(),
-  backgroundColor: AppColors.primary,
-  foregroundColor: AppColors.onPrimary,
+  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+  backgroundColor: Theme.of(context).colorScheme.primary,
+  foregroundColor: Theme.of(context).colorScheme.onPrimary,
 );

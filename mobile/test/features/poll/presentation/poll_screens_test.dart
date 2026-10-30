@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -20,6 +21,80 @@ void main() {
       ),
     );
   });
+
+  testWidgets(
+    'P0 rapid vote submits once and disposal ignores late completion',
+    (tester) async {
+      adapter.voteGate = Completer<void>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PollDetailScreen(pollId: 'poll-1', repository: repository),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Park'));
+      await tester.pump();
+      await tester.tap(find.text('Gửi bình chọn'));
+      await tester.pump();
+      await tester.tap(find.text('Gửi bình chọn'));
+      await tester.pumpAndSettle();
+      expect(adapter.requests.where((r) => r.method == 'PUT'), hasLength(1));
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Gửi bình chọn'),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.pumpWidget(const SizedBox());
+      adapter.voteGate!.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final entry in {
+    'POLL_CLOSED': 409,
+    'POLL_DEADLINE_PASSED': 409,
+    'ACCESS_DENIED': 403,
+    'AUTH_REQUIRED': 401,
+    'NETWORK': 0,
+    'UNAVAILABLE': 503,
+  }.entries) {
+    testWidgets(
+      'P0 rejected ${entry.key} has no phantom vote and meaningful feedback',
+      (tester) async {
+        adapter.voteFailure = entry.key;
+        adapter.voteStatus = entry.value;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PollDetailScreen(pollId: 'poll-1', repository: repository),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Park'));
+        await tester.pump();
+        await tester.tap(find.text('Gửi bình chọn'));
+        await tester.pumpAndSettle();
+        expect(adapter.callerOptionIds, isEmpty);
+        expect(find.byType(SnackBar), findsOneWidget);
+        if (entry.value == 403) {
+          expect(find.text('Where should we meet?'), findsNothing);
+        }
+        if (entry.key.startsWith('POLL_')) {
+          expect(find.text('Bình chọn đã đóng hoặc hết hạn.'), findsOneWidget);
+        }
+        if (entry.key == 'NETWORK') {
+          expect(
+            find.textContaining('Bình chọn chưa được xác nhận'),
+            findsOneWidget,
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('Create Poll has no multiple-choice or max-selection controls', (
     tester,
@@ -66,9 +141,8 @@ void main() {
       await tester.tap(find.text('Gửi bình chọn'));
       await tester.pumpAndSettle();
 
-      expect(adapter.votePayload, {
-        'optionIds': ['option-2'],
-      });
+      expect(adapter.votePayload?['optionIds'], ['option-2']);
+      expect(adapter.votePayload?['clientRequestId'], isNotEmpty);
       expect(adapter.callerOptionIds, ['option-2']);
     },
   );
@@ -100,9 +174,8 @@ void main() {
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
-      expect(adapter.votePayload, {
-        'optionIds': ['option-2'],
-      });
+      expect(adapter.votePayload?['optionIds'], ['option-2']);
+      expect(adapter.votePayload?['clientRequestId'], isNotEmpty);
       expect(
         adapter.requests.where((request) => request.method == 'GET').length,
         greaterThanOrEqualTo(2),
@@ -148,6 +221,9 @@ class _PollScreenAdapter implements HttpClientAdapter {
   bool resultsVisible = false;
   String? deadlineAt;
   int? lastResponseStatus;
+  Completer<void>? voteGate;
+  String? voteFailure;
+  int voteStatus = 409;
 
   @override
   Future<ResponseBody> fetch(
@@ -157,6 +233,22 @@ class _PollScreenAdapter implements HttpClientAdapter {
   ) async {
     requests.add(options);
     if (options.method == 'PUT') {
+      if (voteGate != null) await voteGate!.future;
+      if (voteFailure == 'NETWORK') {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+        );
+      }
+      if (voteFailure != null) {
+        return ResponseBody.fromString(
+          jsonEncode({'code': voteFailure}),
+          voteStatus,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      }
       votePayload = Map<String, dynamic>.from(options.data as Map);
       callerOptionIds = List<String>.from(votePayload!['optionIds'] as List);
     }

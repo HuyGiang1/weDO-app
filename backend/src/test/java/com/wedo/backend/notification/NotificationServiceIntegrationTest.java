@@ -93,6 +93,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 @Import(NotificationServiceIntegrationTest.FakePushGatewayConfiguration.class)
 class NotificationServiceIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.FirebaseApp firebaseAdminApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.messaging.FirebaseMessaging firebaseMessaging;
     @Autowired private com.wedo.backend.common.event.PostCommitDelivery delivery;
 
     @org.junit.jupiter.api.AfterEach

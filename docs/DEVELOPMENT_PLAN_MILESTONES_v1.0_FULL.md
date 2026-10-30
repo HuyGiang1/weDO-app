@@ -384,7 +384,7 @@ started by this closeout.
 ## 12. M9 — Chat REST
 
 Implementation status: REST implementation, automated verification, and physical
-Samsung (`R58M36JQYVY`) user acceptance complete on `feat/m9-chat-rest`, based
+Samsung (`<QA_ANDROID_SERIAL>`) user acceptance complete on `feat/m9-chat-rest`, based
 on the verified `dev` checkpoint.
 
 Features:
@@ -415,7 +415,7 @@ M9 scope clarification: the V4 `message_attachments` table reserves persistence
 for future attachments, but M9's implemented REST send contract is text-only.
 Attachment upload, storage ownership, and rendering are deferred to a dedicated
 media scope; they are not an M9 closeout blocker. M9 verification on Samsung
-(`R58M36JQYVY`) confirmed device detection, APK build/install/launch, healthy
+(`<QA_ANDROID_SERIAL>`) confirmed device detection, APK build/install/launch, healthy
 backend (`UP`), active `adb reverse tcp:8080`, unlocked foreground runtime, and
 user acceptance PASS.
 

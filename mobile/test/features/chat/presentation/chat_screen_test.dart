@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile/app/routes.dart';
+import 'package:mobile/core/realtime/realtime_binding.dart';
+import 'package:mobile/core/realtime/realtime_sync.dart';
 import 'package:mobile/features/auth/application/auth_session_controller.dart';
 import 'package:mobile/features/chat/data/chat_api.dart';
 import 'package:mobile/features/chat/data/chat_models.dart';
@@ -15,6 +19,8 @@ import 'package:mobile/features/chat/data/chat_realtime_event.dart';
 import 'package:mobile/features/chat/data/chat_repository.dart';
 import 'package:mobile/features/chat/presentation/chat_screen.dart';
 import 'package:mobile/features/media/data/media_upload_service.dart';
+import 'package:mobile/features/media/presentation/media_storage_image.dart';
+import 'package:mobile/features/chat/presentation/chat_image_viewer.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
@@ -22,6 +28,503 @@ import 'package:mobile/features/groups/presentation/widgets/group_widgets.dart';
 import 'package:mobile/features/social/presentation/widgets/user_avatar.dart';
 
 void main() {
+  testWidgets(
+    'R3 activity does not jump the visible history anchor while scrolled upward',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(420, 800));
+      final realtime = _FakeRealtimeClient();
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        realtime.dispose();
+        await tester.binding.setSurfaceSize(null);
+      });
+      final adapter = _ChatScreenAdapter(
+        messages: [
+          for (var i = 1; i <= 30; i++)
+            _message(
+              id: 'history-$i',
+              sequence: i,
+              authorId: 'peer',
+              name: 'Peer',
+              content: 'Earlier message $i',
+              mine: false,
+            ),
+        ],
+      );
+      await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
+      await tester.pumpAndSettle();
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(450);
+      await tester.pumpAndSettle();
+      final viewport = tester.getRect(find.byType(ListView).first);
+      final visible = find
+          .byWidgetPredicate(
+            (w) =>
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith(
+                  'chat-item-history-',
+                ),
+          )
+          .evaluate()
+          .map((e) => e.widget.key!)
+          .where((key) {
+            final rect = tester.getRect(find.byKey(key));
+            return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+          })
+          .toList();
+      expect(visible, isNotEmpty);
+      final anchor = find.byKey(visible.first);
+      final before = tester.getTopLeft(anchor).dy;
+      final historyReads = adapter.historyCursors.length;
+      final frame = ChatRealtimeEvent.fromJson({
+        'type': 'MESSAGE_CREATED',
+        'eventId': 'public-vote-new',
+        'conversationId': 'conversation-1',
+        'message': {
+          ..._message(
+            id: 'new-poll-activity',
+            sequence: 31,
+            authorId: 'peer',
+            name: 'Peer',
+            content: 'Peer đã thay đổi bình chọn: QA',
+            mine: false,
+          ),
+          'type': 'POLL_VOTE_CHANGED',
+          'pollId': 'p',
+        },
+      });
+      realtime.emit(frame);
+      realtime.emit(frame);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(anchor).dy, closeTo(before, 1));
+      expect(position.pixels, greaterThan(0));
+      expect(adapter.historyCursors.length, historyReads);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'R3 Poll updates preserve old image states, byte reads, history and scroll',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 2600));
+      final bytes = (await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder).drawColor(Colors.teal, BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(40, 25);
+        final result = (await image.toByteData(format: ui.ImageByteFormat.png))!
+            .buffer
+            .asUint8List();
+        image.dispose();
+        picture.dispose();
+        return result;
+      }))!;
+      final client = _ImageHttpClient(bytes);
+      final media = _CountingReadService();
+      debugNetworkImageHttpClientProvider = () => client;
+      MediaStorageImage.service = media;
+      PaintingBinding.instance.imageCache.clear();
+      final realtime = _FakeRealtimeClient();
+      final sync = RealtimeSync(realtime);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.runAsync(sync.dispose);
+        realtime.dispose();
+        debugNetworkImageHttpClientProvider = null;
+        MediaStorageImage.service = null;
+        PaintingBinding.instance.imageCache.clear();
+        await tester.binding.setSurfaceSize(null);
+      });
+      final adapter = _ChatScreenAdapter(
+        messages: [
+          for (var i = 1; i <= 2; i++)
+            {
+              ..._message(
+                id: 'old-$i',
+                sequence: i,
+                authorId: 'peer',
+                name: 'Peer',
+                content: '',
+                mine: false,
+              ),
+              'type': 'IMAGE',
+              'attachments': [
+                {
+                  'id': 'a$i',
+                  'storageKey': 'chat/conversation-1/old-$i',
+                  'contentType': 'image/png',
+                  'fileSizeBytes': bytes.length,
+                  'sortOrder': 0,
+                },
+              ],
+            },
+          {
+            ..._message(
+              id: 'poll-message',
+              sequence: 3,
+              authorId: 'peer',
+              name: 'Peer',
+              content: 'Poll',
+              mine: false,
+            ),
+            'type': 'POLL',
+            'pollId': 'p',
+          },
+        ],
+      );
+      await tester.pumpWidget(
+        RealtimeHost(
+          sync: sync,
+          child: _app(adapter, realtimeClient: realtime),
+        ),
+      );
+      await _settleChatImages(tester);
+      expect(find.text('Chat Poll 1'), findsOneWidget);
+      final states = tester.stateList(find.byType(ChatImageThumbnail)).toList();
+      expect(states, hasLength(2));
+      final reads = media.reads.length,
+          gets = client.urls.length,
+          history = adapter.historyCursors.length;
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      final offset = position.pixels;
+      adapter.pollQuestion = 'Chat Poll 2';
+      final frame = {
+        'type': 'DOMAIN_CHANGED',
+        'eventId': 'vote-one',
+        'eventType': 'POLL_VOTE_CHANGED',
+        'scope': 'activity:a',
+        'aggregateId': 'p',
+      };
+      sync.accept(frame);
+      sync.accept(frame);
+      await _settleChatImages(tester);
+      expect(find.text('Chat Poll 2'), findsOneWidget);
+      expect(adapter.pollReads, 2);
+      expect(adapter.historyCursors.length, history);
+      expect(
+        tester.stateList(find.byType(ChatImageThumbnail)).toList(),
+        states,
+      );
+      expect(media.reads.length, reads);
+      expect(client.urls.length, gets);
+      expect(position.pixels, closeTo(offset, 0.1));
+      final activity = {
+        ..._message(
+          id: 'poll-vote-update',
+          sequence: 4,
+          authorId: 'peer',
+          name: 'Peer',
+          content: 'Peer đã tham gia bình chọn: Chat Poll 2',
+          mine: false,
+        ),
+        'type': 'POLL_VOTED',
+        'pollId': 'p',
+      };
+      adapter.messages.add(activity);
+      final update = ChatRealtimeEvent.fromJson({
+        'type': 'MESSAGE_CREATED',
+        'eventId': 'durable-vote',
+        'conversationId': 'conversation-1',
+        'message': activity,
+      });
+      realtime.emit(update);
+      realtime.emit(update);
+      await _settleChatImages(tester);
+      expect(
+        find.byKey(const ValueKey('chat-item-poll-vote-update')),
+        findsOneWidget,
+      );
+      expect(
+        adapter.historyCursors.length,
+        history,
+      ); // No per-vote history reload.
+      expect(
+        tester.stateList(find.byType(ChatImageThumbnail)).toList(),
+        states,
+      );
+      expect(media.reads.length, reads);
+      expect(client.urls.length, gets);
+      expect(position.pixels, closeTo(offset, 0.1));
+      realtime.emit(ChatRealtimeEvent.fromJson({'type': 'CONNECTED'}));
+      await _settleChatImages(tester);
+      realtime.emit(ChatRealtimeEvent.fromJson({'type': 'CONNECTED'}));
+      await _settleChatImages(tester);
+      expect(
+        find.byKey(const ValueKey('chat-item-poll-vote-update')),
+        findsOneWidget,
+      );
+      expect(
+        tester.stateList(find.byType(ChatImageThumbnail)).toList(),
+        states,
+      );
+      expect(media.reads.length, reads);
+      expect(client.urls.length, gets);
+      debugNetworkImageHttpClientProvider = null;
+      MediaStorageImage.service = null;
+    },
+  );
+  testWidgets(
+    'P0 new text preserves mounted old images, URLs, byte GETs and history',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1600));
+      final bytes = (await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        Canvas(recorder).drawColor(Colors.teal, BlendMode.src);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(40, 25);
+        final bytes = (await image.toByteData(format: ui.ImageByteFormat.png))!
+            .buffer
+            .asUint8List();
+        image.dispose();
+        picture.dispose();
+        return bytes;
+      }))!;
+      final client = _ImageHttpClient(bytes);
+      debugNetworkImageHttpClientProvider = () => client;
+      final media = _CountingReadService();
+      MediaStorageImage.service = media;
+      PaintingBinding.instance.imageCache.clear();
+      final realtime = _FakeRealtimeClient();
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        debugNetworkImageHttpClientProvider = null;
+        MediaStorageImage.service = null;
+        PaintingBinding.instance.imageCache.clear();
+        realtime.dispose();
+        await tester.binding.setSurfaceSize(null);
+      });
+      final messages = [
+        for (var i = 1; i <= 2; i++)
+          {
+            ..._message(
+              id: 'image-$i',
+              sequence: i,
+              authorId: 'peer',
+              name: 'Peer',
+              content: '',
+              mine: false,
+            ),
+            'type': 'IMAGE',
+            'attachments': [
+              {
+                'id': 'attachment-$i',
+                'storageKey': 'chat/conversation-1/old-$i',
+                'contentType': 'image/png',
+                'fileSizeBytes': bytes.length,
+                'sortOrder': 0,
+              },
+            ],
+          },
+      ];
+      final adapter = _ChatScreenAdapter(messages: messages);
+      await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
+      await _settleChatImages(tester);
+      final states = tester.stateList(find.byType(ChatImageThumbnail)).toList();
+      expect(states, hasLength(2));
+      final beforeReads = media.reads.length;
+      final beforeGets = client.urls.length;
+      final providers = tester
+          .widgetList<ChatImageFrame>(find.byType(ChatImageFrame))
+          .map((frame) => frame.image)
+          .toList();
+      expect(
+        tester
+            .widgetList<RawImage>(find.byType(RawImage))
+            .where((image) => image.image != null),
+        hasLength(2),
+      );
+      for (var i = 3; i <= 7; i++) {
+        realtime.emit(
+          ChatRealtimeEvent.fromJson({
+            'type': 'MESSAGE_CREATED',
+            'eventId': 'text-$i',
+            'conversationId': 'conversation-1',
+            'message': _message(
+              id: 'text-$i',
+              sequence: i,
+              authorId: 'peer',
+              name: 'Peer',
+              content: 'New $i',
+              mine: false,
+            ),
+          }),
+        );
+        await _settleChatImages(tester);
+      }
+      debugPrint(
+        'P0_IMAGE_EVIDENCE auth=$beforeReads->${media.reads.length} bytes=$beforeGets->${client.urls.length} history=${adapter.historyCursors.length}',
+      );
+      expect(adapter.historyCursors, hasLength(1));
+      expect(media.reads, hasLength(beforeReads));
+      expect(client.urls, hasLength(beforeGets));
+      final after = tester.stateList(find.byType(ChatImageThumbnail)).toList();
+      for (final state in states) {
+        expect(state.mounted, isTrue);
+        expect(after, contains(state));
+      }
+      expect(find.text('New 7'), findsOneWidget);
+      adapter.nextSendSequence = 8;
+      for (var i = 0; i < 5; i++) {
+        await tester.enterText(find.byType(TextField), 'Own text $i');
+        await tester.pump();
+        await tester.tap(find.byTooltip('Gửi tin nhắn'));
+        await _settleChatImages(tester);
+      }
+      // Duplicate frame with the same event ID cannot insert a second copy.
+      for (var i = 0; i < 2; i++) {
+        realtime.emit(
+          ChatRealtimeEvent.fromJson({
+            'type': 'MESSAGE_CREATED',
+            'eventId': 'echo-own',
+            'conversationId': 'conversation-1',
+            'message': _message(
+              id: 'sent-message-5',
+              sequence: 12,
+              authorId: 'me',
+              name: 'Minh',
+              content: 'Own text 4',
+              mine: true,
+            ),
+          }),
+        );
+        await _settleChatImages(tester);
+      }
+      expect(find.text('Own text 4'), findsOneWidget);
+      expect(media.reads, hasLength(beforeReads));
+      expect(client.urls, hasLength(beforeGets));
+      expect(adapter.historyCursors, hasLength(1));
+      expect(
+        tester
+            .widgetList<ChatImageFrame>(find.byType(ChatImageFrame))
+            .map((frame) => frame.image),
+        unorderedEquals(providers),
+      );
+      for (final state in states) {
+        expect(state.mounted, isTrue);
+      }
+      debugNetworkImageHttpClientProvider = null;
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('known conversation shows loading until history resolves', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final adapter = _ChatScreenAdapter(historyGate: gate.future);
+    final conversation = ChatConversation.fromJson({
+      'id': 'conversation-1',
+      'type': 'GROUP',
+      'title': 'Known group',
+      'lastSequence': 0,
+      'unreadCount': 0,
+      'permissions': _permissions(),
+    });
+    await tester.pumpWidget(_app(adapter, initialConversation: conversation));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Chưa có tin nhắn'), findsNothing);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Chưa có tin nhắn'), findsOneWidget);
+  });
+
+  testWidgets(
+    'known conversation history failure offers retry, not empty chat',
+    (tester) async {
+      final adapter = _ChatScreenAdapter(historyFail: true);
+      final conversation = ChatConversation.fromJson({
+        'id': 'conversation-1',
+        'type': 'GROUP',
+        'title': 'Known group',
+        'lastSequence': 0,
+        'unreadCount': 0,
+        'permissions': _permissions(),
+      });
+      await tester.pumpWidget(_app(adapter, initialConversation: conversation));
+      await tester.pumpAndSettle();
+      expect(find.text('Không thể tải cuộc trò chuyện.'), findsOneWidget);
+      expect(find.text('Chưa có tin nhắn'), findsNothing);
+      adapter.historyFail = false;
+      await tester.tap(find.text('Thử lại'));
+      await tester.pumpAndSettle();
+      expect(find.text('Không thể tải cuộc trò chuyện.'), findsNothing);
+      expect(find.text('Chưa có tin nhắn'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'background chat releases push suppression and resumes catch-up',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final realtime = _FakeRealtimeClient();
+      addTearDown(realtime.dispose);
+      final messages = [
+        _message(
+          id: 'm1',
+          sequence: 1,
+          authorId: 'peer',
+          name: 'Peer',
+          content: 'Anchor',
+          mine: false,
+        ),
+      ];
+      final adapter = _ChatScreenAdapter(messages: messages);
+      await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
+      await tester.pumpAndSettle();
+      expect(realtime.subscribedConversations, {'conversation-1'});
+      final readsBeforeBackground = [...adapter.readSequences];
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(realtime.subscribedConversations, isEmpty);
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'CONNECTED',
+          'eventId': 'background-connect',
+        }),
+      );
+      final missed = _message(
+        id: 'm2',
+        sequence: 2,
+        authorId: 'peer',
+        name: 'Peer',
+        content: 'While away',
+        mine: false,
+      );
+      messages.add(missed);
+      realtime.emit(
+        ChatRealtimeEvent.fromJson({
+          'type': 'MESSAGE_CREATED',
+          'eventId': 'late-frame',
+          'conversationId': 'conversation-1',
+          'message': missed,
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(realtime.subscribedConversations, isEmpty);
+      expect(adapter.readSequences, readsBeforeBackground);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(realtime.subscribedConversations, {'conversation-1'});
+      expect(adapter.historyCursors.length, 2);
+      expect(find.text('While away'), findsOneWidget);
+      expect(adapter.readSequences.last, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    },
+  );
+
   testWidgets(
     'initial open and reopen show latest page, older history remains available',
     (tester) async {
@@ -77,13 +580,8 @@ void main() {
       final adapter = _ChatScreenAdapter(messages: messages);
       await tester.pumpWidget(_app(adapter, realtimeClient: realtime));
       await tester.pumpAndSettle();
-      realtime.emit(
-        ChatRealtimeEvent.fromJson({
-          'type': 'CONNECTED',
-          'eventId': 'connect-1',
-        }),
-      );
-      await tester.pumpAndSettle();
+      // The shared client was already connected before this screen mounted.
+      // Its broadcast CONNECTED frame is not replayed to a new subscriber.
       for (var sequence = 2; sequence <= 105; sequence++) {
         messages.add(
           _message(
@@ -205,6 +703,61 @@ void main() {
     },
   );
 
+  testWidgets('camera preview keeps draft and uploads only on Send', (
+    tester,
+  ) async {
+    final media = _TestMediaUpload();
+    final adapter = _ChatScreenAdapter();
+    final images = await _makeImages(1);
+    await tester.pumpWidget(
+      _app(
+        adapter,
+        mediaUploadService: media.service,
+        takePhoto: () async => images.files.single,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Ảnh vừa chụp');
+    await tester.tap(find.byTooltip('Ảnh và camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Chụp ảnh'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Remove image'), findsOneWidget);
+    expect(find.text('Ảnh vừa chụp'), findsOneWidget);
+    expect(media.presign.requests, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('chat-send-button')));
+    await tester.pumpAndSettle();
+    expect(media.presign.requests.single.data['category'], 'CHAT_IMAGE');
+    expect(media.presign.requests.single.data['contextId'], 'conversation-1');
+    expect(adapter.sentBody?['content'], 'Ảnh vừa chụp');
+    expect(adapter.sentBody?['attachmentStorageKeys'], hasLength(1));
+  });
+  for (final fails in [false, true]) {
+    testWidgets('camera cancel/error keeps draft: $fails', (tester) async {
+      final media = _TestMediaUpload();
+      await tester.pumpWidget(
+        _app(
+          _ChatScreenAdapter(),
+          mediaUploadService: media.service,
+          takePhoto: () async {
+            if (fails) throw Exception('camera unavailable');
+            return null;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Giữ bản nháp');
+      await tester.tap(find.byTooltip('Ảnh và camera'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chụp ảnh'));
+      await tester.pumpAndSettle();
+      expect(find.text('Giữ bản nháp'), findsOneWidget);
+      expect(find.byTooltip('Remove image'), findsNothing);
+      expect(media.presign.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('caption and image uploads before sending caption', (
     tester,
   ) async {
@@ -246,7 +799,7 @@ void main() {
       await tester.pumpWidget(_app(adapter, initialConversation: pending));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip('Attach image'), findsNothing);
+      expect(find.byTooltip('Ảnh và camera'), findsNothing);
       await tester.enterText(find.byType(TextField), 'Text request');
       await tester.pump();
       expect(_sendButton(tester).onPressed, isNotNull);
@@ -270,7 +823,7 @@ void main() {
     await tester.pumpWidget(_app(adapter, initialConversation: accepted));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Attach image'), findsOneWidget);
+    expect(find.byTooltip('Ảnh và camera'), findsOneWidget);
   });
 
   testWidgets('upload failure retains draft and prevents message creation', (
@@ -825,7 +1378,9 @@ void main() {
     expect(groups.loadedGroupIds, ['group-exact']);
     expect(find.text('Badminton'), findsOneWidget);
     expect(
-      tester.widget<GroupAvatar>(find.byType(GroupAvatar).first).avatarStorageKey,
+      tester
+          .widget<GroupAvatar>(find.byType(GroupAvatar).first)
+          .avatarStorageKey,
       'media/group.png',
     );
 
@@ -1145,12 +1700,28 @@ void main() {
   });
 }
 
+Future<void> _settleChatImages(WidgetTester tester) async {
+  for (var i = 0; i < 12; i++) {
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+  final images = tester.widgetList<Image>(find.byType(Image)).toList();
+  final context = tester.element(find.byType(ChatScreen));
+  await tester.runAsync(
+    () =>
+        Future.wait(images.map((image) => precacheImage(image.image, context))),
+  );
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 10));
+  }
+}
+
 Widget _app(
   _ChatScreenAdapter adapter, {
   VoidCallback? onOpenGroupInfo,
   ChatRealtimeClient? realtimeClient,
   MediaUploadService? mediaUploadService,
   Future<List<XFile>> Function()? pickImages,
+  Future<XFile?> Function()? takePhoto,
   ChatConversation? initialConversation,
 }) => MaterialApp(
   home: ChatScreen(
@@ -1158,6 +1729,7 @@ Widget _app(
     initialConversation: initialConversation,
     onOpenGroupInfo: onOpenGroupInfo,
     pickImages: pickImages,
+    takePhoto: takePhoto,
     repository: ChatRepository(
       ChatApi(
         Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter,
@@ -1172,7 +1744,9 @@ IconButton _sendButton(WidgetTester tester) =>
     tester.widget<IconButton>(find.byKey(const ValueKey('chat-send-button')));
 
 Future<void> _pickImages(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('Attach image'));
+  await tester.tap(find.byTooltip('Ảnh và camera'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Chọn từ thư viện'));
   await tester.pumpAndSettle();
 }
 
@@ -1307,6 +1881,55 @@ Map<String, dynamic> _message({
   'permissions': _permissions(canEdit: mine && status == 'ACTIVE'),
 };
 
+class _CountingReadService extends MediaUploadService {
+  _CountingReadService() : super(apiDio: Dio());
+  final reads = <String>[];
+  @override
+  Future<String> authorizedReadUrl(String key) async {
+    reads.add(key);
+    return 'https://storage.test/$key?signature=${reads.length}';
+  }
+}
+
+class _ImageHttpClient implements HttpClient {
+  _ImageHttpClient(this.bytes);
+  final Uint8List bytes;
+  final urls = <Uri>[];
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    urls.add(url);
+    return _ImageRequest(bytes);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ImageRequest implements HttpClientRequest {
+  _ImageRequest(this.bytes);
+  final Uint8List bytes;
+  @override
+  Future<HttpClientResponse> close() async => _ImageResponse(bytes);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ImageResponse extends StreamView<List<int>>
+    implements HttpClientResponse {
+  _ImageResponse(Uint8List bytes)
+    : contentLength = bytes.length,
+      super(Stream.value(bytes));
+  @override
+  final int contentLength;
+  @override
+  int get statusCode => 200;
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _FakeRealtimeClient implements ChatRealtimeClient {
   final StreamController<ChatRealtimeEvent> _events =
       StreamController<ChatRealtimeEvent>.broadcast();
@@ -1362,14 +1985,21 @@ class _FakeRealtimeClient implements ChatRealtimeClient {
 }
 
 class _ChatScreenAdapter implements HttpClientAdapter {
+  int pollReads = 0;
+  String pollQuestion = 'Chat Poll 1';
   final List<int?> historyCursors = [];
+  final List<int> readSequences = [];
   final List<Map<String, dynamic>> messages;
   final List<Map<String, Object?>> readers;
   final String? groupAvatarStorageKey;
   final List<Map<String, dynamic>> reactionDetails;
   bool detailsFail;
+  bool historyFail;
+  final Future<void>? historyGate;
   String? detailsMessagePath;
   bool sent = false;
+  int sentCount = 0;
+  int? nextSendSequence;
   Map<String, dynamic>? sentBody;
   String? lastReaction;
 
@@ -1379,6 +2009,8 @@ class _ChatScreenAdapter implements HttpClientAdapter {
     this.groupAvatarStorageKey,
     this.reactionDetails = const [],
     this.detailsFail = false,
+    this.historyFail = false,
+    this.historyGate,
   });
 
   @override
@@ -1389,7 +2021,32 @@ class _ChatScreenAdapter implements HttpClientAdapter {
   ) async {
     Object body = {};
     var status = 200;
-    if (options.path.endsWith('/conversation')) {
+    if (options.path == '/api/v1/polls/p') {
+      pollReads++;
+      body = {
+        'id': 'p',
+        'activityId': 'a',
+        'createdBy': 'peer',
+        'question': pollQuestion,
+        'pollType': 'SINGLE_CHOICE',
+        'voteVisibility': 'PUBLIC',
+        'resultVisibility': 'IMMEDIATE',
+        'resultsVisible': true,
+        'status': 'OPEN',
+        'options': [
+          {
+            'id': 'o',
+            'text': 'Option',
+            'sortOrder': 0,
+            'createdBy': 'peer',
+            'voteCount': 1,
+            'disabled': false,
+          },
+        ],
+        'callerOptionIds': [],
+        'permissions': {'canVote': true},
+      };
+    } else if (options.path.endsWith('/conversation')) {
       body = {
         'id': 'conversation-1',
         'type': 'GROUP',
@@ -1405,6 +2062,16 @@ class _ChatScreenAdapter implements HttpClientAdapter {
         'permissions': _permissions(),
       };
     } else if (options.path.endsWith('/messages') && options.method == 'GET') {
+      await historyGate;
+      if (historyFail) {
+        return ResponseBody.fromString(
+          jsonEncode({'code': 'UNAVAILABLE'}),
+          503,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      }
       final cursor = options.queryParameters['beforeSequence'] as int?;
       historyCursors.add(cursor);
       final limit = options.queryParameters['limit'] as int? ?? 30;
@@ -1424,19 +2091,22 @@ class _ChatScreenAdapter implements HttpClientAdapter {
         'hasMore': candidates.length > limit,
       };
     } else if (options.path.endsWith('/read-state')) {
+      readSequences.add((options.data as Map)['lastReadSequence'] as int);
       status = 204;
     } else if (options.path.endsWith('/messages') && options.method == 'POST') {
       sent = true;
+      sentCount++;
       sentBody = Map<String, dynamic>.from(options.data as Map);
       status = 201;
       body = _message(
-        id: 'sent-message',
-        sequence: messages.length + 1,
+        id: sentCount == 1 ? 'sent-message' : 'sent-message-$sentCount',
+        sequence: nextSendSequence ?? messages.length + 1,
         authorId: 'me',
         name: 'Minh',
         content: sentBody!['content'] as String,
         mine: true,
       );
+      if (nextSendSequence != null) nextSendSequence = nextSendSequence! + 1;
     } else if (options.path.endsWith('/reactions')) {
       detailsMessagePath = options.path;
       status = detailsFail ? 403 : 200;

@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -41,12 +42,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(buildSubject());
-      expect(find.byType(Image), findsOneWidget);
-      expect(
-        (tester.widget<Image>(find.byType(Image)).image as AssetImage)
-            .assetName,
-        equals('assets/images/wedo_logo.png'),
-      );
+      expect(find.byType(WeDoBrandMark), findsOneWidget);
       expect(find.text('Chào mừng trở lại'), findsOneWidget);
       expect(find.text('Đăng nhập để tiếp tục kết nối cùng mọi người.'), findsOneWidget);
       expect(find.text('Địa chỉ email'), findsOneWidget);

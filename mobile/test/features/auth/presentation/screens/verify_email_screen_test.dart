@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,7 +41,7 @@ void main() {
       expect(find.textContaining('custom.user@wedo.social'), findsOneWidget);
 
       // Logo (not rotated)
-      expect(find.byType(Image), findsOneWidget);
+      expect(find.byType(WeDoBrandMark), findsOneWidget);
 
       // Exactly 6 OTP TextField cells
       final textFields = find.descendant(

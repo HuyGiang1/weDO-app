@@ -51,7 +51,7 @@ The initial fix was reviewed again during continuation. Initialization, initial-
 
 ## Physical Acceptance (2026-10-13)
 
-Actual continuation tools are on Windows `D:/weDO-app`, not the Mac described in the recovery brief. No Mac-specific configuration was imported. Samsung `R58M36JQYVY` / `SM_G975U1` is detected/authorized. Repository runner started existing PostgreSQL, Redis and private storage without resetting volumes, backend health is UP, reverses are 8080/9000, and fresh verified APK was installed and automatically launched.
+Actual continuation tools are on Windows `D:/weDO-app`, not the Mac described in the recovery brief. No Mac-specific configuration was imported. Samsung `<QA_ANDROID_SERIAL>` / `SM_G975U1` is detected/authorized. Repository runner started existing PostgreSQL, Redis and private storage without resetting volumes, backend health is UP, reverses are 8080/9000, and fresh verified APK was installed and automatically launched.
 
 After the user unlocked the phone, the actual Flutter UI passed cold launch and force-stop/relaunch with the authenticated QA Owner session restored. All five Home sections loaded, and Home, Groups, Chat, Calendar and Profile tabs remained usable despite Firebase registration failure.
 

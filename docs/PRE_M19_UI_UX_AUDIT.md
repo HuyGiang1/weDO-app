@@ -6,7 +6,7 @@
 - Workspace: `D:/weDO-app`; branch: `feat/pre-m19-ui-polish`.
 - Unchanged HEAD/base/local dev/origin dev: `a3810701b747520cae25c8f3a0706c3296703c76`.
 - M18 CLOSED; M19 NOT STARTED. Audit only: no application changes, staging, commit, push or deployment.
-- Samsung `R58M36JQYVY`, SM_G975U1, authorized and unlocked. Physical display 1440x3040, override 1080x2280.
+- Samsung `<QA_ANDROID_SERIAL>`, SM_G975U1, authorized and unlocked. Physical display 1440x3040, override 1080x2280.
 - Repository Windows runner started the retained PostgreSQL/Redis/AIStor data and fresh backend; actuator health UP. ADB reverse only TCP 8080/9000.
 - Current debug APK built, installed and auto-launched with `WEDO_API_BASE_URL=http://127.0.0.1:8080`; latest build completed in 29.3 seconds, install in 7.2 seconds.
 - Artifact: `mobile/build/app/outputs/flutter-apk/app-debug.apk` (163496052 bytes). This was a local debug-device audit, not production deployment.
@@ -238,7 +238,7 @@ No new product features, design-system replacement, M19 deployment, backend opti
 
 ## Physical Samsung Evidence
 
-- Host-only screenshots: `C:/Users/truon/AppData/Local/Temp/wedo-pre-m19-audit/`; files 01-120 (120 captures, not 120 unique screens). Not staged or committed.
+- Host-only screenshots: `C:<USER_HOME>/AppData/Local/Temp/wedo-pre-m19-audit/`; files 01-120 (120 captures, not 120 unique screens). Not staged or committed.
 - Source inspection was targeted to reproduced symptoms. Exact top-priority reproduction/source/fix is above.
 - Final PID 9388 bounded device logcat sample: **1270 lines; 0 FATAL EXCEPTION; 0 Unhandled Exception; 0 RenderFlex/overflow matches**. The bounded native logcat did not retain the separate Flutter runner ListTile diagnostic; therefore this is **not** a claim of zero framework warnings throughout the audit.
 - Earlier sampled process windows were also crash/overflow-free, but they do not extend bounded sampling into a complete-device log audit.
@@ -297,7 +297,7 @@ The 120-message reopen/pagination test includes variable-height long messages.
 - Final `flutter analyze`: **No issues found**, exited 0 (8.0 seconds).
 - Final loopback debug APK: build exited 0 (20.6 seconds), confirmed at
   `mobile/build/app/outputs/flutter-apk/app-debug.apk`; installed successfully
-  and auto-launched on Samsung R58M36JQYVY / SM-G975U1.
+  and auto-launched on Samsung <QA_ANDROID_SERIAL> / SM-G975U1.
 - All five root tabs and back navigation exercised. Chat composer remains above
   keyboard; temporary 8080 reverse interruption/restoration and refresh/reopen
   recovered. This is transport/navigation sanity, not a fresh two-account live
@@ -317,7 +317,7 @@ The 120-message reopen/pagination test includes variable-height long messages.
   repository stop script stopped backend and PostgreSQL/Redis/AIStor, preserving
   volumes. Debug candidate remains installed; use `scripts/dev-run.cmd` for testing.
 - After screenshots are host-only at
-  `C:/Users/truon/AppData/Local/Temp/wedo-pre-m19-fixes/` (01-40, including interim
+  `C:<USER_HOME>/AppData/Local/Temp/wedo-pre-m19-fixes/` (01-40, including interim
   captures; 37/39 show final Chat). No screenshots or credentials added to Git.
 
 ## Remaining Issues
@@ -394,7 +394,7 @@ authorization behavior introduced.
 | UI-14 | FIXED — VERIFIED ON SAMSUNG | 19 sole FAB, 20 create destination; empty-list case automated. |
 
 Evidence lives only under
-`C:/Users/truon/AppData/Local/Temp/wedo-pre-m19-batch3/` (01-48 including intermediate
+`C:<USER_HOME>/AppData/Local/Temp/wedo-pre-m19-batch3/` (01-48 including intermediate
 captures). Not every filename describes a successful tap; only the mappings above
 are acceptance evidence. Normal and large font 1.1/1.5 checked on Groups, Search,
 Notifications, owner/Profile/Privacy/Calendar. Font restored to 1.1 and USB

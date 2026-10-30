@@ -422,7 +422,7 @@ $$\text{UserCredential} \longrightarrow \text{RefreshSession}$$
 ### Environment Variables
 - `WEDO_DB_URL`: PostgreSQL JDBC URL (default: `jdbc:postgresql://localhost:5432/wedo`).
 - `WEDO_DB_USERNAME`: Database username (default: `wedo`).
-- `WEDO_DB_PASSWORD`: Database password (default: `wedo_local`).
+- `WEDO_DB_PASSWORD`: Database password (default: `<YOUR_GENERATED_LOCAL_DB_PASSWORD>`).
 - `WEDO_REDIS_HOST`: Redis host (default: `localhost`).
 - `WEDO_REDIS_PORT`: Redis port (default: `6379`).
 - `WEDO_JWT_SECRET_BASE64`: 256-bit Base64 signing key for access JWTs.

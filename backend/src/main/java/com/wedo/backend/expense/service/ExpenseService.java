@@ -52,6 +52,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExpenseService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private static final BigDecimal CENT = new BigDecimal("0.01");
     private static final BigDecimal ZERO = new BigDecimal("0.00");
 
@@ -118,6 +120,7 @@ public class ExpenseService {
                 ));
             }
         }
+        if (realtime != null) { realtime.resource("EXPENSE_CREATED", "EXPENSE", expenseId, "group:" + groupId, groupId, actorId); }
         return detail(expenseId, actorId);
     }
 
@@ -213,6 +216,7 @@ public class ExpenseService {
                 && mediaReferences != null) {
             mediaReferences.deleteAfterCommit(current.receiptStorageKey(), requestedReceiptKey);
         }
+        if (realtime != null) { realtime.resource("EXPENSE_UPDATED", "EXPENSE", expenseId, "group:" + current.groupId(), current.groupId(), actorId); }
         return detail(expenseId, actorId);
     }
 
@@ -233,6 +237,7 @@ public class ExpenseService {
                 INSERT INTO expense_change_logs(id,expense_id,actor_id,field_name,old_value,new_value,created_at)
                 VALUES (?,?,?,?,?,?,?)
                 """, UUID.randomUUID(), expenseId, actorId, "status", "ACTIVE", "CANCELLED", Timestamp.from(now));
+        if (realtime != null) { realtime.resource("EXPENSE_CANCELLED", "EXPENSE", expenseId, "group:" + current.groupId(), current.groupId(), actorId); }
         return detail(expenseId, actorId);
     }
 
@@ -706,6 +711,7 @@ public class ExpenseService {
                     now
             ));
         }
+        if (realtime != null) { realtime.resource("SETTLEMENT_CREATED", "SETTLEMENT", settlementId, "group:" + groupId, groupId, actorId); }
         return settlementDetail(settlementId, actorId);
     }
 
@@ -806,6 +812,7 @@ public class ExpenseService {
                     now
             ));
         }
+        if (realtime != null) { realtime.resource("SETTLEMENT_CONFIRMED", "SETTLEMENT", settlementId, "group:" + current.groupId(), current.groupId(), actorId); }
         return settlementDetail(settlementId, actorId);
     }
 
@@ -824,6 +831,7 @@ public class ExpenseService {
         jdbc.update("UPDATE settlements SET status='REJECTED', updated_at=? WHERE id=?",
                 Timestamp.from(now), settlementId);
         recordSettlementStatusChange(settlementId, "PENDING", "REJECTED", actorId, now);
+        if (realtime != null) { realtime.resource("SETTLEMENT_REJECTED", "SETTLEMENT", settlementId, "group:" + current.groupId(), current.groupId(), actorId); }
         return settlementDetail(settlementId, actorId);
     }
 
@@ -842,6 +850,7 @@ public class ExpenseService {
         jdbc.update("UPDATE settlements SET status='CANCELLED', updated_at=? WHERE id=?",
                 Timestamp.from(now), settlementId);
         recordSettlementStatusChange(settlementId, "PENDING", "CANCELLED", actorId, now);
+        if (realtime != null) { realtime.resource("SETTLEMENT_CANCELLED", "SETTLEMENT", settlementId, "group:" + current.groupId(), current.groupId(), actorId); }
         return settlementDetail(settlementId, actorId);
     }
 

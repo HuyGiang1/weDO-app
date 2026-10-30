@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/ui/widgets/primary_button.dart';
@@ -127,7 +128,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -153,17 +154,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                           child: Container(
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(24.0),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primaryShadow.withValues(
-                                    alpha: 0.04,
-                                  ),
-                                  blurRadius: 20.0,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             padding: EdgeInsets.all(
                               constraints.maxWidth < 380
@@ -174,15 +166,15 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                const Text(
+                                Text(
                                   "Let's set up your profile",
-                                  style: AppTextStyles.headline,
+                                  style: AppTextStyles.of(context).headline,
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: AppSpacing.xs),
-                                const Text(
+                                Text(
                                   'Add your details to finish creating your profile.',
-                                  style: AppTextStyles.bodyMedium,
+                                  style: AppTextStyles.of(context).bodyMedium,
                                   textAlign: TextAlign.center,
                                 ),
                                 const SizedBox(height: AppSpacing.lg),
@@ -228,9 +220,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: AppSpacing.lg),
-                                const Text(
+                                Text(
                                   'Powered by WeDo',
-                                  style: AppTextStyles.bodySmall,
+                                  style: AppTextStyles.of(context).bodySmall,
                                   textAlign: TextAlign.center,
                                 ),
                               ],
@@ -263,12 +255,7 @@ class _ProfileHeader extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10.0),
-            child: Image.asset(
-              'assets/images/wedo_logo.png',
-              width: 36.0,
-              height: 36.0,
-              fit: BoxFit.cover,
-            ),
+            child: const WeDoBrandMark(size: 72),
           ),
         ),
       ),
@@ -289,10 +276,10 @@ class _ReadOnlyUsernameCard extends StatelessWidget {
         vertical: 12.0,
       ),
       decoration: BoxDecoration(
-        color: AppColors.inputBackground,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12.0),
         border: Border.all(
-          color: AppColors.surfaceContainerLowest,
+          color: Theme.of(context).colorScheme.surfaceContainerLowest,
           width: 1.0,
         ),
       ),
@@ -302,13 +289,14 @@ class _ReadOnlyUsernameCard extends StatelessWidget {
             width: 32.0,
             height: 32.0,
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
+              color: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.alternate_email_rounded,
               size: 18.0,
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(width: 12.0),
@@ -317,42 +305,40 @@ class _ReadOnlyUsernameCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'USERNAME',
                   style: TextStyle(
                     fontSize: 10.0,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.onSurfaceVariant,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     letterSpacing: 0.8,
                   ),
                 ),
                 Text(
                   username,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15.0,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.onSurface,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8.0,
-              vertical: 4.0,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
             decoration: BoxDecoration(
-              color: const Color(0xFF16806A).withValues(alpha: 0.1),
+              color: Theme.of(context).colorScheme.onSurface
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6.0),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.check_circle_outline_rounded,
                   size: 14.0,
-                  color: Color(0xFF16806A),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
                 SizedBox(width: 4.0),
                 Text(
@@ -360,7 +346,7 @@ class _ReadOnlyUsernameCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11.0,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF16806A),
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -385,30 +371,23 @@ class _AvatarPlaceholder extends StatelessWidget {
             width: 96.0,
             height: 96.0,
             decoration: BoxDecoration(
-              color: const Color(0xFFE6E8EA),
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryShadow.withValues(alpha: 0.06),
-                  blurRadius: 16.0,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
-            child: const Center(
+            child: Center(
               child: Icon(
                 Icons.person_outline_rounded,
                 size: 48.0,
-                color: AppColors.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
-          const Text(
+          Text(
             'Photo can be added later in settings',
             style: TextStyle(
               fontSize: 12.0,
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             textAlign: TextAlign.center,
           ),
@@ -472,9 +451,9 @@ class _ProfileFieldState extends State<_ProfileField> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(widget.label, style: AppTextStyles.label),
+            Text(widget.label, style: AppTextStyles.of(context).label),
             if (widget.optional)
-              const Text('Optional', style: AppTextStyles.bodySmall),
+              Text('Optional', style: AppTextStyles.of(context).bodySmall),
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
@@ -487,35 +466,17 @@ class _ProfileFieldState extends State<_ProfileField> {
           textInputAction: widget.maxLines == 1
               ? TextInputAction.next
               : TextInputAction.newline,
-          style: AppTextStyles.input,
+          style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: AppTextStyles.inputHint,
+            hintStyle: Theme.of(context).inputDecorationTheme.hintStyle,
             filled: true,
             fillColor: _isFocused
-                ? AppColors.surface
-                : AppColors.inputBackground,
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).colorScheme.surfaceContainerLow,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16.0,
               vertical: 12.0,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: widget.errorText == null
-                  ? BorderSide.none
-                  : const BorderSide(color: AppColors.error),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: BorderSide(
-                color: widget.errorText == null
-                    ? AppColors.primary
-                    : AppColors.error,
-              ),
             ),
           ),
           onChanged: widget.onChanged,
@@ -524,8 +485,8 @@ class _ProfileFieldState extends State<_ProfileField> {
           const SizedBox(height: AppSpacing.xs),
           Text(
             widget.errorText!,
-            style: const TextStyle(
-              color: AppColors.error,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.error,
               fontSize: 13.0,
               fontWeight: FontWeight.w500,
             ),

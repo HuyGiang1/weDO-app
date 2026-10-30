@@ -1,3 +1,5 @@
+import 'package:mobile/features/search/presentation/search_screen.dart';
+import 'package:mobile/features/community/presentation/community_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
@@ -32,8 +34,8 @@ import 'package:mobile/features/chat/data/chat_repository.dart';
 
 void main() {
   group('AppRoutes Registry', () {
-    test('contains exactly 43 registered production routes', () {
-      expect(AppRoutes.routes.length, 43);
+    test('contains exactly 48 registered production routes', () {
+      expect(AppRoutes.routes.length, 48);
 
       final expectedRoutes = <String>{
         AppRoutes.welcome,
@@ -48,11 +50,16 @@ void main() {
         AppRoutes.changePassword,
         AppRoutes.privacy,
         AppRoutes.personalQr,
+        AppRoutes.friends,
+        AppRoutes.friendRequests,
+        AppRoutes.blockedUsers,
         AppRoutes.publicUserProfile,
         AppRoutes.groups,
         AppRoutes.home,
         AppRoutes.createGroup,
         AppRoutes.groupInfo,
+        AppRoutes.memories,
+        AppRoutes.community,
         AppRoutes.groupActivityLog,
         AppRoutes.editGroup,
         AppRoutes.groupMembers,
@@ -92,11 +99,16 @@ void main() {
                   entry.key == AppRoutes.changePassword ||
                   entry.key == AppRoutes.privacy ||
                   entry.key == AppRoutes.personalQr ||
+                  entry.key == AppRoutes.friends ||
+                  entry.key == AppRoutes.friendRequests ||
+                  entry.key == AppRoutes.blockedUsers ||
                   entry.key == AppRoutes.publicUserProfile ||
                   entry.key == AppRoutes.groups ||
                   entry.key == AppRoutes.home ||
                   entry.key == AppRoutes.createGroup ||
                   entry.key == AppRoutes.groupInfo ||
+                  entry.key == AppRoutes.memories ||
+                  entry.key == AppRoutes.community ||
                   entry.key == AppRoutes.groupActivityLog ||
                   entry.key == AppRoutes.editGroup ||
                   entry.key == AppRoutes.groupMembers ||
@@ -801,7 +813,7 @@ void main() {
     ) async {
       final repository = _RouteGroupRepository();
       final expectedCalls = <String, List<String>>{
-        AppRoutes.groupInfo: ['group:group-id', 'members:group-id'],
+        AppRoutes.groupInfo: ['group:group-id', 'members:group-id', 'settings:group-id', 'pending:group-id'],
         AppRoutes.groupActivityLog: ['activities:group-id'],
         AppRoutes.editGroup: ['group:group-id'],
         AppRoutes.groupMembers: ['members:group-id'],
@@ -940,6 +952,51 @@ void main() {
   });
 
   group('Authenticated Home landing', () {
+    testWidgets(
+      'platform notification route cannot bypass authenticated root',
+      (tester) async {
+        tester.binding.platformDispatcher.defaultRouteNameTestValue =
+            AppRoutes.groupChat;
+        addTearDown(
+          tester.binding.platformDispatcher.clearDefaultRouteNameTestValue,
+        );
+        final storage = SecureStorageService(store: _TestMemoryStore());
+        final holder = AccessTokenHolder();
+        final session = AuthSessionController(
+          storage: storage,
+          accessTokenHolder: holder,
+          repository: AuthRepository(
+            api: _TestAuthApi(),
+            storage: storage,
+            accessTokenHolder: holder,
+          ),
+        )..markAuthenticated();
+        final key = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          WeDoApp(
+            authSessionController: session,
+            groupRepository: _RouteGroupRepository(),
+            navigatorKey: key,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(key.currentState!.canPop(), isFalse);
+        key.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                const Scaffold(body: Text('Resolved notification chat')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        key.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(key.currentState!.canPop(), isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
     testWidgets('root tabs retain Search after a deep link omits Search args', (
       tester,
     ) async {
@@ -962,27 +1019,41 @@ void main() {
         groupRepository: repository,
         chatRepository: _RouteChatRepository(),
       );
-      await tester.pumpWidget(WeDoApp(
-        authSessionController: session,
-        groupRepository: repository,
-        searchRouteArgs: searchArgs,
-      ));
+      await tester.pumpWidget(
+        WeDoApp(
+          authSessionController: session,
+          groupRepository: repository,
+          searchRouteArgs: searchArgs,
+        ),
+      );
       await tester.pumpAndSettle();
       final navigator = tester.state<NavigatorState>(find.byType(Navigator));
-      navigator.pushNamed(AppRoutes.groups,
-        arguments: GroupsRouteArgs(repository: repository));
+      navigator.pushNamed(
+        AppRoutes.groups,
+        arguments: GroupsRouteArgs(repository: repository),
+      );
       await tester.pumpAndSettle();
-      expect(tester.widget<MyGroupsScreen>(find.byType(MyGroupsScreen)).onSearch,
-        isNotNull);
-      final groupsArgs = ModalRoute.of(tester.element(find.byType(MyGroupsScreen)))!
-        .settings.arguments as GroupsRouteArgs;
+      expect(
+        tester.widget<MyGroupsScreen>(find.byType(MyGroupsScreen)).onSearch,
+        isNotNull,
+      );
+      final groupsArgs =
+          ModalRoute.of(tester.element(find.byType(MyGroupsScreen)))!
+                  .settings
+                  .arguments
+              as GroupsRouteArgs;
       expect(groupsArgs.repository, same(repository));
       expect(groupsArgs.searchArgs, same(searchArgs));
-      navigator.pushNamed(AppRoutes.home,
-        arguments: HomeRouteArgs(repository: repository));
+      navigator.pushNamed(
+        AppRoutes.home,
+        arguments: HomeRouteArgs(repository: repository),
+      );
       await tester.pumpAndSettle();
-      final homeArgs = ModalRoute.of(tester.element(find.byType(HomeScreen)))!
-        .settings.arguments as HomeRouteArgs;
+      final homeArgs =
+          ModalRoute.of(tester.element(find.byType(HomeScreen)))!
+                  .settings
+                  .arguments
+              as HomeRouteArgs;
       expect(homeArgs.searchArgs, same(searchArgs));
       expect(tester.takeException(), isNull);
     });
@@ -1105,6 +1176,32 @@ void main() {
 
         expect(find.byType(HomeScreen), findsOneWidget);
         expect(find.text('Chào mừng trở lại'), findsNothing);
+        final nav = tester.state<NavigatorState>(find.byType(Navigator));
+        expect(
+          nav.canPop(),
+          isFalse,
+          reason:
+              'Cold start must not expand /home into a welcome + home stack',
+        );
+        nav.push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                const Scaffold(body: Text('Cold push conversation')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        nav.pop();
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(nav.canPop(), isFalse);
+        sessionController.markUnauthenticated();
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeScreen), findsNothing);
+        expect(
+          nav.canPop(),
+          isFalse,
+          reason: 'Definitive invalidation must remove the protected root',
+        );
       },
     );
 
@@ -1137,7 +1234,9 @@ void main() {
         await tester.pumpWidget(
           WeDoApp(
             authSessionController: session,
+            logout: () async { await session.logout(); },
             groupRepository: groupRepo,
+            searchRouteArgs: SearchRouteArgs(searchRepository: _RouteSearchRepository(), profileRepository: _RouteProfileRepository(), groupRepository: groupRepo, chatRepository: _RouteChatRepository()),
             loadCurrentUser: loadUser,
             updateProfile: (_) async => loadUser(),
             updateUsername: (_) async => loadUser(),
@@ -1151,12 +1250,15 @@ void main() {
         await tester.pumpAndSettle();
         final nav = tester.state<NavigatorState>(find.byType(Navigator));
         expect(find.byType(HomeScreen), findsOneWidget);
+        final retainedHome = tester.state(find.byType(HomeScreen));
+        final reads = <String>[];
+        groupRepo.api.dio.interceptors.insert(0, InterceptorsWrapper(onRequest: (options, handler) { reads.add(options.path); handler.next(options); }));
         expect(
           tester
               .widget<BottomNavigationBar>(find.byType(BottomNavigationBar))
               .items
               .map((item) => item.label),
-          ['Trang chủ', 'Nhóm', 'Tin nhắn', 'Lịch', 'Hồ sơ'],
+          ['Cộng đồng', 'Trang chủ', 'Tin nhắn', 'Lịch', 'Hồ sơ'],
         );
 
         Future<void> select(String label, int index) async {
@@ -1176,23 +1278,74 @@ void main() {
           expect(nav.canPop(), isFalse);
         }
 
-        await select('Nhóm', 1);
-        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        expect(find.byTooltip('Cộng đồng'), findsNothing); // no redundant Home shortcut
+        await select('Cộng đồng', 0);
+        expect(find.byType(CommunityScreen), findsOneWidget);
+        final communityState = tester.state(find.byType(CommunityScreen));
+        await tester.drag(find.byType(ListView), const Offset(0, -350));
+        await tester.pumpAndSettle();
+        // Immersive feed intentionally hides navigation after a user drag.
+        await tester.tap(find.byTooltip('Hiện điều hướng'));
+        await tester.pumpAndSettle();
+        final visibleFeedBounds = tester.getTopLeft(find.byType(CommunityCard).first);
+        expect(tester.widget<ListView>(find.byType(ListView)).controller!.offset, greaterThan(0));
+        await select('Trang chủ', 1);
+        await select('Cộng đồng', 0);
+        expect(tester.state(find.byType(CommunityScreen)), same(communityState));
+        expect(find.byType(CommunityScreen, skipOffstage: false), findsOneWidget);
+        expect(tester.getTopLeft(find.byType(CommunityCard).first), visibleFeedBounds);
+        expect(reads.where((p) => p == '/api/v1/community/posts'), hasLength(1));
+        expect(reads.where((p) => p == '/api/v1/me'), hasLength(1));
+        await tester.tap(find.byTooltip('Tìm kiếm Cộng đồng')); await tester.pumpAndSettle();
+        await tester.tap(find.text('Mọi người và nội dung của bạn')); await tester.pumpAndSettle();
+        expect(find.byType(SearchScreen), findsOneWidget);
+        expect(tester.widget<TextField>(find.byType(TextField)).autofocus, isTrue);
+        await tester.tap(find.byTooltip('Quay lại')); await tester.pumpAndSettle(); await tester.tap(find.byTooltip('Quay lại')); await tester.pumpAndSettle();
+        expect(tester.state(find.byType(CommunityScreen)), same(communityState));
+        expect(reads.where((p) => p == '/api/v1/community/posts'), hasLength(1));
         await select('Tin nhắn', 2);
         expect(find.byType(ChatHomeScreen), findsOneWidget);
         await select('Lịch', 3);
         expect(find.byType(CalendarScreen), findsOneWidget);
         await select('Hồ sơ', 4);
         expect(find.byType(ProfileScreen), findsOneWidget);
-        await select('Trang chủ', 0);
+        await select('Trang chủ', 1);
         expect(find.byType(HomeScreen), findsOneWidget);
+        expect(tester.state(find.byType(HomeScreen)), same(retainedHome));
+        await tester.ensureVisible(find.text('Xem tất cả'));
+        await tester.tap(find.text('Xem tất cả'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MyGroupsScreen), findsOneWidget);
+        expect(nav.canPop(), isTrue);
+        nav.pop();
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(HomeScreen)), same(retainedHome));
+        await select('Cộng đồng', 0);
+        expect(tester.state(find.byType(CommunityScreen)), same(communityState));
+        expect(find.byType(CommunityScreen, skipOffstage: false), findsOneWidget);
+        expect(reads.where((p) => p == '/api/v1/community/posts'), hasLength(1));
+        // No Firebase/push service is configured: logout remains a session action.
+        await select('Hồ sơ', 4);
+        expect(find.byTooltip('Đăng xuất'), findsOneWidget);
+        await tester.tap(find.byTooltip('Đăng xuất'));
+        await tester.pumpAndSettle();
+        expect(session.isAuthenticated, isTrue);
+        await tester.tap(find.widgetWithText(FilledButton, 'Đăng xuất'));
+        await tester.pumpAndSettle();
+        expect(session.isAuthenticated, isFalse);
+        expect(find.text('Chào mừng trở lại'), findsOneWidget);
+        expect(find.byType(ProfileScreen), findsNothing);
+        expect(find.byType(HomeScreen, skipOffstage: false), findsNothing);
+
       },
     );
   });
 }
 
 class _RouteSearchRepository extends Fake implements SearchRepository {}
+
 class _RouteProfileRepository extends Fake implements ProfileRepository {}
+
 class _RouteChatRepository extends Fake implements ChatRepository {}
 
 Dio _homeDio() {
@@ -1200,6 +1353,15 @@ Dio _homeDio() {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) {
+        if (options.path == '/api/v1/me') {
+          handler.resolve(Response(requestOptions: options, data: {'id': 'user-id'})); return;
+        }
+        if (options.path == '/api/v1/community/posts') {
+          handler.resolve(Response(requestOptions: options, data: {'items': [for (var i = 0; i < 12; i++) {'id': 'post-$i', 'caption': 'Community QA $i', 'visibility': 'PUBLIC', 'author': {'id': 'user-id', 'displayName': 'QA User'}, 'createdAt': '2026-10-28T00:00:00Z', 'media': [], 'reactionCount': 0, 'commentCount': 0, 'permissions': {'canInteract': true}}], 'hasMore': false})); return;
+        }
+        if (options.path.startsWith('/api/v1/community/posts/')) {
+          handler.resolve(Response(requestOptions: options, data: options.path.endsWith('/comments') ? {'items': [], 'hasMore': false} : {'id': options.path.split('/').last, 'caption': 'Community QA', 'visibility': 'PUBLIC', 'author': {'id': 'user-id', 'displayName': 'QA User'}, 'createdAt': '2026-10-28T00:00:00Z', 'media': [], 'reactionCount': 0, 'commentCount': 0, 'permissions': {'canInteract': true}})); return;
+        }
         if (options.path == '/api/v1/home') {
           handler.resolve(
             Response(
@@ -1264,6 +1426,12 @@ class _RouteGroupRepository extends GroupRepository {
       chatHistoryPolicy: ChatHistoryPolicy.fullHistory,
       updatedAt: DateTime(2026),
     );
+  }
+
+  @override
+  Future<PagedResponse<JoinRequestResponse>> listJoinRequests(String id, {int page = 0, int size = 20}) async {
+    calls.add('pending:$id');
+    return PagedResponse(items: const [], page: page, size: size, totalElements: 0, totalPages: 0, hasNext: false);
   }
 
   @override

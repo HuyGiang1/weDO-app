@@ -144,7 +144,7 @@ class _ChangeUsernameScreenState extends State<ChangeUsernameScreen> {
             const SizedBox(height: AppSpacing.xl),
             ElevatedButton(
               onPressed: _submitting ? null : _submit,
-              style: profilePrimaryButtonStyle(),
+              style: profilePrimaryButtonStyle(context),
               child: _submitting
                   ? const CircularProgressIndicator()
                   : const Text('Cập nhật tên người dùng'),

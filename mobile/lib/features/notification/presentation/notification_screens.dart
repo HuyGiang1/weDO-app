@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/realtime/realtime_binding.dart';
 
 import '../../../app/routes.dart';
 import '../../activity/data/activity_api.dart';
@@ -32,7 +33,18 @@ class NotificationCenterScreen extends StatefulWidget {
       _NotificationCenterScreenState();
 }
 
-class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
+class _NotificationCenterScreenState extends State<NotificationCenterScreen> with RealtimeBinding<NotificationCenterScreen> {
+  @override
+  String? get realtimeScope => 'user:self';
+  @override
+  String get realtimePrefix => 'NOTIFICATION_';
+  @override
+  bool get realtimeReadNeedsRecovery => _controller.readNeedsRecovery;
+  @override
+  void onRealtimeAccessLost() => _controller.denyAccess();
+  @override
+  Future<void> reloadRealtime() async { await _controller.loadInbox(silent: true); }
+
   late final NotificationCenterController _controller;
   late final bool _ownsController;
 
@@ -99,20 +111,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
-  Color _categoryColor(String category) {
-    switch (category.toUpperCase()) {
-      case 'CHAT':
-        return const Color(0xFF0057FF);
-      case 'ACTIVITY':
-        return const Color(0xFF7B3FF2);
-      case 'FINANCE':
-        return const Color(0xFFD97706);
-      case 'FUND':
-        return const Color(0xFF0A8F6A);
-      default:
-        return const Color(0xFF0057FF);
-    }
-  }
+  Color _categoryColor(String category) => Theme.of(context).colorScheme.onSurfaceVariant;
 
   String _formatTimestamp(DateTime dateTime) {
     final DateTime local = dateTime.toLocal();
@@ -288,7 +287,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             state.inbox?.items ?? const <NotificationItemModel>[];
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF6F9FF),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
           appBar: AppBar(
             title: Row(
               children: <Widget>[
@@ -302,7 +301,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0057FF),
+                      color: Theme.of(context).colorScheme.primary,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -344,7 +343,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFD7E3F7)),
+                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                   ),
                   child: Row(
                     children: <Widget>[
@@ -356,18 +355,18 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               state.unreadCount > 0
                                   ? 'Bạn có ${state.unreadCount} thông báo chưa đọc'
                                   : 'Tất cả thông báo đã được đọc',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
-                                color: Color(0xFF0D1F3C),
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                             const SizedBox(height: 2),
-                            const Text(
+                            Text(
                               'Hộp thư lưu mọi sự kiện nhóm, lịch hẹn, chi tiêu và quỹ nhóm.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF51637D),
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -407,13 +406,13 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1F2),
+                        color: Theme.of(context).colorScheme.errorContainer,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFFECDD3)),
+                        border: Border.all(color: Theme.of(context).colorScheme.error),
                       ),
                       child: Text(
                         state.errorMessage!,
-                        style: const TextStyle(color: Color(0xFFBE123C)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
                     ),
                   ),
@@ -428,14 +427,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFD7E3F7)),
+                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: <Widget>[
                         Icon(
                           Icons.notifications_paused_outlined,
                           size: 44,
-                          color: Color(0xFF64748B),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         SizedBox(height: 12),
                         Text(
@@ -443,14 +442,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 16,
-                            color: Color(0xFF0D1F3C),
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         SizedBox(height: 4),
                         Text(
                           'Khi có hoạt động mới trong nhóm, quỹ nhóm hoặc trò chuyện, thông báo sẽ hiển thị tại đây.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF51637D)),
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -463,7 +462,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                       child: Material(
                         color: item.isRead
                             ? Colors.white
-                            : const Color(0xFFEEF5FF),
+                            : Theme.of(context).colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(18),
                         child: InkWell(
                           key: Key('notification_item_${item.notificationId}'),
@@ -475,8 +474,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
                                 color: item.isRead
-                                    ? const Color(0xFFDCE6F7)
-                                    : const Color(0xFF8AB4FF),
+                                    ? Theme.of(context).colorScheme.outlineVariant
+                                    : Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                             child: Row(
@@ -532,14 +531,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                                     vertical: 2,
                                                   ),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFFFE4E6),
+                                                color: Theme.of(context).colorScheme.errorContainer,
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                               ),
-                                              child: const Text(
+                                              child: Text(
                                                 'Quan trọng',
                                                 style: TextStyle(
-                                                  color: Color(0xFFBE123C),
+                                                  color: Theme.of(context).colorScheme.error,
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w800,
                                                 ),
@@ -551,8 +550,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                             Container(
                                               width: 9,
                                               height: 9,
-                                              decoration: const BoxDecoration(
-                                                color: Color(0xFF0057FF),
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context).colorScheme.primary,
                                                 shape: BoxShape.circle,
                                               ),
                                             ),
@@ -566,15 +565,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                           fontWeight: item.isRead
                                               ? FontWeight.w700
                                               : FontWeight.w900,
-                                          color: const Color(0xFF0D1F3C),
+                                          color: Theme.of(context).colorScheme.onSurface,
                                         ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         item.body,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13.5,
-                                          color: Color(0xFF334155),
+                                          color: Theme.of(context).colorScheme.onSurface,
                                         ),
                                       ),
                                       if (!item.target.actionable &&
@@ -587,16 +586,16 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                             vertical: 6,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFFFF7ED),
+                                            color: Theme.of(context).colorScheme.surfaceContainerLow,
                                             borderRadius: BorderRadius.circular(
                                               10,
                                             ),
                                           ),
                                           child: Text(
                                             item.target.nonActionableReason!,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 12,
-                                              color: Color(0xFFB45309),
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               fontWeight: FontWeight.w600,
                                             ),
                                           ),
@@ -605,9 +604,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                                       const SizedBox(height: 6),
                                       Text(
                                         _formatTimestamp(item.createdAt),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
-                                          color: Color(0xFF64748B),
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
@@ -673,7 +672,7 @@ class _NotificationSettingsScreenState
       builder: (BuildContext context, NotificationSettingsState state, _) {
         final UserNotificationSettingsModel settings = state.settings;
         return Scaffold(
-          backgroundColor: const Color(0xFFF6F9FF),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
           appBar: AppBar(title: const Text('Cài đặt thông báo')),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -681,13 +680,13 @@ class _NotificationSettingsScreenState
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                 ),
-                child: const Text(
+                child: Text(
                   'Lưu ý: Mọi thông báo vẫn luôn được lưu trong hộp thư ứng dụng. Các tùy chọn bên dưới dùng để bật hoặc tắt thông báo đẩy (Push) trên thiết bị.',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF1E3A8A)),
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
                 ),
               ),
               const SizedBox(height: 12),
@@ -855,18 +854,18 @@ class _GroupNotificationSettingsSheetState
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Icon(
+                    Icon(
                       Icons.notifications_off_outlined,
-                      color: Color(0xFF0057FF),
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Tắt thông báo nhóm • ${widget.groupName}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF0D1F3C),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
@@ -877,18 +876,18 @@ class _GroupNotificationSettingsSheetState
                   isMuted
                       ? 'Nhóm này đang tắt thông báo đẩy thông thường. Các sự kiện quan trọng (duyệt quỹ, xác nhận thanh toán, thăng hạng danh sách chờ) vẫn được ưu tiên.'
                       : 'Chọn khoảng thời gian bạn muốn tạm tắt thông báo đẩy từ nhóm này:',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: Color(0xFF51637D),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 14),
                 if (isMuted)
                   ListTile(
                     key: const Key('group_mute_option_unmute'),
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.notifications_active_outlined,
-                      color: Color(0xFF0A8F6A),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: const Text(
                       'Bật lại thông báo nhóm',

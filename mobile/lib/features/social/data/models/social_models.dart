@@ -99,13 +99,19 @@ class SocialUserSummary {
     this.avatarStorageKey,
   });
 
-  factory SocialUserSummary.fromJson(Map<String, dynamic> json) =>
-      SocialUserSummary(
-        id: _string(json, 'id'),
-        username: _string(json, 'username'),
-        displayName: _string(json, 'displayName'),
-        avatarStorageKey: json['avatarStorageKey'] as String?,
-      );
+  factory SocialUserSummary.fromJson(Map<String, dynamic> json) {
+    final username = _string(json, 'username');
+    final rawDisplay = json['displayName'];
+    final displayName = rawDisplay is String && rawDisplay.trim().isNotEmpty
+        ? rawDisplay.trim()
+        : username;
+    return SocialUserSummary(
+      id: _string(json, 'id'),
+      username: username,
+      displayName: displayName,
+      avatarStorageKey: json['avatarStorageKey'] as String?,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -201,9 +207,13 @@ class Friend {
   });
 
   factory Friend.fromJson(Map<String, dynamic> json) => Friend(
-        friendshipId: _string(json, 'friendshipId'),
+        friendshipId: json.containsKey('friendshipId')
+            ? _string(json, 'friendshipId')
+            : _string(json, 'id'),
         friend: SocialUserSummary.fromJson(_map(json, 'friend')),
-        createdAt: _date(json, 'createdAt'),
+        createdAt: json.containsKey('createdAt')
+            ? _date(json, 'createdAt')
+            : _date(json, 'since'),
       );
 
   @override
@@ -233,9 +243,13 @@ class BlockedUser {
   });
 
   factory BlockedUser.fromJson(Map<String, dynamic> json) => BlockedUser(
-        blockId: _string(json, 'blockId'),
+        blockId: json.containsKey('blockId')
+            ? _string(json, 'blockId')
+            : _string(json, 'id'),
         blockedUser: SocialUserSummary.fromJson(_map(json, 'blockedUser')),
-        createdAt: _date(json, 'createdAt'),
+        createdAt: json.containsKey('createdAt')
+            ? _date(json, 'createdAt')
+            : _date(json, 'blockedAt'),
       );
 
   @override
@@ -264,7 +278,9 @@ class RelationshipStatus {
 
   factory RelationshipStatus.fromJson(Map<String, dynamic> json) =>
       RelationshipStatus(
-        userId: _string(json, 'userId'),
+        userId: json.containsKey('userId')
+            ? _string(json, 'userId')
+            : _string(json, 'targetUserId'),
         state: RelationshipState.fromString(_string(json, 'state')),
       );
 

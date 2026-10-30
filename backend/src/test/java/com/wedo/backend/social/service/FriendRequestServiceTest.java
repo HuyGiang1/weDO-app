@@ -68,6 +68,9 @@ class FriendRequestServiceTest {
     @Mock
     private MutualGroupChecker mutualGroupChecker;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private FriendRequestService friendRequestService;
 
@@ -295,7 +298,17 @@ class FriendRequestServiceTest {
 
             FriendshipEntity createdFriendship = captor.getValue();
             assertThat(createdFriendship.getStatus()).isEqualTo(com.wedo.backend.social.entity.FriendshipStatus.ACTIVE);
-            assertThat(createdFriendship.getUserId1().compareTo(createdFriendship.getUserId2())).isLessThan(0);
+            assertThat(createdFriendship.getUserId1().toString().compareTo(createdFriendship.getUserId2().toString())).isLessThan(0);
+            ArgumentCaptor<com.wedo.backend.notification.event.NotificationDomainEvent> event =
+                    ArgumentCaptor.forClass(com.wedo.backend.notification.event.NotificationDomainEvent.class);
+            verify(eventPublisher).publishEvent(event.capture());
+            assertThat(event.getValue().recipientUserIds()).containsExactly(senderId);
+            assertThat(event.getValue().recipientUserIds()).doesNotContain(receiverId);
+            assertThat(event.getValue().actorId()).isEqualTo(receiverId);
+            assertThat(event.getValue().eventKey()).isEqualTo("FRIEND_REQUEST_ACCEPTED:" + requestId);
+            assertThatThrownBy(() -> friendRequestService.acceptFriendRequest(receiverId, requestId))
+                    .isInstanceOf(BusinessException.class);
+            verify(eventPublisher, org.mockito.Mockito.times(1)).publishEvent(event.getValue());
         }
 
         @Test

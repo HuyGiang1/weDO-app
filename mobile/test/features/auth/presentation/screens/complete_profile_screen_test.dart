@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -44,12 +45,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(buildSubject(username: 'alex_vibes'));
 
-        expect(find.byType(Image), findsOneWidget);
-        expect(
-          (tester.widget<Image>(find.byType(Image)).image as AssetImage)
-              .assetName,
-          equals('assets/images/wedo_logo.png'),
-        );
+        expect(find.byType(WeDoBrandMark), findsOneWidget);
         expect(find.text("Let's set up your profile"), findsOneWidget);
         expect(
           find.text('Add your details to finish creating your profile.'),

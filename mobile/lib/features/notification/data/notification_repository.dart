@@ -20,11 +20,12 @@ class NotificationRepository {
         code: error.code ?? 'API_ERROR',
         message: rawMsg.isNotEmpty ? rawMsg : fallbackMessage,
         statusCode: error.statusCode,
+        transportFailure: error.transportFailure,
       );
     } on NotificationFailure {
       rethrow;
-    } catch (_) {
-      throw NotificationFailure(code: 'UNEXPECTED', message: fallbackMessage);
+    } catch (error) {
+      throw NotificationFailure(code: 'UNEXPECTED', message: fallbackMessage, cause: error);
     }
   }
 

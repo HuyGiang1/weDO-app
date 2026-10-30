@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class BlockService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private final UserBlockRepository userBlockRepository;
     private final FriendshipRepository friendshipRepository;
@@ -76,7 +78,7 @@ public class BlockService {
             return;
         }
 
-        friendshipRepository.endActiveFriendshipBetween(currentUserId, targetUserId, now);
+        int endedFriendships = friendshipRepository.endActiveFriendshipBetween(currentUserId, targetUserId, now);
         friendRequestRepository.cancelPendingBetween(currentUserId, targetUserId, now);
         jdbcTemplate.update("""
                 UPDATE message_requests mr SET status='CANCELLED',resolved_at=?,updated_at=?
@@ -85,10 +87,25 @@ public class BlockService {
                   AND dc.user_id_1 <> dc.user_id_2
                 """, java.sql.Timestamp.from(now), java.sql.Timestamp.from(now),
                 currentUserId, targetUserId, currentUserId, targetUserId);
+        if (realtime != null) {
+            if (endedFriendships > 0) {
+                // Removing an actual edge can revoke third-party FOF visibility.
+                realtime.user("FRIEND_RELATIONSHIP_CHANGED", currentUserId);
+                realtime.user("FRIEND_RELATIONSHIP_CHANGED", targetUserId);
+            } else {
+                realtime.userRecipientPolicy("FRIEND_RELATIONSHIP_CHANGED", currentUserId);
+                realtime.userRecipientPolicy("FRIEND_RELATIONSHIP_CHANGED", targetUserId);
+            }
+        }
     }
 
     public void unblockUser(UUID currentUserId, UUID targetUserId) {
         userBlockRepository.deleteByBlockerIdAndBlockedId(currentUserId, targetUserId);
+        if (realtime != null) {
+            // Unblocking never recreates a friendship edge.
+            realtime.userRecipientPolicy("FRIEND_RELATIONSHIP_CHANGED", currentUserId);
+            realtime.userRecipientPolicy("FRIEND_RELATIONSHIP_CHANGED", targetUserId);
+        }
     }
 
     @Transactional(readOnly = true)

@@ -1,7 +1,7 @@
+import 'app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
-import 'app/theme/app_colors.dart';
 import 'core/models/paged_response.dart';
 
 // Social
@@ -915,14 +915,9 @@ void main() {
     MaterialApp(
       title: 'weDO Dev Showcase Hub',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF8F9FE),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          primary: AppColors.primary,
-        ),
-      ),
+      theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
       home: DevShowcaseHubScreen(
         groupRepo: groupRepo,
         socialRepo: socialRepo,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../data/models/social_models.dart';
 
@@ -34,13 +33,13 @@ class SocialActionButton extends StatelessWidget {
     }
 
     if (isLoading) {
-      return const SizedBox(
+      return SizedBox(
         width: 28.0,
         height: 28.0,
         child: Center(
           child: CircularProgressIndicator(
             strokeWidth: 2.0,
-            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
           ),
         ),
       );
@@ -53,7 +52,7 @@ class SocialActionButton extends StatelessWidget {
           icon: const Icon(Icons.person_add_rounded, size: 18.0),
           label: const Text('Thêm bạn bè'),
           style: FilledButton.styleFrom(
-            backgroundColor: AppColors.primary,
+            backgroundColor: Theme.of(context).colorScheme.primary,
             shape: const StadiumBorder(),
           ),
         );
@@ -64,8 +63,8 @@ class SocialActionButton extends StatelessWidget {
           icon: const Icon(Icons.close_rounded, size: 18.0),
           label: const Text('Hủy lời mời'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.onSurfaceVariant,
-            side: const BorderSide(color: AppColors.outlineVariant),
+            foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
             shape: const StadiumBorder(),
           ),
         );
@@ -77,7 +76,7 @@ class SocialActionButton extends StatelessWidget {
             FilledButton(
               onPressed: onAccept,
               style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 shape: const StadiumBorder(),
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               ),
@@ -87,8 +86,8 @@ class SocialActionButton extends StatelessWidget {
             OutlinedButton(
               onPressed: onDecline,
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.onSurfaceVariant,
-                side: const BorderSide(color: AppColors.outlineVariant),
+                foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                 shape: const StadiumBorder(),
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               ),
@@ -103,8 +102,8 @@ class SocialActionButton extends StatelessWidget {
           icon: const Icon(Icons.check_rounded, size: 18.0),
           label: const Text('Bạn bè'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.primary,
-            side: const BorderSide(color: AppColors.primary),
+            foregroundColor: Theme.of(context).colorScheme.primary,
+            side: BorderSide(color: Theme.of(context).colorScheme.primary),
             shape: const StadiumBorder(),
           ),
         );
@@ -113,8 +112,8 @@ class SocialActionButton extends StatelessWidget {
         return OutlinedButton(
           onPressed: onUnblock,
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.error,
-            side: const BorderSide(color: AppColors.error),
+            foregroundColor: Theme.of(context).colorScheme.error,
+            side: BorderSide(color: Theme.of(context).colorScheme.error),
             shape: const StadiumBorder(),
           ),
           child: const Text('Bỏ chặn'),

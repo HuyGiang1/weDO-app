@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/ui/widgets/primary_button.dart';
@@ -152,7 +151,7 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -174,17 +173,9 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                         width: double.infinity,
                         clipBehavior: Clip.hardEdge,
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(24.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primaryShadow.withValues(
-                                alpha: 0.04,
-                              ),
-                              blurRadius: 20.0,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+
                         ),
                         child: Stack(
                           children: [
@@ -199,21 +190,21 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'WeDo',
-                                    style: AppTextStyles.brand,
+                                    style: AppTextStyles.of(context).brand,
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: AppSpacing.xxl),
-                                  const Text(
+                                  Text(
                                     'Choose your vibe',
-                                    style: AppTextStyles.headline,
+                                    style: AppTextStyles.of(context).headline,
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: AppSpacing.xs),
-                                  const Text(
+                                  Text(
                                     'Pick a unique username for your profile.',
-                                    style: AppTextStyles.bodyMedium,
+                                    style: AppTextStyles.of(context).bodyMedium,
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: AppSpacing.xl),
@@ -227,20 +218,20 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                       autocorrect: false,
                                       enableSuggestions: false,
                                       textInputAction: TextInputAction.done,
-                                      cursorColor: AppColors.primary,
-                                      style: const TextStyle(
+                                      cursorColor: Theme.of(context).colorScheme.primary,
+                                      style: TextStyle(
                                         fontSize: 16.0,
                                         fontWeight: FontWeight.w500,
-                                        color: AppColors.onSurface,
+                                        color: Theme.of(context).colorScheme.onSurface,
                                       ),
                                       decoration: InputDecoration(
                                         isDense: true,
                                         hintText: 'username',
-                                        hintStyle: const TextStyle(
+                                        hintStyle: TextStyle(
                                           fontSize: 16.0,
-                                          color: AppColors.onSurfaceVariant,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
-                                        prefixIcon: const Padding(
+                                        prefixIcon: Padding(
                                           padding: EdgeInsets.only(
                                             left: 16.0,
                                             right: 8.0,
@@ -252,7 +243,7 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                               style: TextStyle(
                                                 fontSize: 18.0,
                                                 fontWeight: FontWeight.w600,
-                                                color: AppColors.onSurfaceVariant,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               ),
                                             ),
                                           ),
@@ -264,39 +255,16 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                             ),
                                         filled: true,
                                         fillColor: _isFocused
-                                            ? AppColors.surface
-                                            : AppColors.inputBackground,
+                                            ? Theme.of(context).colorScheme.surface
+                                            : Theme.of(context).colorScheme.surfaceContainerLow,
                                         contentPadding:
                                             const EdgeInsets.symmetric(
                                               horizontal: 16.0,
                                               vertical: 16.0,
                                             ),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8.0,
-                                          ),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8.0,
-                                          ),
-                                          borderSide: _validationError == null
-                                              ? BorderSide.none
-                                              : const BorderSide(
-                                                  color: AppColors.error,
-                                                ),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            8.0,
-                                          ),
-                                          borderSide: BorderSide(
-                                            color: _validationError == null
-                                                ? AppColors.primary
-                                                : AppColors.error,
-                                          ),
-                                        ),
+
+
+
                                       ),
                                       onChanged: _handleUsernameChanged,
                                       onSubmitted: (_) => _handleContinue(),
@@ -306,10 +274,10 @@ class _CreateUsernameScreenState extends State<CreateUsernameScreen> {
                                     const SizedBox(height: AppSpacing.xs),
                                     Text(
                                       _validationError!,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13.0,
                                         fontWeight: FontWeight.w500,
-                                        color: AppColors.error,
+                                        color: Theme.of(context).colorScheme.error,
                                       ),
                                     ),
                                   ],
@@ -352,14 +320,8 @@ class _AmbientGlow extends StatelessWidget {
       height: 256.0,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.primary.withValues(alpha: 0.05),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.05),
-            blurRadius: 56.0,
-            spreadRadius: 20.0,
-          ),
-        ],
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+
       ),
     );
   }
@@ -376,32 +338,32 @@ class _AvailabilityStatus extends StatelessWidget {
       case _AvailabilityState.idle:
         return const SizedBox.shrink();
       case _AvailabilityState.checking:
-        return const _StatusRow(
+        return _StatusRow(
           icon: SizedBox(
             width: 16.0,
             height: 16.0,
             child: CircularProgressIndicator(strokeWidth: 2.0),
           ),
           message: 'Checking username...',
-          color: AppColors.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         );
       case _AvailabilityState.available:
-        return const _StatusRow(
+        return _StatusRow(
           icon: Icon(Icons.check_circle_rounded),
           message: 'Username is available',
-          color: Color(0xFF16806A),
+          color: Theme.of(context).colorScheme.onSurface,
         );
       case _AvailabilityState.unavailable:
-        return const _StatusRow(
+        return _StatusRow(
           icon: Icon(Icons.error_outline_rounded),
           message: 'Username is already taken',
-          color: AppColors.error,
+          color: Theme.of(context).colorScheme.error,
         );
       case _AvailabilityState.error:
-        return const _StatusRow(
+        return _StatusRow(
           icon: Icon(Icons.info_outline_rounded),
           message: "Couldn't check username availability",
-          color: AppColors.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         );
     }
   }

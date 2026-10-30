@@ -15,6 +15,8 @@ String createTaskFailureMessage(Object error) {
       'Thông tin công việc chưa hợp lệ. Kiểm tra tiêu đề và hạn hoàn thành.',
     'GROUP_MEMBER_NOT_FOUND' =>
       'Người được giao không còn là thành viên hoạt động của nhóm.',
+    'TASK_ASSIGNEE_NOT_PARTICIPANT' =>
+      'Chỉ người đang tham gia hoạt động mới có thể nhận công việc.',
     'ACTIVITY_CLOSED' ||
     'ACTIVITY_ALREADY_COMPLETED' ||
     'GROUP_ARCHIVED' => 'Hoạt động hoặc nhóm không còn cho phép tạo công việc.',

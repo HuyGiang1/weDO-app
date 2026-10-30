@@ -11,6 +11,18 @@ import 'package:mobile/features/notification/data/notification_models.dart';
 import 'package:mobile/features/notification/presentation/notification_target_router.dart';
 
 void main() {
+  testWidgets('friend acceptance opens Friends without requiring group context', (tester) async {
+    final groups = GroupRepository(api: GroupApi(Dio()));
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => Scaffold(
+      body: TextButton(onPressed: () => unawaited(NotificationTargetRouter.open(
+        context: context, item: _item(targetType: 'SOCIAL', route: AppRoutes.friends, groupLess: true),
+        groupRepository: groups)), child: const Text('Open friend')),
+    )), onGenerateRoute: (settings) => MaterialPageRoute<void>(settings: settings,
+      builder: (_) => Scaffold(body: Text(settings.name!)))));
+    await tester.tap(find.text('Open friend'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppRoutes.friends), findsOneWidget);
+  });
   testWidgets('authoritative activity target opens its detail route', (
     WidgetTester tester,
   ) async {
@@ -244,6 +256,39 @@ void main() {
       expect(find.byType(AlertDialog), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'NotificationTargetRouter.open accepts NavigatorState directly and opens group chat safely',
+    (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      final GroupRepository groups = GroupRepository(api: GroupApi(Dio()));
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          home: const Scaffold(body: Text('Home Root')),
+          onGenerateRoute: (RouteSettings settings) => MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => Scaffold(body: Text(settings.name ?? 'unknown')),
+          ),
+        ),
+      );
+
+      unawaited(
+        NotificationTargetRouter.open(
+          navigator: navKey.currentState!,
+          item: _item(
+            targetType: 'CONVERSATION',
+            targetId: 'conv-1',
+            route: '/chat/conversation',
+          ),
+          groupRepository: groups,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(AppRoutes.groupChat), findsOneWidget);
+    },
+  );
 }
 
 NotificationItemModel _item({
@@ -252,6 +297,7 @@ NotificationItemModel _item({
   String? targetId = 'activity-1',
   String route = AppRoutes.activityDetail,
   Map<String, dynamic> params = const <String, dynamic>{},
+  bool groupLess = false,
 }) => NotificationItemModel(
   notificationId: 'notification-1',
   userId: 'recipient-1',
@@ -265,7 +311,7 @@ NotificationItemModel _item({
   critical: false,
   title: 'Activity changed',
   body: 'Open the activity',
-  group: const NotificationGroupSummaryModel(
+  group: groupLess ? null : const NotificationGroupSummaryModel(
     groupId: 'group-1',
     groupName: 'Group',
     groupStatus: 'ACTIVE',

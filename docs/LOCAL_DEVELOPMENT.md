@@ -1,3 +1,9 @@
+> Portable checkpoint note: machine-specific paths/device IDs and the old fixed
+> seed password have been redacted; original local notes are preserved outside
+> version control. Current local seeding requires WEDO_LOCAL_TEST_PASSWORD and
+> runtime auth/storage secrets must be supplied explicitly. For a fresh Windows
+> laptop use [TEAMMATE_WINDOWS_ANDROID.md](TEAMMATE_WINDOWS_ANDROID.md).
+
 # Local development
 
 Start:
@@ -59,7 +65,7 @@ profile/group avatars, up to 5 MiB per image.
 
 LOCAL DEVELOPMENT ONLY. `dev-run.cmd` enables the idempotent local QA seed for
 the backend process it starts. It creates the `weDO QA Team` group and these
-accounts with password `WeDOTest@123`:
+accounts with password `<YOUR_GENERATED_LOCAL_PASSWORD>`:
 
 - `owner@wedo.local` - OWNER
 - `admin@wedo.local` - ADMIN
@@ -105,7 +111,7 @@ With an authenticated user, open a group's conversation using
 `POST /api/v1/conversations/{conversationId}/messages`. Group membership,
 archive state, direct-message privacy, request status and message mutation
 windows are enforced by the backend. M9 physical device verification on Samsung
-(`R58M36JQYVY`) passed user acceptance with healthy backend (`UP`), active
+(`<QA_ANDROID_SERIAL>`) passed user acceptance with healthy backend (`UP`), active
 `adb reverse tcp:8080`, and foreground APK.
 
 ## M10 Chat Realtime (WebSocket + Redis)

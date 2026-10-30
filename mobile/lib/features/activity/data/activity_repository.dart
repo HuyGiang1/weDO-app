@@ -7,13 +7,13 @@ import 'activity_models.dart';
 class ActivityRepository {
   final ActivityApi api;
   ActivityRepository({required this.api});
-  Future<T> _guard<T>(Future<T> Function() work) async {
+  Future<T> _guard<T>(Future<T> Function() work, {bool preserveUnexpected = false}) async {
     try {
       return await work();
     } on ApiException catch (e) {
       throw ActivityException(ActivityFailure.fromApi(e));
     } catch (e) {
-      if (e is ActivityException) rethrow;
+      if (e is ActivityException || preserveUnexpected) rethrow;
       throw const ActivityException(
         ActivityFailure(ActivityFailureType.unknown),
       );
@@ -27,7 +27,7 @@ class ActivityRepository {
   }) => _guard(() => api.list(groupId, page: page, size: size));
   Future<ActivityDetail> create(String groupId, ActivityDraft d) =>
       _guard(() => api.create(groupId, d));
-  Future<ActivityDetail> detail(String id) => _guard(() => api.detail(id));
+  Future<ActivityDetail> detail(String id) => _guard(() => api.detail(id), preserveUnexpected: true);
   Future<ActivityDetail> update(String id, Map<String, dynamic> d) =>
       _guard(() => api.update(id, d));
   Future<ActivityDetail> confirm(String id) => _guard(() => api.confirm(id));
@@ -37,5 +37,5 @@ class ActivityRepository {
   Future<ActivityRsvp> rsvp(String id, ActivityRsvpStatus s) =>
       _guard(() => api.rsvp(id, s));
   Future<List<ActivityParticipant>> participants(String id) =>
-      _guard(() => api.participants(id));
+      _guard(() => api.participants(id), preserveUnexpected: true);
 }

@@ -4,11 +4,13 @@ import 'poll_models.dart';
 class PollRepository {
   final PollApi api;
   PollRepository(this.api);
+  Future<List<Poll>> listGroup(String groupId) => api.listGroup(groupId);
   Future<List<Poll>> list(String activityId) => api.list(activityId);
   Future<Poll> get(String id) => api.get(id);
   Future<Poll> create(String activityId, CreatePollDraft d) =>
       api.create(activityId, d);
-  Future<Poll> vote(String id, List<String> ids) => api.vote(id, ids);
+  Future<Poll> vote(String id, List<String> ids, {String? clientRequestId}) =>
+      api.vote(id, ids, clientRequestId: clientRequestId);
   Future<Poll> addOption(String id, String text) => api.addOption(id, text);
   Future<Poll> updateOption(String p, String o, String text) =>
       api.updateOption(p, o, text);

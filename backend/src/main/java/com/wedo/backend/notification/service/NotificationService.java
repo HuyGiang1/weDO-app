@@ -57,6 +57,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Service
 public class NotificationService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NotificationService.class);
 
     public static final Set<String> VALID_CATEGORIES = Set.of(
@@ -181,6 +183,7 @@ public class NotificationService {
             );
             existing = existing.withReadAt(now);
         }
+        if (realtime != null) { realtime.user("NOTIFICATION_READ", userId); }
         return toNotificationItemResponse(existing, userId);
     }
 
@@ -194,6 +197,7 @@ public class NotificationService {
                 userId
         );
         long remaining = getUnreadCount(userId).unreadCount();
+        if (realtime != null) { realtime.user("NOTIFICATION_READ", userId); }
         return new MarkAllReadResponse(marked, remaining);
     }
 
@@ -731,6 +735,7 @@ public class NotificationService {
                 Timestamp.from(now)
         );
 
+        if (realtime != null) { realtime.user("NOTIFICATION_CREATED", recipientId); }
         return new PersistedDispatchPlan(
                 notificationId,
                 recipientId,
@@ -891,7 +896,7 @@ public class NotificationService {
             params.putIfAbsent("targetId", targetId.toString());
         }
 
-        if (!Set.of("GROUP", "GROUP_INVITATION", "CONVERSATION", "ACTIVITY", "POLL", "TASK", "EXPENSE", "SETTLEMENT", "FUND")
+        if (!Set.of("SOCIAL", "GROUP", "GROUP_INVITATION", "CONVERSATION", "ACTIVITY", "POLL", "TASK", "EXPENSE", "SETTLEMENT", "FUND")
                 .contains(targetType.toUpperCase(Locale.ROOT))) {
             return new NotificationTargetInfo(
                     targetType, targetId, route, false,

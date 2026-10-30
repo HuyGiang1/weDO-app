@@ -20,7 +20,10 @@ class ActivityFailure {
   final Map<String, String> fieldErrors;
   const ActivityFailure(this.type, {this.fieldErrors = const {}});
   factory ActivityFailure.fromApi(ApiException e) =>
-      ActivityFailure(switch (e.code) {
+      ActivityFailure(e.statusCode == 401 ? ActivityFailureType.unauthorized
+          : e.statusCode == 403 ? ActivityFailureType.permission
+          : e.statusCode == 404 ? ActivityFailureType.notFound
+          : switch (e.code) {
         'VALIDATION_FAILED' => ActivityFailureType.validation,
         'ACTIVITY_NOT_FOUND' => ActivityFailureType.notFound,
         'ACTIVITY_CLOSED' => ActivityFailureType.closed,
@@ -31,7 +34,9 @@ class ActivityFailure {
         'RSVP_LOCKED' => ActivityFailureType.rsvpLocked,
         'INSUFFICIENT_GROUP_PERMISSION' => ActivityFailureType.permission,
         _ =>
-          e.transportFailure == ApiTransportFailure.network
+          (e.transportFailure == ApiTransportFailure.network ||
+              e.transportFailure == ApiTransportFailure.timeout ||
+              (e.statusCode != null && e.statusCode! >= 500))
               ? ActivityFailureType.network
               : e.statusCode == 401
               ? ActivityFailureType.unauthorized

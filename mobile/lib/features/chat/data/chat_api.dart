@@ -7,6 +7,13 @@ class ChatApi {
   final Dio dio;
   ChatApi(this.dio);
 
+  Future<ChatMessage> createPoll(String conversationId, String? activityId,
+      String clientMessageId, Map<String, dynamic> poll) => _object(
+    () => dio.post('/api/v1/conversations/${Uri.encodeComponent(conversationId)}/polls',
+      data: {'activityId': activityId, 'clientMessageId': clientMessageId, 'poll': poll}),
+    ChatMessage.fromJson,
+  );
+
   Future<T> _object<T>(
     Future<Response<dynamic>> Function() call,
     T Function(Map<String, dynamic>) parse,

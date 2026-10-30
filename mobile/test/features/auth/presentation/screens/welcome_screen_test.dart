@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/auth/presentation/screens/welcome_screen.dart';
@@ -34,11 +35,7 @@ void main() {
       expect(find.text('Login'), findsOneWidget);
 
       // Image asset
-      expect(find.byType(Image), findsOneWidget);
-      final imageWidget = tester.widget<Image>(find.byType(Image));
-      expect(imageWidget.image, isA<AssetImage>());
-      final assetImage = imageWidget.image as AssetImage;
-      expect(assetImage.assetName, equals('assets/images/wedo_logo.png'));
+      expect(find.byType(WeDoBrandMark), findsOneWidget);
     });
 
     testWidgets('fires onCreateAccountPressed callback when Create Account is tapped', (tester) async {

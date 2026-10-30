@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$DeviceId = 'R58M36JQYVY',
+    [string]$DeviceId = $env:ANDROID_SERIAL,
     [string]$PubCache
 )
 
@@ -62,6 +62,10 @@ function Test-BackendHealth {
 }
 
 try {
+    if (-not $DeviceId) { throw 'Pass -DeviceId <your-adb-serial> or set ANDROID_SERIAL.' }
+    foreach ($required in @('WEDO_JWT_SECRET_BASE64','WEDO_AUTH_TOKEN_PEPPER_BASE64','WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64','WEDO_LOCAL_TEST_PASSWORD')) {
+        if (-not [Environment]::GetEnvironmentVariable($required)) { throw "Load a private generated local environment first; missing $required" }
+    }
     if ($PubCache) {
         if (-not (Test-Path $PubCache)) { throw "PUB_CACHE path does not exist: $PubCache" }
         $env:PUB_CACHE = (Resolve-Path $PubCache).Path

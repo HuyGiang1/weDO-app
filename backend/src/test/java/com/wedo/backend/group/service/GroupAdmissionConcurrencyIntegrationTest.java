@@ -50,6 +50,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GroupAdmissionConcurrencyIntegrationTest extends AbstractPostgresIntegrationTest {
 
+    // Admission tests must not initialize external Firebase credentials or deliver pushes.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.google.firebase.FirebaseApp firebaseAdminApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.google.firebase.messaging.FirebaseMessaging firebaseMessaging;
+
+
     private static final Instant NOW = Instant.parse("2026-09-15T12:00:00Z");
 
     @Autowired private GroupAdmissionService admissionService;
@@ -62,6 +69,33 @@ class GroupAdmissionConcurrencyIntegrationTest extends AbstractPostgresIntegrati
     @Autowired private GroupJoinRequestRepository groupJoinRequestRepository;
     @Autowired private GroupBanRepository groupBanRepository;
     @Autowired private UserRepository userRepository;
+
+    @Test
+    void invitePreviewProjectsActiveMembershipAndPendingRequestWithoutAdmission() {
+        UUID owner = createUser(), member = createUser(), applicant = createUser(), outsider = createUser();
+        UUID group = createGroup(owner);
+        addMembership(group, member, GroupRole.MEMBER, GroupMembershipStatus.ACTIVE);
+        groupSettingsRepository.save(new GroupSettingsEntity(group, GroupJoinPolicy.APPROVAL_REQUIRED,
+                false, true, false, com.wedo.backend.group.entity.ChatHistoryPolicy.FULL_HISTORY, NOW, NOW));
+        var link = admissionService.ensureDefaultInviteLink(group, owner);
+        groupJoinRequestRepository.save(new GroupJoinRequestEntity(UUID.randomUUID(), group, applicant,
+                GroupJoinRequestStatus.PENDING, NOW, null, null));
+        for (UUID existing : List.of(owner, member)) {
+            var preview = admissionService.resolveInviteCode(link.code(), existing);
+            assertTrue(preview.alreadyMember());
+            assertFalse(preview.requestPending());
+            assertEquals(ErrorCode.ALREADY_GROUP_MEMBER, joinError(link.code(), existing));
+        }
+        var pending = admissionService.resolveInviteCode(link.code(), applicant);
+        assertFalse(pending.alreadyMember());
+        assertTrue(pending.requestPending());
+        assertEquals(ErrorCode.JOIN_REQUEST_ALREADY_PENDING, joinError(link.code(), applicant));
+        var eligible = admissionService.resolveInviteCode(link.code(), outsider);
+        assertFalse(eligible.alreadyMember());
+        assertFalse(eligible.requestPending());
+        assertEquals(2, groupMembershipRepository.countByGroupIdAndStatus(group, GroupMembershipStatus.ACTIVE));
+        assertEquals(0, groupInviteLinkRepository.findById(link.id()).orElseThrow().getUsesCount());
+    }
 
     @Test
     void case1_ninetyEightActiveMembers_tenConcurrentAdmissions_exactlyTwoSucceedAndTotalIs100() throws Exception {

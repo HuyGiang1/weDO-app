@@ -27,6 +27,7 @@ public class UploadService {
     private final ObjectStorageService storage;
     private final UserService userService;
     private final GroupPermissionService groupPermissionService;
+    @org.springframework.beans.factory.annotation.Autowired private MomentMediaPolicy momentPolicy;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private MediaReferenceService mediaReferences;
@@ -49,7 +50,9 @@ public class UploadService {
         String contentType = request.contentType().trim().toLowerCase(Locale.ROOT);
         boolean a2 = request.category() != UploadCategory.AVATAR && request.category() != UploadCategory.GROUP_AVATAR;
         long maxBytes = a2 ? MediaReferenceService.A2_MAX_BYTES : MAX_AVATAR_BYTES;
-        if (!IMAGE_TYPES.contains(contentType) || request.fileSize() <= 0 || request.fileSize() > maxBytes) {
+        boolean moment = request.category()==UploadCategory.MOMENT_IMAGE || request.category()==UploadCategory.MOMENT_VIDEO || request.category()==UploadCategory.COMMUNITY_IMAGE;
+        if(moment) momentPolicy.validate(request.category(),contentType,request.fileName(),request.fileSize());
+        if (!moment && (!IMAGE_TYPES.contains(contentType) || request.fileSize() <= 0 || request.fileSize() > maxBytes)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
@@ -65,6 +68,10 @@ public class UploadService {
             UUID contextId = parseGroupId(request.contextId());
             if (mediaReferences == null) throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
             switch (request.category()) {
+                case COMMUNITY_IMAGE -> {
+                    if (!contextId.equals(callerId)) throw new BusinessException(ErrorCode.ACCESS_DENIED);
+                }
+                case MOMENT_IMAGE, MOMENT_VIDEO -> groupPermissionService.requireMutableMembership(contextId,callerId);
                 case CHAT_IMAGE -> {
                     if (chatService == null || !chatService.canSendImageInConversation(contextId, callerId)) {
                         throw new BusinessException(ErrorCode.ACCESS_DENIED);

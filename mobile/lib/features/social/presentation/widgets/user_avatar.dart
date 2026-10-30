@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../media/presentation/media_storage_image.dart';
 
@@ -37,9 +36,9 @@ class UserAvatar extends StatelessWidget {
     final key = avatarStorageKey?.trim();
     return CircleAvatar(
       radius: radius,
-      backgroundColor: AppColors.surfaceContainerHigh,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: key == null || key.isEmpty
-          ? _fallback()
+          ? _fallback(context)
           : ClipOval(
               child: MediaStorageImage(
                 storageKey: key,
@@ -47,16 +46,16 @@ class UserAvatar extends StatelessWidget {
                 width: radius * 2,
                 height: radius * 2,
                 fit: BoxFit.cover,
-                fallback: (_) => _fallback(),
+                fallback: (_) => _fallback(context),
               ),
             ),
     );
   }
 
-  Widget _fallback() => Text(
+  Widget _fallback(BuildContext context) => Text(
     _getInitials(),
-    style: AppTextStyles.label.copyWith(
-      color: AppColors.primary,
+    style: AppTextStyles.of(context).label.copyWith(
+      color: Theme.of(context).colorScheme.primary,
       fontWeight: FontWeight.bold,
       fontSize: radius * 0.75,
     ),

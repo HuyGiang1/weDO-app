@@ -8,6 +8,29 @@ import 'package:flutter/services.dart';
 import '../../../core/storage/secure_storage_service.dart';
 import '../data/notification_failure.dart';
 
+String? notificationDevicePlatform(TargetPlatform platform) =>
+    switch (platform) {
+      TargetPlatform.android => 'ANDROID',
+      TargetPlatform.iOS => 'IOS',
+      _ => null,
+    };
+
+/// Apple must supply APNs registration before FCM token operations. If APNs is
+/// still pending, native FCM's onTokenRefresh completes registration later;
+/// never poll, invent a token, or make Firebase a prerequisite for login.
+Future<String?> resolvePushToken({
+  required TargetPlatform platform,
+  required Future<String?> Function() apnsToken,
+  required Future<String?> Function() fcmToken,
+}) async {
+  if (notificationDevicePlatform(platform) == null) return null;
+  if (platform == TargetPlatform.iOS) {
+    final token = await apnsToken();
+    if (token == null || token.trim().isEmpty) return null;
+  }
+  return fcmToken();
+}
+
 bool _isExternalMessagingFailure(Object error) =>
     error is FirebaseException ||
     error is PlatformException ||
@@ -75,9 +98,11 @@ abstract interface class PushMessagingClient {
 }
 
 class FirebasePushMessagingClient implements PushMessagingClient {
-  FirebasePushMessagingClient(this._messaging);
+  FirebasePushMessagingClient(this._messaging, {TargetPlatform? platform})
+    : _platform = platform ?? defaultTargetPlatform;
 
   final FirebaseMessaging _messaging;
+  final TargetPlatform _platform;
 
   @override
   Future<bool> requestPermissionIfNeeded({
@@ -100,7 +125,11 @@ class FirebasePushMessagingClient implements PushMessagingClient {
   }
 
   @override
-  Future<String?> getToken() => _messaging.getToken();
+  Future<String?> getToken() => resolvePushToken(
+    platform: _platform,
+    apnsToken: _messaging.getAPNSToken,
+    fcmToken: () => _messaging.getToken(),
+  );
 
   @override
   Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;
@@ -271,10 +300,20 @@ class NotificationPushService {
     }
   }
 
+  String? _tapKey(FcmPushEvent event) {
+    final String? id = event.notificationId;
+    if (id != null && id.isNotEmpty) return id;
+    final String? eventKey = event.data['eventKey'];
+    if (eventKey != null && eventKey.isNotEmpty) return eventKey;
+    final String? targetId = event.data['targetId'];
+    if (targetId != null && targetId.isNotEmpty) return targetId;
+    return null;
+  }
+
   void _handleTap(FcmPushEvent event) {
     if (!_authenticated) return;
-    final String? id = event.notificationId;
-    if (id != null && id.isNotEmpty && _handledTapIds.contains(id)) return;
+    final String? key = _tapKey(event);
+    if (key != null && key.isNotEmpty && _handledTapIds.contains(key)) return;
     if (kDebugMode) {
       debugPrint(
         'FCM tap: opened-app event, notificationIdPresent=${event.notificationId?.isNotEmpty == true}',
@@ -288,8 +327,8 @@ class NotificationPushService {
     if (!_appReady || !_authenticated || _pendingTap == null) return;
     final FcmPushEvent event = _pendingTap!;
     _pendingTap = null;
-    final String? id = event.notificationId;
-    if (id != null && id.isNotEmpty && !_handledTapIds.add(id)) return;
+    final String? key = _tapKey(event);
+    if (key != null && key.isNotEmpty && !_handledTapIds.add(key)) return;
     if (kDebugMode) {
       debugPrint('FCM tap: dispatching to notification router');
     }

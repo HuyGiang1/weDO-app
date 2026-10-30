@@ -97,30 +97,51 @@ class InviteLinksController
 class JoinByCodeController
     extends ValueNotifier<GroupAsyncState<GroupInviteSummaryResponse>> {
   final GroupRepository repository;
+  int _generation = 0;
+  bool _disposed = false;
   JoinByCodeController(this.repository) : super(const GroupAsyncState());
 
   Future<GroupInviteSummaryResponse?> resolve(String code) async {
+    if (_disposed) return null;
+    final generation = ++_generation;
     value = const GroupAsyncState(loading: true);
     try {
       final summary = await repository.resolveInviteCode(code);
+      if (_disposed || generation != _generation) return null;
       value = GroupAsyncState(data: summary);
       return summary;
     } on GroupException catch (e) {
-      value = GroupAsyncState(failure: e.failure);
+      if (!_disposed && generation == _generation) value = GroupAsyncState(failure: e.failure);
       return null;
     }
   }
 
   Future<bool> join(String code) async {
+    if (_disposed || value.loading || value.data?.alreadyMember == true || value.data?.requestPending == true) return false;
+    final generation = ++_generation;
     value = GroupAsyncState(loading: true, data: value.data);
     try {
       await repository.joinViaInviteCode(code);
+      if (_disposed || generation != _generation) return false;
       value = GroupAsyncState(data: value.data);
       return true;
     } on GroupException catch (e) {
-      value = GroupAsyncState(data: value.data, failure: e.failure);
+      if (_disposed || generation != _generation) return false;
+      if (e.failure.type == GroupFailureType.alreadyGroupMember ||
+          e.failure.type == GroupFailureType.joinRequestAlreadyPending) {
+        await resolve(code); // State may have changed on another device; never replay the mutation.
+      } else {
+        value = GroupAsyncState(data: value.data, failure: e.failure);
+      }
       return false;
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
   }
 }
 

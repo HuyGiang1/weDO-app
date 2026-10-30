@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -47,12 +48,7 @@ void main() {
     ) async {
       await tester.pumpWidget(buildSubject());
 
-      expect(find.byType(Image), findsOneWidget);
-      expect(
-        (tester.widget<Image>(find.byType(Image)).image as AssetImage)
-            .assetName,
-        equals('assets/images/wedo_logo.png'),
-      );
+      expect(find.byType(WeDoBrandMark), findsOneWidget);
       expect(find.text('New Password'), findsNWidgets(2));
       expect(
         find.text('Choose a password with 8–72 characters.'),

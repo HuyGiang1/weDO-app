@@ -12,11 +12,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthTokenHasherTest {
 
-    private static final String PEPPER_A = "k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3hT6rY9uI2oP5aD8=";
-    private static final String PEPPER_B = "t6rY9uI2oP5aD8k7e8pP5Fj9sW2mN1bV4cZ0xL8qJ3h=";
+    private static final String PEPPER_A = freshTestKey();
+    private static final String PEPPER_B = freshTestKey();
 
     private AuthTokenHasher hasherA;
     private AuthTokenHasher hasherB;
+
+    private static String freshTestKey() {
+        byte[] bytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.Base64.getEncoder().encodeToString(bytes);
+    }
 
     @BeforeEach
     void setUp() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
@@ -71,7 +72,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -115,17 +116,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             builder: (context, cardConstraints) => Container(
                               width: double.infinity,
                               decoration: BoxDecoration(
-                                color: AppColors.surface,
-                                borderRadius: BorderRadius.circular(24.0),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primaryShadow.withValues(
-                                      alpha: 0.04,
-                                    ),
-                                    blurRadius: 20.0,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               padding: EdgeInsets.all(
                                 cardConstraints.maxWidth >= 400.0
@@ -144,18 +136,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                         borderRadius: BorderRadius.circular(
                                           16.0,
                                         ),
-                                        child: Image.asset(
-                                          'assets/images/wedo_logo.png',
-                                          width: 64.0,
-                                          height: 64.0,
-                                          fit: BoxFit.cover,
-                                        ),
+                                        child: const WeDoBrandMark(size: 72),
                                       ),
                                     ),
                                     const SizedBox(height: AppSpacing.lg),
-                                    const Text(
+                                    Text(
                                       'Forgot Password?',
-                                      style: AppTextStyles.headline,
+                                      style: AppTextStyles.of(context).headline,
                                       textAlign: TextAlign.center,
                                     ),
                                     const SizedBox(height: AppSpacing.xs),
@@ -166,7 +153,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                         ),
                                         child: Text(
                                           "Enter your email and we'll send a 6-digit reset code if an account exists.",
-                                          style: AppTextStyles.bodyMedium,
+                                          style: AppTextStyles.of(context)
+                                              .bodyMedium,
                                           textAlign: TextAlign.center,
                                         ),
                                       ),
@@ -186,9 +174,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                     ),
                                     if (_requestSucceeded) ...[
                                       const SizedBox(height: AppSpacing.sm),
-                                      const Text(
+                                      Text(
                                         'If an account with this email exists, a 6-digit reset code will be sent.',
-                                        style: AppTextStyles.bodySmall,
+                                        style: AppTextStyles.of(context)
+                                            .bodySmall,
                                         textAlign: TextAlign.center,
                                       ),
                                     ],
@@ -201,13 +190,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                         Icons.arrow_back,
                                         size: 18.0,
                                       ),
-                                      label: const Text(
+                                      label: Text(
                                         'Return to Login',
-                                        style: AppTextStyles.bodySmall,
+                                        style: AppTextStyles.of(context)
+                                            .bodySmall,
                                       ),
                                       style: TextButton.styleFrom(
-                                        foregroundColor:
-                                            AppColors.onSurfaceVariant,
+                                        foregroundColor: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
                                         minimumSize: const Size(48.0, 40.0),
                                       ),
                                     ),
@@ -274,7 +265,7 @@ class _ForgotPasswordEmailFieldState extends State<_ForgotPasswordEmailField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Email Address', style: AppTextStyles.label),
+        Text('Email Address', style: AppTextStyles.of(context).label),
         const SizedBox(height: AppSpacing.xs),
         TextFormField(
           controller: widget.controller,
@@ -284,33 +275,21 @@ class _ForgotPasswordEmailFieldState extends State<_ForgotPasswordEmailField> {
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.done,
           onFieldSubmitted: widget.onSubmitted,
-          style: AppTextStyles.input,
+          style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: 'you@example.com',
-            hintStyle: AppTextStyles.inputHint,
+            hintStyle: Theme.of(context).inputDecorationTheme.hintStyle,
             filled: true,
             fillColor: _isFocused
-                ? AppColors.surface
-                : AppColors.inputBackground,
-            prefixIcon: const Icon(
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).colorScheme.surfaceContainerLow,
+            prefixIcon: Icon(
               Icons.mail_outline,
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16.0,
               vertical: 14.0,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: const BorderSide(color: AppColors.primary),
             ),
           ),
         ),
@@ -331,41 +310,35 @@ class _ForgotPasswordButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999.0),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryShadow.withValues(alpha: 0.12),
-            blurRadius: 16.0,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: SizedBox(
         height: AppSpacing.buttonHeightLarge,
         child: ElevatedButton(
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.7),
-            foregroundColor: AppColors.onPrimary,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            disabledBackgroundColor: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.7),
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
             elevation: 0,
-            shape: const StadiumBorder(),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
           ),
           child: isLoading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 24.0,
                   height: 24.0,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.onPrimary,
+                      Theme.of(context).colorScheme.onPrimary,
                     ),
                   ),
                 )
-              : const Text(
+              : Text(
                   'Send Reset Code',
-                  style: AppTextStyles.buttonPrimary,
+                  style: AppTextStyles.of(context).buttonPrimary,
                 ),
         ),
       ),

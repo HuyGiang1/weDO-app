@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../core/realtime/realtime_binding.dart';
+import '../../../core/realtime/reliable_read.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../core/l10n/domain_labels.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../activity/data/activity_models.dart';
 import '../../groups/data/group_repository.dart';
 import '../../groups/data/models/group_models.dart';
@@ -31,7 +33,43 @@ class CalendarScreen extends StatefulWidget {
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _CalendarScreenState extends State<CalendarScreen> with RealtimeBinding<CalendarScreen> {
+  @override
+  String get realtimeScope => 'user:self';
+  @override
+  String get realtimePrefix => 'CALENDAR_';
+  @override
+  Set<String> get realtimeAdditionalPrefixes => const {'GROUP_'};
+  @override
+  Future<void> reloadRealtime() async {
+    final types = takeRealtimeEventTypes();
+    final accessChanged = types.contains('CALENDAR_ACCESS_CHANGED') || types.any((type) =>
+        type.startsWith('GROUP_') && type != 'GROUP_UPDATED' && type != 'GROUP_LIST_CHANGED');
+    if (accessChanged) {
+      _loadGeneration++;
+      setState(() { _activities = const []; _groupId = null; });
+    }
+    if (accessChanged || types.isEmpty || types.contains('*') || types.any((type) => type.startsWith('GROUP_'))) {
+      final groups = _loadGroups();
+      setState(() { _groups = groups; });
+      try { await groups; } catch (error) {
+        if (mounted) setState(() { _error = error; _loading = false; });
+        return;
+      }
+    }
+    if (!mounted) return;
+    await _loadActivities(silent: true);
+  }
+  @override
+  bool get realtimeReadNeedsRecovery => _error != null && ReadFailure.fromError(_error!)?.retainData == true;
+  @override
+  void onRealtimeAccessLost() {
+    _loadGeneration++; _groupsGeneration++;
+    setState(() { _activities = const []; _groups = Future.value(const []); _groupId = null;
+      _error = const ApiException(statusCode: 403); _loading = false; });
+  }
+  int _loadGeneration = 0;
+  int _groupsGeneration = 0;
   static const Object _unchanged = Object();
 
   late DateTime _month;
@@ -53,12 +91,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _loadActivities();
   }
 
-  Future<List<GroupSummary>> _loadGroups() async =>
-      (await widget.groups.listGroups(size: 100)).items;
+  Future<List<GroupSummary>> _loadGroups() async {
+    final generation = ++_groupsGeneration;
+    final groups = (await widget.groups.listGroups(size: 100)).items;
+    if (mounted && generation == _groupsGeneration && _groupId != null &&
+        !groups.any((group) => group.id == _groupId)) {
+      setState(() => _groupId = null);
+    }
+    return groups;
+  }
 
-  Future<void> _loadActivities() async {
+  Future<void> _loadActivities({bool silent = false}) async {
+    final generation = ++_loadGeneration;
     setState(() {
-      _loading = true;
+      _loading = !silent;
       _error = null;
     });
     final from = DateTime(_month.year, _month.month);
@@ -74,15 +120,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
         status: _status,
         rsvp: _rsvp,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _activities = result;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _error = error;
+        _activities = const [];
         _loading = false;
       });
     }
@@ -120,10 +167,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Lịch'),
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       actions: [
         IconButton(
           tooltip: 'Làm mới lịch',
@@ -291,7 +338,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: Center(
                   child: Text(
                     label,
-                    style: TextStyle(color: AppColors.onSurfaceVariant),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ),
               ),
@@ -331,20 +378,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
               height: 28,
               alignment: Alignment.center,
               decoration: selected
-                  ? const BoxDecoration(
-                      color: AppColors.primary,
+                  ? BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
                       shape: BoxShape.circle,
                     )
                   : null,
               child: Text(
                 '$day',
-                style: TextStyle(color: selected ? Colors.white : null),
+                style: TextStyle(color: selected ? Theme.of(context).colorScheme.onPrimary : null),
               ),
             ),
             if (hasActivities)
-              const SizedBox(
+              SizedBox(
                 height: 3,
-                child: Icon(Icons.circle, size: 4, color: AppColors.primary),
+                child: Icon(Icons.circle, size: 4, color: Theme.of(context).colorScheme.primary),
               ),
           ],
         ),

@@ -11,6 +11,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest
 @ActiveProfiles("test")
 public abstract class AbstractPostgresIntegrationTest {
+    // Integration tests must not load external ADC or send real push notifications.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    protected com.google.firebase.FirebaseApp isolatedFirebaseApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    protected com.google.firebase.messaging.FirebaseMessaging isolatedFirebaseMessaging;
     @org.springframework.beans.factory.annotation.Autowired
     private com.wedo.backend.common.event.PostCommitDelivery delivery;
 

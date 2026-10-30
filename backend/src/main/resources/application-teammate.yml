@@ -1,0 +1,23 @@
+# Activate after local: SPRING_PROFILES_ACTIVE=local,teammate.
+# Required variables override historical local fallback secrets, without changing QA.
+security:
+  jwt:
+    secret-base64: ${WEDO_JWT_SECRET_BASE64}
+  auth-token:
+    pepper-base64: ${WEDO_AUTH_TOKEN_PEPPER_BASE64}
+  profile-completion-token:
+    secret-base64: ${WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64}
+spring:
+  datasource:
+    password: ${WEDO_DB_PASSWORD}
+media:
+  s3:
+    access-key: ${WEDO_MEDIA_ACCESS_KEY}
+    secret-key: ${WEDO_MEDIA_SECRET_KEY}
+    bootstrap-bucket: ${WEDO_MEDIA_BOOTSTRAP_BUCKET:false}
+wedo:
+  push:
+    enabled: ${WEDO_PUSH_ENABLED:false}
+  local-test-data:
+    enabled: ${WEDO_LOCAL_TEST_DATA_ENABLED:false}
+    password: ${WEDO_LOCAL_TEST_PASSWORD}

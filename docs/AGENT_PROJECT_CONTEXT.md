@@ -150,7 +150,7 @@ When resolving ambiguity or conflicts, agents must follow this strict precedence
    - Repository hygiene: `git diff --check`, `git status --short`, `git diff --stat`, `git stash list`.
 
 ### Samsung Physical-Device E2E & Local Runner
-- Configured physical device: Samsung `SM_G975U1` (`DeviceId = R58M36JQYVY`).
+- Configured physical device: Samsung `SM_G975U1` (`DeviceId = <QA_ANDROID_SERIAL>`).
 - Start full local stack + ADB reverse (`tcp:8080 -> tcp:8080`) + launch app: `.\scripts\dev-run.cmd`
 - Stop backend process: `.\scripts\dev-stop.cmd`
 - Stop backend + Docker infrastructure: `.\scripts\dev-stop.cmd -StopInfra`

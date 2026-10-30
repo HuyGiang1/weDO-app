@@ -116,23 +116,26 @@ class _SearchScreenState extends State<SearchScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-          child: TextField(
+          child: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _query,
+            builder: (context, query, _) => TextField(
+            autofocus: true,
             controller: _query,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               prefixIcon: const Icon(Icons.search),
               hintText: 'Tìm người, nhóm, hoạt động, trò chuyện',
-              suffixIcon: _query.text.isEmpty
+              suffixIcon: query.text.isEmpty
                   ? null
                   : IconButton(
                       tooltip: 'Xóa tìm kiếm',
                       onPressed: _query.clear,
                       icon: const Icon(Icons.close),
                     ),
-              border: const OutlineInputBorder(),
+
               isDense: true,
             ),
-          ),
+          )),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),

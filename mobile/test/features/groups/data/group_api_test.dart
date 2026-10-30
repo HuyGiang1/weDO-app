@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/groups/data/group_api.dart';
+import 'package:mobile/features/groups/data/group_repository.dart';
+import 'package:mobile/features/groups/application/group_management_controllers.dart';
 import 'package:mobile/features/groups/data/models/group_models.dart';
 
 void main() {
@@ -16,6 +18,28 @@ void main() {
       Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter,
     );
   });
+
+  test('ban accepts canonical 204 empty response with exact target and reason', () async {
+    await api.banMember('g', 'member', const BanMemberRequest(reason: 'QA reason'));
+    expect(adapter.requests.single.method, 'POST');
+    expect(adapter.requests.single.path, '/api/v1/groups/g/members/member/ban');
+    expect(adapter.requests.single.data, {'reason': 'QA reason'});
+  });
+
+  for (final status in [204, 403]) {
+    test('member management handles actual ban response $status', () async {
+      adapter.data['/api/v1/groups/g'] = _detailFixture();
+      adapter.data['/api/v1/groups/g/members/member'] = _memberFixture('member', role: 'MEMBER');
+      adapter.statusCodes['/api/v1/groups/g/members/member/ban'] = status;
+      final controller = MemberManagementController(GroupRepository(api: api));
+      addTearDown(controller.dispose);
+      await controller.load('g', 'member');
+      expect(controller.value.data, isNotNull);
+      expect(await controller.ban('g', 'member', reason: 'QA reason'), status == 204);
+      expect(controller.value.failure, status == 204 ? isNull : isNotNull);
+      expect(adapter.requests.where((r) => r.path.endsWith('/ban')), hasLength(1));
+    });
+  }
 
   test('listGroups sends exact query and decodes shared pagination', () async {
     adapter.data['/api/v1/groups'] = _pageFixture();
@@ -283,6 +307,7 @@ Map<String, dynamic> _pageFixture() => {
 
 class _Adapter implements HttpClientAdapter {
   final data = <String, dynamic>{};
+  final statusCodes = <String, int>{};
   final requests = <RequestOptions>[];
 
   @override
@@ -292,11 +317,13 @@ class _Adapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
-    final noContent =
-        options.path.endsWith('/kick') || options.path.endsWith('/leave');
+    final status = statusCodes[options.path] ??
+        (options.path.endsWith('/kick') || options.path.endsWith('/leave') ||
+                options.path.endsWith('/ban') ? 204 : 200);
+    final noContent = status == 204;
     return ResponseBody.fromString(
       noContent ? '' : jsonEncode(data[options.path] ?? {}),
-      noContent ? 204 : 200,
+      status,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },

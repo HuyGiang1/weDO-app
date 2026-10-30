@@ -59,6 +59,19 @@ class FakeActivityRepository extends ActivityRepository {
 }
 
 void main() {
+  test('join leave rejoin immediately replaces participant state including zero', () async {
+    final repo = FakeActivityRepository();
+    final controller = ActivityDetailController(repo);
+    for (final status in [ActivityRsvpStatus.going, ActivityRsvpStatus.notGoing, ActivityRsvpStatus.going]) {
+      repo.current = _testDetail(rsvp: status);
+      repo.participantList = status == ActivityRsvpStatus.notGoing ? [] : const [
+        ActivityParticipant(userId: 'member', rsvpStatus: ActivityRsvpStatus.going),
+      ];
+      expect(await controller.rsvp('a', status), isTrue);
+      expect(controller.value.participants.length, status == ActivityRsvpStatus.notGoing ? 0 : 1);
+      expect(controller.value.detail!.callerRsvpStatus, status);
+    }
+  });
   test('list loads page zero size thirty and preserves server order', () async {
     final repo = FakeActivityRepository();
     repo.page = PagedResponse(

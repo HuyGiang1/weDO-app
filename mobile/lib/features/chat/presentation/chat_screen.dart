@@ -4,15 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../groups/presentation/widgets/group_widgets.dart';
-import '../../media/presentation/media_storage_image.dart';
 import '../../social/presentation/widgets/user_avatar.dart';
 import '../data/chat_models.dart';
 import '../data/chat_realtime_event.dart';
 import '../data/chat_repository.dart';
 import 'chat_formatters.dart';
+import 'chat_image_viewer.dart';
 import 'message_reaction_details_sheet.dart';
+import 'chat_poll_card.dart';
+import 'chat_poll_create_screen.dart';
+import '../../poll/data/poll_api.dart';
+import '../../poll/data/poll_repository.dart';
+import '../../poll/presentation/screens/poll_screens.dart';
 
 const _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
@@ -22,6 +26,7 @@ class ChatScreen extends StatefulWidget {
   final ChatRepository repository;
   final VoidCallback? onOpenGroupInfo;
   final Future<List<XFile>> Function()? pickImages;
+  final Future<XFile?> Function()? takePhoto;
   const ChatScreen({
     super.key,
     required this.groupId,
@@ -29,15 +34,18 @@ class ChatScreen extends StatefulWidget {
     required this.repository,
     this.onOpenGroupInfo,
     this.pickImages,
+    this.takePhoto,
   });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _composer = TextEditingController();
   final _scroll = ScrollController();
+  final _historyAnchors = <String, GlobalKey>{};
+  bool _restoringHistoryAnchor = false;
   ChatConversation? _conversation;
   List<ChatMessage> _messages = [];
   List<ChatReaderState> _readers = [];
@@ -58,11 +66,20 @@ class _ChatScreenState extends State<ChatScreen> {
   DateTime? _lastTypingSentAt;
   bool _wasConnectedOnce = false;
   Future<void>? _catchUp;
+  bool _isForeground = true;
 
   @override
   void initState() {
     super.initState();
+    _isForeground =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
     _composer.addListener(_onComposerChanged);
+    // CONNECTED is broadcast, not replayed when mounting on a shared socket.
+    _wasConnectedOnce =
+        widget.repository.realtimeClient.currentState ==
+        ChatRealtimeConnectionState.connected;
     _realtimeSubscription = widget.repository.realtimeClient.events.listen(
       _onRealtimeEvent,
     );
@@ -72,6 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     final conversationId = _conversation?.id;
     if (conversationId != null) {
       widget.repository.realtimeClient.unsubscribeConversation(conversationId);
@@ -87,7 +105,25 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground = state == AppLifecycleState.resumed;
+    if (foreground == _isForeground) return;
+    _isForeground = foreground;
+    final conversationId = _conversation?.id;
+    if (conversationId == null) return;
+    if (foreground) {
+      widget.repository.realtimeClient.subscribeConversation(conversationId);
+      unawaited(_catchUpAfterReconnect());
+    } else {
+      // An invisible Chat must not suppress background push or mark it read.
+      widget.repository.realtimeClient.sendTypingStop(conversationId);
+      widget.repository.realtimeClient.unsubscribeConversation(conversationId);
+    }
+  }
+
   void _onComposerChanged() {
+    if (!_isForeground) return;
     final conversation = _conversation;
     if (conversation == null || conversation.permissions.readOnly) return;
     final text = _composer.text.trim();
@@ -132,6 +168,50 @@ class _ChatScreenState extends State<ChatScreen> {
     return null;
   }
 
+  // Reverse lists move older content when a new, differently sized item is
+  // inserted at zero. Preserve an actual visible point, not estimated extent.
+  void _keepReadingPosition() {
+    if (_restoringHistoryAnchor ||
+        !_scroll.hasClients ||
+        _scroll.offset <= 24 ||
+        _scroll.position.isScrollingNotifier.value) {
+      return;
+    }
+    final viewport = _scroll.position.context.notificationContext
+        ?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return;
+    final top = viewport.localToGlobal(Offset.zero).dy;
+    final bottom = top + viewport.size.height;
+    for (final key in _historyAnchors.values) {
+      final box = key.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y < top || y >= bottom) continue;
+      final pixels = _scroll.offset;
+      _restoringHistoryAnchor = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoringHistoryAnchor = false;
+        if (!mounted ||
+            !_scroll.hasClients ||
+            _scroll.position.isScrollingNotifier.value ||
+            (_scroll.offset - pixels).abs() > 2) {
+          return;
+        }
+        final next = key.currentContext?.findRenderObject();
+        if (next is! RenderBox || !next.attached || !next.hasSize) return;
+        final delta = next.localToGlobal(Offset.zero).dy - y;
+        if (delta.abs() < .5) return;
+        _scroll.jumpTo(
+          (_scroll.offset - delta).clamp(
+            _scroll.position.minScrollExtent,
+            _scroll.position.maxScrollExtent,
+          ),
+        );
+      });
+      break; // One correction for all messages delivered in this frame.
+    }
+  }
+
   void _onRealtimeEvent(ChatRealtimeEvent event) {
     if (!mounted) return;
     if (event.eventId != null && !_seenEventIds.add(event.eventId!)) {
@@ -146,7 +226,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _onlineUserIds.remove(_connectedOwnUserId);
       }
       final conversation = _conversation;
-      if (conversation != null) {
+      if (conversation != null && _isForeground) {
         widget.repository.realtimeClient.subscribeConversation(conversation.id);
         if (_wasConnectedOnce) {
           unawaited(_catchUpAfterReconnect());
@@ -198,6 +278,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final existingIndex = _messages.indexWhere(
           (m) => m.id == normalized.id || m.sequence == normalized.sequence,
         );
+        if (existingIndex < 0) _keepReadingPosition();
         setState(() {
           if (existingIndex >= 0) {
             _messages[existingIndex] = _mergeMessage(
@@ -210,7 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _messages = updated;
           }
         });
-        if (!isOwn) {
+        if (!isOwn && _isForeground) {
           unawaited(
             widget.repository.markRead(conversation.id, normalized.sequence),
           );
@@ -304,6 +385,7 @@ class _ChatScreenState extends State<ChatScreen> {
       unsentAt: msg.unsentAt,
       reactions: msg.reactions,
       attachments: msg.attachments,
+      pollId: msg.pollId,
       permissions: msg.permissions,
     );
   }
@@ -316,6 +398,7 @@ class _ChatScreenState extends State<ChatScreen> {
       sequence: incoming.sequence,
       status: incoming.status,
       type: incoming.type,
+      pollId: withdrawn ? null : incoming.pollId ?? existing.pollId,
       content: incoming.content,
       replyToMessageId: incoming.replyToMessageId,
       myReaction: incoming.myReaction ?? existing.myReaction,
@@ -386,7 +469,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (next == null || (cursor != null && next >= cursor)) break;
         cursor = next;
       } while (true);
-      if (_messages.isNotEmpty) {
+      if (_messages.isNotEmpty && _isForeground) {
         await widget.repository.markRead(
           conversation.id,
           _messages.last.sequence,
@@ -406,7 +489,11 @@ class _ChatScreenState extends State<ChatScreen> {
           widget.initialConversation ??
           _conversation ??
           await widget.repository.openGroup(widget.groupId!);
-      widget.repository.realtimeClient.subscribeConversation(conversation.id);
+      if (!mounted) return;
+      _conversation = conversation;
+      if (_isForeground) {
+        widget.repository.realtimeClient.subscribeConversation(conversation.id);
+      }
       final page = await widget.repository.history(conversation.id);
       if (!mounted) return;
       setState(() {
@@ -417,7 +504,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _nextBeforeSequence = page.nextBeforeSequence;
         _failure = null;
       });
-      if (page.messages.isNotEmpty) {
+      if (page.messages.isNotEmpty && _isForeground) {
         await widget.repository.markRead(
           conversation.id,
           page.messages.last.sequence,
@@ -458,6 +545,24 @@ class _ChatScreenState extends State<ChatScreen> {
       !_sending &&
       _pendingImages.length <= 4 &&
       (_composer.text.trim().isNotEmpty || _pendingImages.isNotEmpty);
+
+  Future<void> _createPoll() async {
+    final conversation = _conversation;
+    if (conversation?.groupId == null || conversation!.permissions.readOnly) {
+      return;
+    }
+    final created = await Navigator.of(context).push<ChatMessage>(
+      MaterialPageRoute(
+        builder: (_) => ChatPollCreateScreen(
+          conversationId: conversation.id,
+          groupId: conversation.groupId!,
+          api: widget.repository.api,
+        ),
+      ),
+    );
+    if (!mounted || created == null) return;
+    setState(() => _messages = _mergeMessages([created]));
+  }
 
   Future<void> _send() async {
     final conversation = _conversation;
@@ -516,16 +621,57 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _pickChatImages() async {
+  Future<void> _chooseChatImageSource() async {
+    if (_sending || _pendingImages.length >= 4) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Chọn từ thư viện'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Chụp ảnh'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || source == null) return;
+    await _pickChatImages(camera: source == ImageSource.camera);
+  }
+
+  Future<void> _pickChatImages({bool camera = false}) async {
     if (_sending || _pendingImages.length >= 4) return;
     try {
-      final picked =
-          await (widget.pickImages?.call() ??
-              ImagePicker().pickMultiImage(
-                imageQuality: 88,
-                maxWidth: 2048,
-                maxHeight: 2048,
-              ));
+      final List<XFile> picked;
+      if (camera) {
+        final photo =
+            await (widget.takePhoto?.call() ??
+                ImagePicker().pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 88,
+                  maxWidth: 2048,
+                  maxHeight: 2048,
+                ));
+        picked = photo == null ? [] : [photo];
+      } else {
+        picked =
+            await (widget.pickImages?.call() ??
+                ImagePicker().pickMultiImage(
+                  imageQuality: 88,
+                  maxWidth: 2048,
+                  maxHeight: 2048,
+                ));
+      }
       if (picked.isEmpty || !mounted) return;
       if (_pendingImages.length + picked.length > 4) {
         _notice('Tin nhắn chỉ có thể đính kèm tối đa 4 ảnh.');
@@ -536,9 +682,7 @@ class _ChatScreenState extends State<ChatScreen> {
         final bytes = await file.readAsBytes();
         final type = _imageContentType(file.name, file.mimeType);
         if (type == null || bytes.isEmpty || bytes.length > 10 * 1024 * 1024) {
-          _notice(
-            'Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP tối đa 10 MiB.',
-          );
+          _notice('Chỉ hỗ trợ ảnh JPEG, PNG hoặc WebP tối đa 10 MiB.');
           return;
         }
         selected.add(
@@ -583,7 +727,7 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      backgroundColor: AppColors.surfaceContainerLowest,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -741,7 +885,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final isGroup = _conversation?.type == 'GROUP';
     final showOnline = _isPeerOnline;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: isGroup
             ? InkWell(
@@ -771,7 +915,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             Row(
                               key: const ValueKey('chat-presence-online'),
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
+                              children: [
                                 Icon(
                                   Icons.circle,
                                   size: 8,
@@ -783,7 +927,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
-                                    color: AppColors.onSurfaceVariant,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                                   ),
                                 ),
                               ],
@@ -803,7 +949,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     Row(
                       key: const ValueKey('chat-presence-online'),
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
+                      children: [
                         Icon(Icons.circle, size: 8, color: Color(0xFF22C55E)),
                         SizedBox(width: 4),
                         Text(
@@ -811,14 +957,16 @@ class _ChatScreenState extends State<ChatScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: AppColors.onSurfaceVariant,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
                 ],
               ),
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
           tooltip: 'Quay lại',
           onPressed: () => Navigator.of(context).maybePop(),
@@ -835,9 +983,9 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _loading && _conversation == null
+            child: _loading && _messages.isEmpty
                 ? const Center(child: CircularProgressIndicator())
-                : _failure != null && _conversation == null
+                : _failure != null && _messages.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -857,6 +1005,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     reverse: true,
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     itemCount: _messages.length + (_hasMore ? 1 : 0),
+                    // Newest messages enter at index zero. Keys alone cannot
+                    // relocate existing sliver children when their index moves.
+                    findChildIndexCallback: (key) {
+                      final index = _messages.indexWhere(
+                        (message) => ValueKey('chat-item-${message.id}') == key,
+                      );
+                      return index < 0 ? null : _messages.length - 1 - index;
+                    },
                     itemBuilder: (context, index) {
                       if (_hasMore && index == _messages.length) {
                         return Center(
@@ -891,6 +1047,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         key: ValueKey('chat-item-${message.id}'),
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          SizedBox(
+                            height: 0,
+                            key: _historyAnchors.putIfAbsent(
+                              message.id,
+                              GlobalKey.new,
+                            ),
+                          ),
                           if (showSeparator)
                             _ChatTimeSeparator(
                               key: ValueKey(
@@ -901,6 +1064,33 @@ class _ChatScreenState extends State<ChatScreen> {
                           _MessageTile(
                             key: ValueKey(message.id),
                             message: message,
+                            onOpenPoll: message.pollId == null
+                                ? null
+                                : () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => PollDetailScreen(
+                                        pollId: message.pollId!,
+                                        repository: PollRepository(
+                                          PollApi(widget.repository.api.dio),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                            pollCard:
+                                message.type == 'POLL' &&
+                                    message.pollId != null &&
+                                    message.status != 'UNSENT'
+                                ? ChatPollCard(
+                                    key: ValueKey('chat-poll-${message.id}'),
+                                    pollId: message.pollId!,
+                                    repository: PollRepository(
+                                      PollApi(widget.repository.api.dio),
+                                    ),
+                                    readOnly:
+                                        _conversation?.permissions.readOnly ==
+                                        true,
+                                  )
+                                : null,
                             showAuthor:
                                 !message.isMine &&
                                 message.status != 'UNSENT' &&
@@ -916,8 +1106,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                 context: context,
                                 isScrollControlled: true,
                                 showDragHandle: true,
-                                backgroundColor:
-                                    AppColors.surfaceContainerLowest,
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerLowest,
                                 shape: const RoundedRectangleBorder(
                                   borderRadius: BorderRadius.vertical(
                                     top: Radius.circular(24),
@@ -943,10 +1134,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: Text(
                   '${_typingUsers.values.map((u) => u.displayName).join(', ')} đang nhập...',
                   key: const ValueKey('chat-typing-indicator'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
-                    color: AppColors.onSurfaceVariant,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -1010,12 +1201,38 @@ class _ChatScreenState extends State<ChatScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      if (_conversation?.type == 'GROUP' &&
+                          _conversation?.groupId != null)
+                        IconButton(
+                          tooltip: 'Tạo bình chọn',
+                          icon: const Icon(Icons.poll_outlined),
+                          onPressed:
+                              _sending || _conversation!.permissions.readOnly
+                              ? null
+                              : _createPoll,
+                        ),
+                      if (_conversation?.type == 'GROUP' &&
+                          _conversation?.groupId != null)
+                        IconButton(
+                          tooltip: 'Lịch sử bình chọn',
+                          icon: const Icon(Icons.ballot_outlined),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PollListScreen.group(
+                                groupId: _conversation!.groupId!,
+                                repository: PollRepository(
+                                  PollApi(widget.repository.api.dio),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       if (_conversation?.accessStatus != 'REQUEST_PENDING')
                         IconButton(
-                          tooltip: 'Attach image',
+                          tooltip: 'Ảnh và camera',
                           onPressed: _sending || _pendingImages.length >= 4
                               ? null
-                              : _pickChatImages,
+                              : _chooseChatImageSource,
                           icon: const Icon(Icons.image_outlined),
                         ),
                       Expanded(
@@ -1030,14 +1247,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           decoration: InputDecoration(
                             hintText: 'Tin nhắn',
                             filled: true,
-                            fillColor: AppColors.surfaceContainerLowest,
+                            fillColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerLowest,
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 12,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide.none,
                             ),
                           ),
                           onSubmitted: (_) => _send(),
@@ -1083,15 +1298,16 @@ class _ChatTimeSeparator extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh.withValues(alpha: 0.72),
+          color: Theme.of(context).colorScheme.surfaceContainerHigh
+              .withValues(alpha: 0.72),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           chatSeparatorLabel(timestamp),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
-            color: AppColors.onSurfaceVariant,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -1101,6 +1317,8 @@ class _ChatTimeSeparator extends StatelessWidget {
 
 class _MessageTile extends StatelessWidget {
   final ChatMessage message;
+  final Widget? pollCard;
+  final VoidCallback? onOpenPoll;
   final bool showAuthor;
   final bool showTapTime;
   final List<ChatReaderState> readers;
@@ -1111,6 +1329,8 @@ class _MessageTile extends StatelessWidget {
   const _MessageTile({
     super.key,
     required this.message,
+    this.pollCard,
+    this.onOpenPoll,
     required this.showAuthor,
     required this.showTapTime,
     required this.readers,
@@ -1121,8 +1341,34 @@ class _MessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (message.type == 'POLL_VOTED' || message.type == 'POLL_VOTE_CHANGED') {
+      final colors = Theme.of(context).colorScheme;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: onOpenPoll,
+            style: TextButton.styleFrom(
+              foregroundColor: colors.onSurfaceVariant,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: const Size(0, 32),
+            ),
+            icon: Icon(Icons.poll_outlined, size: 15, color: colors.primary),
+            label: Text(
+              '${message.content ?? "Cập nhật bình chọn"} · ${chatTime(message.createdAt)}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        ),
+      );
+    }
     final own = message.isMine;
     final withdrawn = message.status == 'UNSENT';
+    final imageOnly =
+        !withdrawn &&
+        message.attachments.isNotEmpty &&
+        (message.content?.trim().isEmpty ?? true);
     final name = message.author?.displayName.trim().isNotEmpty == true
         ? message.author!.displayName
         : 'Người dùng';
@@ -1155,10 +1401,10 @@ class _MessageTile extends StatelessWidget {
               child: Text(
                 chatTime(message.createdAt),
                 key: ValueKey('chat-tap-timestamp-${message.id}'),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -1218,7 +1464,9 @@ class _MessageTile extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.onSurfaceVariant,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -1238,16 +1486,26 @@ class _MessageTile extends StatelessWidget {
                                       key: ValueKey(
                                         'chat-message-bubble-${message.id}',
                                       ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 10,
-                                      ),
+                                      padding: imageOnly || pollCard != null
+                                          ? EdgeInsets.zero
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 10,
+                                            ),
                                       decoration: BoxDecoration(
-                                        color: withdrawn
-                                            ? AppColors.surfaceContainerHigh
+                                        color: imageOnly || pollCard != null
+                                            ? Colors.transparent
+                                            : withdrawn
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHigh
                                             : own
-                                            ? AppColors.primary
-                                            : AppColors.surfaceContainerLowest,
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                            : Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerLowest,
                                         borderRadius: BorderRadius.circular(18),
                                       ),
                                       child: withdrawn
@@ -1262,48 +1520,37 @@ class _MessageTile extends StatelessWidget {
                                                   CrossAxisAlignment.start,
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
+                                                ?pollCard,
                                                 for (final attachment
                                                     in message.attachments)
                                                   Padding(
                                                     padding:
                                                         const EdgeInsets.only(
-                                                          bottom: 6,
+                                                          bottom: 4,
                                                         ),
-                                                    child: ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                      child: MediaStorageImage(
-                                                        storageKey: attachment
-                                                            .storageKey,
-                                                        baseUrl: '',
-                                                        width: 240,
-                                                        height: 220,
-                                                        fallback: (_) =>
-                                                            const SizedBox(
-                                                              width: 240,
-                                                              height: 120,
-                                                              child: Center(
-                                                                child: Icon(
-                                                                  Icons
-                                                                      .broken_image_outlined,
-                                                                ),
-                                                              ),
-                                                            ),
+                                                    child: ChatImageThumbnail(
+                                                      key: ValueKey(
+                                                        attachment.id,
                                                       ),
+                                                      storageKey:
+                                                          attachment.storageKey,
                                                     ),
                                                   ),
-                                                if (message
-                                                        .content
-                                                        ?.isNotEmpty ==
-                                                    true)
+                                                if (pollCard == null &&
+                                                    message
+                                                            .content
+                                                            ?.isNotEmpty ==
+                                                        true)
                                                   Text(
                                                     message.content!,
                                                     style: TextStyle(
                                                       color: own
-                                                          ? Colors.white
-                                                          : AppColors.onSurface,
+                                                          ? Theme.of(context)
+                                                                .colorScheme
+                                                                .onPrimary
+                                                          : Theme.of(context)
+                                                                .colorScheme
+                                                                .onSurface,
                                                     ),
                                                   ),
                                               ],
@@ -1333,12 +1580,15 @@ class _MessageTile extends StatelessWidget {
                                               maxWidth: 108,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: AppColors
+                                              color: Theme.of(context)
+                                                  .colorScheme
                                                   .surfaceContainerLowest,
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                               border: Border.all(
-                                                color: AppColors.outlineVariant,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .outlineVariant,
                                               ),
                                             ),
                                             child: Text.rich(
@@ -1413,7 +1663,10 @@ class _ReaderStack extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.background, width: 1.5),
+                  border: Border.all(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    width: 1.5,
+                  ),
                 ),
                 child: UserAvatar(
                   key: ValueKey('reader-${visible[i].userId}'),

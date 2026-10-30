@@ -1,6 +1,12 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
+import '../../../journey/data/journey_api.dart';
+import '../../../journey/presentation/poll_action_screen.dart';
+
+import '../../../../core/network/api_exception.dart';
+import '../../../../core/realtime/realtime_binding.dart';
+import '../../../../core/realtime/reliable_read.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../core/utils/date_time_formatter.dart';
@@ -8,33 +14,78 @@ import '../../data/poll_failure.dart';
 import '../../data/poll_models.dart';
 import '../../data/poll_repository.dart';
 import '../poll_deadline.dart';
+import '../../../social/presentation/widgets/user_avatar.dart';
 
 class PollListScreen extends StatefulWidget {
-  final String activityId;
+  final String? activityId, groupId;
   final PollRepository repository;
   const PollListScreen({
     super.key,
     required this.activityId,
     required this.repository,
-  });
+  }) : groupId = null;
+  const PollListScreen.group({
+    super.key,
+    required this.groupId,
+    required this.repository,
+  }) : activityId = null;
   @override
   State<PollListScreen> createState() => _PollListScreenState();
 }
 
-class _PollListScreenState extends State<PollListScreen> {
-  late Future<List<Poll>> _future;
+class _PollListScreenState extends State<PollListScreen>
+    with RealtimeBinding<PollListScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  late final _deadlineRefresh = PollDeadlineRefresh(() {
+    if (mounted) _refreshRealtime();
+  });
+  @override
+  void dispose() {
+    _read.dispose();
+    _deadlineRefresh.dispose();
+    super.dispose();
+  }
+
+  @override
+  String? get realtimeScope => widget.groupId != null
+      ? 'group:${widget.groupId}'
+      : 'activity:${widget.activityId}';
+  @override
+  String get realtimePrefix => 'POLL_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _refreshRealtime();
+  }
+
+  Future<void> _refreshRealtime() => _read.load(
+    () => widget.groupId != null
+        ? widget.repository.listGroup(widget.groupId!)
+        : widget.repository.list(widget.activityId!),
+    onData: (data) {
+      _deadlineRefresh.schedule(
+        data
+            .where((poll) => poll.status == PollStatus.open)
+            .map((poll) => poll.deadlineAt),
+      );
+    },
+  );
+  final _read = ReliableRead<List<Poll>>();
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
   @override
   void initState() {
     super.initState();
     _reload();
   }
 
-  void _reload() => setState(() {
-    _future = widget.repository.list(widget.activityId);
-  });
+  void _reload() {
+    if (mounted) _refreshRealtime();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Bình chọn'),
       centerTitle: true,
@@ -42,25 +93,29 @@ class _PollListScreenState extends State<PollListScreen> {
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
       ],
     ),
-    floatingActionButton: FloatingActionButton(
-      tooltip: 'Tạo bình chọn',
-      onPressed: () async {
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => CreatePollScreen(
-              activityId: widget.activityId,
-              repository: widget.repository,
-            ),
+    floatingActionButton: widget.activityId == null
+        ? null
+        : FloatingActionButton(
+            tooltip: 'Tạo bình chọn',
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CreatePollScreen(
+                    activityId: widget.activityId!,
+                    repository: widget.repository,
+                  ),
+                ),
+              );
+              _reload();
+            },
+            child: const Icon(Icons.add),
           ),
-        );
-        _reload();
-      },
-      child: const Icon(Icons.add),
-    ),
-    body: FutureBuilder<List<Poll>>(
-      future: _future,
+    body: ReliableReadBuilder<List<Poll>>(
+      read: _read,
+      onRetry: _reload,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done)
+        if (snapshot.connectionState != ConnectionState.done &&
+            !snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         if (snapshot.hasError) return _Retry(onTap: _reload);
         final polls = snapshot.data ?? [];
@@ -102,9 +157,9 @@ class _PollCard extends StatelessWidget {
   const _PollCard({required this.poll, required this.onTap});
   @override
   Widget build(BuildContext context) => Material(
-    color: Colors.white,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 1,
-    shadowColor: AppColors.softShadow,
+    shadowColor: Colors.transparent,
     borderRadius: BorderRadius.circular(12),
     child: InkWell(
       onTap: onTap,
@@ -129,7 +184,7 @@ class _PollCard extends StatelessWidget {
                   poll.status == PollStatus.closed
                       ? Icons.lock_outline
                       : Icons.how_to_vote_outlined,
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ],
             ),
@@ -148,15 +203,15 @@ class _PollCard extends StatelessWidget {
                 ),
               )
             else
-              const Text(
+              Text(
                 'Kết quả sẽ hiển thị theo thiết lập bình chọn.',
-                style: TextStyle(color: AppColors.onSurfaceVariant),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             Text(
               poll.status == PollStatus.closed ? 'Đã đóng' : 'Đang mở',
               style: TextStyle(
                 color: poll.status == PollStatus.closed
-                    ? AppColors.onSurfaceVariant
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
                     : AppColors.secondary,
                 fontWeight: FontWeight.w700,
               ),
@@ -171,10 +226,14 @@ class _PollCard extends StatelessWidget {
 class CreatePollScreen extends StatefulWidget {
   final String activityId;
   final PollRepository repository;
+  final Future<void> Function(CreatePollDraft)? onCreate;
+  final bool allowMultipleChoiceControl;
   const CreatePollScreen({
     super.key,
     required this.activityId,
     required this.repository,
+    this.onCreate,
+    this.allowMultipleChoiceControl = false,
   });
   @override
   State<CreatePollScreen> createState() => _CreatePollScreenState();
@@ -188,6 +247,7 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
       _immediate = true,
       _saving = false;
   DateTime? _deadline;
+  bool _multipleChoice = false;
   @override
   void dispose() {
     _question.dispose();
@@ -198,6 +258,7 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     final options = _options
         .map((controller) => controller.text.trim())
         .where((text) => text.isNotEmpty)
@@ -212,17 +273,20 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
     }
     setState(() => _saving = true);
     try {
-      await widget.repository.create(
-        widget.activityId,
-        CreatePollDraft(
-          question: _question.text.trim(),
-          options: options,
-          allowMemberAddOption: _allowAdd,
-          anonymous: _anonymous,
-          showResultsImmediately: _immediate,
-          deadlineAt: _deadline,
-        ),
+      final draft = CreatePollDraft(
+        question: _question.text.trim(),
+        options: options,
+        allowMemberAddOption: _allowAdd,
+        anonymous: _anonymous,
+        showResultsImmediately: _immediate,
+        deadlineAt: _deadline,
+        multipleChoice: _multipleChoice,
       );
+      if (widget.onCreate != null) {
+        await widget.onCreate!(draft);
+      } else {
+        await widget.repository.create(widget.activityId, draft);
+      }
       if (mounted) Navigator.pop(context);
     } catch (error) {
       _notice(createPollFailureMessage(error));
@@ -259,7 +323,7 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(centerTitle: true, title: const Text('Tạo bình chọn')),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 112),
@@ -318,9 +382,9 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
           child: Column(
             children: [
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.calendar_today_outlined,
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 title: const Text('Hạn bình chọn'),
                 subtitle: Text(
@@ -337,6 +401,12 @@ class _CreatePollScreenState extends State<CreatePollScreen> {
                       ),
                 onTap: _pickDeadline,
               ),
+              if (widget.allowMultipleChoiceControl)
+                SwitchListTile(
+                  value: _multipleChoice,
+                  onChanged: (value) => setState(() => _multipleChoice = value),
+                  title: const Text('Cho phép chọn nhiều đáp án'),
+                ),
               SwitchListTile(
                 value: _allowAdd,
                 onChanged: (value) => setState(() => _allowAdd = value),
@@ -380,9 +450,45 @@ class PollDetailScreen extends StatefulWidget {
   State<PollDetailScreen> createState() => _PollDetailScreenState();
 }
 
-class _PollDetailScreenState extends State<PollDetailScreen> {
-  late Future<Poll> _future;
+class _PollDetailScreenState extends State<PollDetailScreen>
+    with RealtimeBinding<PollDetailScreen> {
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  late final _deadlineRefresh = PollDeadlineRefresh(() {
+    if (mounted) _refreshRealtime();
+  });
+  @override
+  void dispose() {
+    _read.dispose();
+    _deadlineRefresh.dispose();
+    super.dispose();
+  }
+
+  @override
+  String? get realtimeAggregateId => widget.pollId;
+  Future<void> _refreshRealtime() => _read.load(
+    () => widget.repository.get(widget.pollId),
+    onData: (data) {
+      bindRealtimeResource(data.realtimeScope);
+      _deadlineRefresh.schedule(
+        data.status == PollStatus.open ? [data.deadlineAt] : [],
+      );
+    },
+  );
+  final _read = ReliableRead<Poll>();
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
+  @override
+  String? get realtimeScope => null;
+  @override
+  String get realtimePrefix => 'POLL_';
+  @override
+  Future<void> reloadRealtime() async {
+    await _refreshRealtime();
+  }
+
   String? _selectedOptionId;
+  bool _voting = false;
   int _loadRevision = 0;
   int _selectionRevision = -1;
   @override
@@ -391,28 +497,48 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     _reload();
   }
 
-  void _reload() => setState(() {
+  void _reload() {
+    if (!mounted) return;
     _loadRevision++;
-    _future = widget.repository.get(widget.pollId);
-  });
+    _refreshRealtime();
+  }
+
   Future<void> _vote(Poll poll) async {
+    if (_voting || !poll.permissions.canVote || _read.failure != null) return;
     final selectedOptionId = _selectedOptionId;
     if (selectedOptionId == null) {
       _notice('Chọn ít nhất một lựa chọn.');
       return;
     }
+    final generation = _read.generation;
+    setState(() => _voting = true);
     try {
       await widget.repository.vote(poll.id, [selectedOptionId]);
-      _reload();
-    } catch (_) {
-      _notice('Không thể cập nhật bình chọn.');
+      if (mounted) _reload();
+    } on ApiException catch (error) {
+      if (!mounted || !_read.isCurrent(generation)) return;
+      if (error.statusCode == 401 ||
+          error.statusCode == 403 ||
+          error.statusCode == 404)
+        _read.denyAccess();
+      _notice(votePollFailureMessage(error));
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Poll vote',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _voting = false);
     }
   }
 
   Future<void> _close(Poll poll) async {
     final ok = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: AppColors.surfaceContainerLowest,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -422,7 +548,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.lock_outline, size: 44, color: AppColors.error),
+              Icon(Icons.lock_outline, size: 44, color: Theme.of(context).colorScheme.error),
               const SizedBox(height: 12),
               const Text(
                 'Đóng bình chọn?',
@@ -461,7 +587,7 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
     final text = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surfaceContainerLowest,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -519,9 +645,9 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               ),
             if (option.canDelete)
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.delete_outline,
-                  color: AppColors.error,
+                  color: Theme.of(context).colorScheme.error,
                 ),
                 title: const Text('Xóa lựa chọn'),
                 onTap: () => Navigator.pop(context, 'delete'),
@@ -579,10 +705,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
       ],
     ),
-    body: FutureBuilder<Poll>(
-      future: _future,
+    body: ReliableReadBuilder<Poll>(
+      read: _read,
+      onRetry: _reload,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done)
+        if (snapshot.connectionState != ConnectionState.done &&
+            !snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         if (!snapshot.hasData) return _Retry(onTap: _reload);
         final poll = snapshot.data!;
@@ -606,10 +734,11 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                   : 'Bình chọn đang mở',
               style: TextStyle(
                 color: poll.status == PollStatus.closed
-                    ? AppColors.onSurfaceVariant
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
                     : AppColors.secondary,
               ),
             ),
+            if (poll.resultsVisible) TextButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>PollActionScreen(api:JourneyApi(widget.repository.api.dio),poll:poll.id))),icon:const Icon(Icons.playlist_add_check),label:const Text('Tạo công việc / lịch trình')),
             if (!poll.resultsVisible)
               const Padding(
                 padding: EdgeInsets.only(top: 16),
@@ -622,7 +751,8 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
               (option) => _PollChoiceRow(
                 option: option,
                 selected: _selectedOptionId == option.id,
-                enabled: poll.permissions.canVote && !option.disabled,
+                enabled:
+                    poll.permissions.canVote && !_voting && !option.disabled,
                 showVoteCount: poll.resultsVisible,
                 onSelect: () => setState(() => _selectedOptionId = option.id),
                 onManage:
@@ -634,10 +764,12 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
             if (poll.permissions.canVote)
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 ),
-                onPressed: _selectedOptionId == null ? null : () => _vote(poll),
+                onPressed: _voting || _selectedOptionId == null
+                    ? null
+                    : () => _vote(poll),
                 child: const Text('Gửi bình chọn'),
               ),
             if (poll.permissions.canAddOption)
@@ -664,7 +796,10 @@ class _PollDetailScreenState extends State<PollDetailScreen> {
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => PollResultsScreen(poll: poll),
+                    builder: (_) => PollResultsScreen(
+                      poll: poll,
+                      repository: widget.repository,
+                    ),
                   ),
                 ),
                 child: const Text('Kết quả bình chọn'),
@@ -691,93 +826,222 @@ class PollVotersScreen extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(centerTitle: true, title: const Text('Người đã bình chọn')),
-    body: poll.voteVisibility == VoteVisibility.anonymous
-        ? const _Empty(
-            icon: Icons.visibility_off,
-            text: 'Bình chọn này ẩn danh.',
-          )
-        : FutureBuilder<List<PollVoters>>(
-            future: repository.voters(poll.id),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done)
-                return const Center(child: CircularProgressIndicator());
-              if (!snapshot.hasData)
-                return const _Empty(
-                  icon: Icons.error_outline,
-                  text: 'Không thể tải người đã bình chọn.',
-                );
-              return ListView(
-                padding: const EdgeInsets.all(20),
-                children: snapshot.data!.map((voter) {
-                  final option = poll.options.firstWhere(
-                    (item) => item.id == voter.optionId,
-                  );
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _Panel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            option.text,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text('${voter.userIds.length} người đã bình chọn'),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
+    body: _LivePoll(
+      initial: poll,
+      repository: repository,
+      includeVoters: true,
+      builder: (context, current, voters) => _build(context, current, voters),
+    ),
   );
+
+  Widget _build(BuildContext context, Poll poll, List<PollVoters> voters) =>
+      poll.voteVisibility == VoteVisibility.anonymous
+      ? const _Empty(icon: Icons.visibility_off, text: 'Bình chọn này ẩn danh.')
+      : ListView(
+          padding: const EdgeInsets.all(20),
+          children: voters
+              .where(
+                (voter) =>
+                    poll.options.any((option) => option.id == voter.optionId),
+              )
+              .map((voter) {
+                final option = poll.options.firstWhere(
+                  (item) => item.id == voter.optionId,
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _Panel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          option.text,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text('${voter.userIds.length} người đã bình chọn'),
+                        for (final person in voter.participants)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: UserAvatar(
+                              displayName: person.displayName,
+                              avatarStorageKey: person.avatarStorageKey,
+                              radius: 16,
+                            ),
+                            title: Text(person.displayName),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              })
+              .toList(),
+        );
 }
 
 class PollResultsScreen extends StatelessWidget {
   final Poll poll;
-  const PollResultsScreen({super.key, required this.poll});
+  final PollRepository? repository;
+  const PollResultsScreen({super.key, required this.poll, this.repository});
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(centerTitle: true, title: const Text('Kết quả bình chọn')),
-    body: !poll.resultsVisible
-        ? const _Empty(
-            icon: Icons.lock_outline,
-            text: 'Kết quả chưa được hiển thị.',
-          )
-        : ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Text(
-                poll.question,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ...poll.options.map(
-                (option) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _ResultBar(
-                    option: option,
-                    total: poll.options.fold(
-                      0,
-                      (total, item) => total + item.voteCount,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    body: repository == null
+        ? _build(context, poll)
+        : _LivePoll(
+            initial: poll,
+            repository: repository!,
+            includeVoters: true,
+            builder: (context, current, voters) =>
+                _build(context, current, voters),
           ),
   );
+
+  Widget _build(
+    BuildContext context,
+    Poll poll, [
+    List<PollVoters> voters = const [],
+  ]) => !poll.resultsVisible
+      ? const _Empty(
+          icon: Icons.lock_outline,
+          text: 'Kết quả chưa được hiển thị.',
+        )
+      : ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            if(repository!=null)TextButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute(builder:(_)=>PollActionScreen(api:JourneyApi(repository!.api.dio),poll:poll.id))),icon:const Icon(Icons.playlist_add_check),label:const Text('Tạo công việc / lịch trình')),
+            Text(
+              poll.question,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+            ),
+            Text(
+              poll.status == PollStatus.closed
+                  ? 'Bình chọn đã đóng'
+                  : 'Bình chọn đang mở',
+            ),
+            const SizedBox(height: 20),
+            ...poll.options.map(
+              (option) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ResultBar(
+                      option: option,
+                      total: poll.options.fold(
+                        0,
+                        (total, item) => total + item.voteCount,
+                      ),
+                    ),
+                    for (final entry in voters.where(
+                      (v) => v.optionId == option.id,
+                    ))
+                      for (final person in entry.participants)
+                        ListTile(
+                          dense: true,
+                          leading: UserAvatar(
+                            displayName: person.displayName,
+                            avatarStorageKey: person.avatarStorageKey,
+                            radius: 14,
+                          ),
+                          title: Text(person.displayName),
+                        ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+}
+
+class _LivePoll extends StatefulWidget {
+  final Poll initial;
+  final PollRepository repository;
+  final bool includeVoters;
+  final Widget Function(BuildContext, Poll, List<PollVoters>) builder;
+  const _LivePoll({
+    required this.initial,
+    required this.repository,
+    required this.builder,
+    this.includeVoters = false,
+  });
+  @override
+  State<_LivePoll> createState() => _LivePollState();
+}
+
+class _LivePollState extends State<_LivePoll> with RealtimeBinding<_LivePoll> {
+  @override
+  bool get realtimeReadNeedsRecovery => _read.failure?.retainData == true;
+  late final _deadlineRefresh = PollDeadlineRefresh(() {
+    if (mounted) reloadRealtime();
+  });
+  @override
+  void initState() {
+    super.initState();
+    // A route argument is a previous valid projection, not current authority.
+    if (!widget.includeVoters)
+      _read.accept(_PollLiveData(widget.initial, const []));
+    reloadRealtime();
+  }
+
+  @override
+  void dispose() {
+    _read.dispose();
+    _deadlineRefresh.dispose();
+    super.dispose();
+  }
+
+  final _read = ReliableRead<_PollLiveData>();
+  @override
+  void onRealtimeAccessLost() => _read.denyAccess();
+  @override
+  String get realtimeScope => widget.initial.realtimeScope;
+  @override
+  String get realtimePrefix => 'POLL_';
+  @override
+  String get realtimeAggregateId => widget.initial.id;
+  @override
+  Future<void> reloadRealtime() => _read.load(
+    () async {
+      final poll = await widget.repository.get(widget.initial.id);
+      // Never request/expose voter identities for an anonymous Poll.
+      final voters =
+          widget.includeVoters &&
+              poll.voteVisibility == VoteVisibility.public &&
+              poll.permissions.canViewVoters
+          ? await widget.repository.voters(poll.id)
+          : <PollVoters>[];
+      return _PollLiveData(poll, voters);
+    },
+    onData: (data) => _deadlineRefresh.schedule(
+      data.poll.status == PollStatus.open ? [data.poll.deadlineAt] : [],
+    ),
+  );
+  @override
+  Widget build(BuildContext context) => ReliableReadBuilder<_PollLiveData>(
+    read: _read,
+    onRetry: reloadRealtime,
+    builder: (context, snapshot) => snapshot.hasData
+        ? widget.builder(
+            context,
+            snapshot.requireData.poll,
+            snapshot.requireData.voters,
+          )
+        : const Center(child: CircularProgressIndicator()),
+  );
+}
+
+class _PollLiveData {
+  final Poll poll;
+  final List<PollVoters> voters;
+  const _PollLiveData(this.poll, this.voters);
 }
 
 class _PollChoiceRow extends StatelessWidget {
@@ -808,11 +1072,11 @@ class _PollChoiceRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: selected
-              ? AppColors.primaryFixed
-              : AppColors.surfaceContainerLowest,
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.outlineVariant,
+            color: selected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outlineVariant,
             width: selected ? 2 : 1,
           ),
         ),
@@ -820,7 +1084,7 @@ class _PollChoiceRow extends StatelessWidget {
           children: [
             Icon(
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: enabled ? AppColors.primary : AppColors.outline,
+              color: enabled ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -829,8 +1093,8 @@ class _PollChoiceRow extends StatelessWidget {
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   color: enabled
-                      ? AppColors.onSurface
-                      : AppColors.onSurfaceVariant,
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -865,7 +1129,7 @@ class _ResultBar extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -885,7 +1149,7 @@ class _ResultBar extends StatelessWidget {
           const SizedBox(height: 8),
           LinearProgressIndicator(
             value: value,
-            color: AppColors.primary,
+            color: Theme.of(context).colorScheme.primary,
             borderRadius: BorderRadius.circular(8),
           ),
         ],
@@ -899,9 +1163,9 @@ class _Panel extends StatelessWidget {
   const _Panel({required this.child});
   @override
   Widget build(BuildContext context) => Material(
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 1,
-    shadowColor: AppColors.softShadow,
+    shadowColor: Colors.transparent,
     borderRadius: BorderRadius.circular(12),
     child: Padding(padding: const EdgeInsets.all(16), child: child),
   );
@@ -918,7 +1182,7 @@ class _Empty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 48, color: AppColors.primary),
+          Icon(icon, size: 48, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 12),
           Text(text, textAlign: TextAlign.center),
         ],

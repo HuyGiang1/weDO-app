@@ -217,6 +217,48 @@ void main() {
   });
 
   group('ActivityDetailRuntimeScreen', () {
+    testWidgets('compact actions share styling, navigate, and fit a narrow screen', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final tapped = <String>[];
+      await tester.pumpWidget(MaterialApp(home: ActivityDetailRuntimeScreen(
+        activityId: 'act-1',
+        controller: _FakeDetailController(detail: sampleDetail),
+        onOpenJourney: () => tapped.add('journey'),
+        onOpenTasks: () => tapped.add('tasks'),
+        onOpenMemories: (_) => tapped.add('memories'),
+        onOpenPolls: () => tapped.add('polls'),
+      )));
+      await tester.pumpAndSettle();
+      final labels = ['Lịch trình & Check-in', 'Công việc', 'Khoảnh khắc', 'Bình chọn'];
+      final sizes = <Size>[];
+      for (final label in labels) {
+        final button = find.widgetWithText(OutlinedButton, label);
+        expect(button, findsOneWidget);
+        sizes.add(tester.getSize(button));
+        await tester.tap(button);
+        await tester.pump();
+      }
+      expect(sizes.toSet(), hasLength(1));
+      expect(tapped, ['journey', 'tasks', 'memories', 'polls']);
+      expect(find.text('Công cụ hoạt động'), findsNothing);
+      expect(find.text('Thảo luận'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('participant preview changes from one to zero without reopening', (tester) async {
+      final controller = _FakeDetailController(detail: sampleDetail);
+      controller.value = ActivityDetailState(detail: sampleDetail, participants: const [
+        ActivityParticipant(userId: 'member', rsvpStatus: ActivityRsvpStatus.going),
+      ]);
+      await tester.pumpWidget(MaterialApp(home: ActivityDetailRuntimeScreen(activityId: 'act-1', controller: controller)));
+      await tester.scrollUntilVisible(find.text('1 người đã đăng ký'), 300);
+      expect(find.text('1 người đã đăng ký'), findsOneWidget);
+      controller.value = ActivityDetailState(detail: sampleDetail, participants: const []);
+      await tester.pump();
+      expect(find.text('0 người đã đăng ký'), findsOneWidget);
+      expect(find.text('1 người đã đăng ký'), findsNothing);
+    });
     testWidgets(
       'renders detail data, permission-driven buttons, and participation chips',
       (tester) async {

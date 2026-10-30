@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Test;
 class TaskPermissionsTest {
 
     @Test
-    void creatorOwnerAndAdminCanChangeStatusAndDelete() {
+    void creatorOwnerAndAdminCanManageButCannotChangeStatusUnlessAssigned() {
         assertManagerPermissions(GroupRole.MEMBER, true);
         assertManagerPermissions(GroupRole.OWNER, false);
         assertManagerPermissions(GroupRole.ADMIN, false);
@@ -64,9 +64,9 @@ class TaskPermissionsTest {
     }
 
     @Test
-    void statusTransitionsPersistForAnAuthorizedCreator() {
+    void statusTransitionsPersistForAnAssignedCreator() {
         UUID actor = UUID.randomUUID();
-        Fixture fixture = fixture(actor, actor, GroupRole.MEMBER, List.of());
+        Fixture fixture = fixture(actor, actor, GroupRole.MEMBER, List.of(actor));
         when(fixture.tasks.findByIdForUpdate(fixture.task.getId())).thenReturn(Optional.of(fixture.task));
         when(fixture.access.requireMutable(fixture.task.getActivityId(), actor)).thenReturn(fixture.accessValue);
 
@@ -92,10 +92,24 @@ class TaskPermissionsTest {
         assertEquals(ErrorCode.TASK_DELETE_NOT_ALLOWED, error.errorCode());
     }
 
+    @Test
+    void everyNonAssigneeIncludingManagersIsRejectedByStatusEndpoint() {
+        for (GroupRole role : GroupRole.values()) {
+            UUID actor = UUID.randomUUID();
+            Fixture f = fixture(actor, actor, role, List.of());
+            when(f.tasks.findByIdForUpdate(f.task.getId())).thenReturn(Optional.of(f.task));
+            when(f.access.requireMutable(f.task.getActivityId(), actor)).thenReturn(f.accessValue);
+            BusinessException error = assertThrows(BusinessException.class,
+                    () -> f.service.changeStatus(f.task.getId(), actor, new UpdateTaskStatusRequest(TaskStatus.DONE)));
+            assertEquals(ErrorCode.TASK_UPDATE_NOT_ALLOWED, error.errorCode());
+            assertEquals(TaskStatus.TODO, f.task.getStatus());
+        }
+    }
+
     private void assertManagerPermissions(GroupRole role, boolean actorIsCreator) {
         UUID actor = UUID.randomUUID();
         TaskResponse response = responseFor(actor, actorIsCreator ? actor : UUID.randomUUID(), role, List.of());
-        assertTrue(response.permissions().canChangeStatus());
+        assertFalse(response.permissions().canChangeStatus());
         assertTrue(response.permissions().canDelete());
     }
 
@@ -121,8 +135,9 @@ class TaskPermissionsTest {
         M8ActivityAccess accessValue = new M8ActivityAccess(activity, new ReadableGroupAccess(group, membership));
         List<TaskAssigneeEntity> assigneeRows = assigned.stream().map(id -> new TaskAssigneeEntity(UUID.randomUUID(), task.getId(), id, actor, now)).toList();
         when(assignees.findByTaskId(task.getId())).thenReturn(assigneeRows);
+        when(assignees.existsByTaskIdAndUserId(task.getId(), actor)).thenReturn(assigned.contains(actor));
         when(histories.findByTaskIdOrderByCreatedAtAsc(task.getId())).thenReturn(List.of());
-        TaskService service = new TaskService(access, mock(GroupMembershipRepository.class), tasks, assignees, histories, Clock.fixed(now, ZoneOffset.UTC));
+        TaskService service = new TaskService(access, mock(GroupMembershipRepository.class), tasks, assignees, histories, Clock.fixed(now, ZoneOffset.UTC), mock(com.wedo.backend.activity.repository.ActivityParticipantRepository.class));
         return new Fixture(service, access, tasks, histories, task, accessValue);
     }
 

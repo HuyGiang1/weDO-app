@@ -3,7 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../../../core/ui/widgets/app_password_field.dart';
@@ -126,7 +127,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -147,17 +148,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(32.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primaryShadow.withValues(
-                                alpha: 0.08,
-                              ),
-                              blurRadius: 30.0,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
                         ),
                         padding: EdgeInsets.symmetric(
                           horizontal: constraints.maxWidth < 380
@@ -177,9 +169,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 label: 'Email',
                                 controller: _emailController,
                                 hintText: 'you@wedo.social',
-                                prefixIcon: const Icon(
+                                prefixIcon: Icon(
                                   Icons.mail_outline_rounded,
-                                  color: AppColors.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                   size: 20.0,
                                 ),
                                 keyboardType: TextInputType.emailAddress,
@@ -201,9 +195,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 label: 'Confirm Password',
                                 controller: _confirmPasswordController,
                                 hintText: '••••••••',
-                                prefixIcon: const Icon(
+                                prefixIcon: Icon(
                                   Icons.lock_clock_outlined,
-                                  color: AppColors.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                   size: 20.0,
                                 ),
                                 textInputAction: TextInputAction.done,
@@ -252,35 +248,23 @@ class _HeaderSection extends StatelessWidget {
           child: Container(
             width: 64.0,
             height: 64.0,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20.0),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.primaryShadow,
-                  blurRadius: 16.0,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(20.0),
-              child: Image.asset(
-                'assets/images/wedo_logo.png',
-                fit: BoxFit.cover,
-              ),
+              borderRadius: BorderRadius.circular(12),
+              child: const WeDoBrandMark(size: 72),
             ),
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-        const Text(
+        Text(
           'Join WeDo',
-          style: AppTextStyles.headline,
+          style: AppTextStyles.of(context).headline,
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: AppSpacing.xs),
-        const Text(
+        Text(
           'Connect with your community.',
-          style: AppTextStyles.bodyMedium,
+          style: AppTextStyles.of(context).bodyMedium,
           textAlign: TextAlign.center,
         ),
       ],
@@ -299,10 +283,13 @@ class _FooterSection extends StatelessWidget {
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        const Text('Already have an account? ', style: AppTextStyles.bodySmall),
+        Text(
+          'Already have an account? ',
+          style: AppTextStyles.of(context).bodySmall,
+        ),
         GestureDetector(
           onTap: onLoginPressed,
-          child: const Text('Login', style: AppTextStyles.link),
+          child: Text('Login', style: AppTextStyles.of(context).link),
         ),
       ],
     );

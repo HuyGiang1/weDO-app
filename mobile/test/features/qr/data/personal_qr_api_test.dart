@@ -20,6 +20,36 @@ void main() {
     expect(requestedPath, '/api/v1/me/qr');
     expect(result.deepLink, 'wedo://user/id');
   });
+
+  test('resolves scanned QR deep links via POST /api/v1/users/qr/resolve', () async {
+    final dio = Dio(BaseOptions(baseUrl: 'https://wedo.test'));
+    String? requestedPath;
+    String? requestedMethod;
+    Object? requestData;
+    dio.httpClientAdapter = _Adapter((options) async {
+      requestedPath = options.path;
+      requestedMethod = options.method;
+      requestData = options.data;
+      return ResponseBody.fromString(
+        '{"id":"550e8400-e29b-41d4-a716-446655440000","username":"maya","displayName":"Maya"}',
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    });
+    final profile = await PersonalQrApi(dio).resolveQr(
+      'https://wedo-3304c.web.app/u/550e8400-e29b-41d4-a716-446655440000',
+    );
+    expect(requestedPath, '/api/v1/users/qr/resolve');
+    expect(requestedMethod, 'POST');
+    expect(requestData, {
+      'deepLink':
+          'https://wedo-3304c.web.app/u/550e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(profile.id, '550e8400-e29b-41d4-a716-446655440000');
+    expect(profile.username, 'maya');
+  });
 }
 
 class _Adapter implements HttpClientAdapter {

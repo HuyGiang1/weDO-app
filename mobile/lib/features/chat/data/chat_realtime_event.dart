@@ -26,6 +26,8 @@ enum ChatRealtimeEventType {
 }
 
 class ChatRealtimeEvent {
+  /// Preserves domain/scoped-control frames for the application router.
+  final Map<String, dynamic>? domainFrame;
   final String? eventId;
   final ChatRealtimeEventType type;
   final String rawType;
@@ -45,6 +47,7 @@ class ChatRealtimeEvent {
   final DateTime? occurredAt;
 
   const ChatRealtimeEvent({
+    this.domainFrame,
     required this.type,
     required this.rawType,
     this.eventId,
@@ -114,6 +117,9 @@ class ChatRealtimeEvent {
     }
 
     return ChatRealtimeEvent(
+      domainFrame: rawType == 'DOMAIN_CHANGED' || rawType.startsWith('SCOPE_')
+          ? Map.unmodifiable(json)
+          : null,
       eventId: json['eventId'] as String?,
       type: effectiveType,
       rawType: rawType,

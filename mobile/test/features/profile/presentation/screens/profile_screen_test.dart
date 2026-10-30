@@ -34,6 +34,44 @@ void main() {
     ),
   );
 
+  testWidgets('logout is visible in the header and reuses the session callback', (tester) async {
+    var logouts = 0;
+    await tester.pumpWidget(MaterialApp(
+      routes: {AppRoutes.login: (_) => const Scaffold(body: Text('Login destination'))},
+      home: ProfileScreen(loadCurrentUser: () async => user(),
+        updateProfile: (_) async => user(), updateUsername: (_) async => user(),
+        changePassword: ({required currentPassword, required newPassword}) async {},
+        endSessionAfterPasswordChange: () async => true,
+        logout: () async { logouts++; }),
+    ));
+    await tester.pumpAndSettle();
+    expect(logouts, 0);
+    await tester.tap(find.byTooltip('Đăng xuất'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bạn có chắc muốn đăng xuất không?'), findsOneWidget);
+    expect(logouts, 0);
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(logouts, 0);
+    expect(find.byType(ProfileScreen), findsOneWidget);
+    // The body row uses the same confirmation, and system back cancels it.
+    final bodyLogout = find.text('Đăng xuất').last;
+    await tester.ensureVisible(bodyLogout);
+    await tester.tap(bodyLogout);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(logouts, 0);
+    await tester.tap(find.byTooltip('Đăng xuất'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Đăng xuất'));
+    await tester.pumpAndSettle();
+    expect(logouts, 1);
+    expect(find.text('Login destination'), findsOneWidget);
+    expect(find.byType(ProfileScreen), findsNothing);
+  });
+
   testWidgets('shows loading before the current profile resolves', (
     tester,
   ) async {

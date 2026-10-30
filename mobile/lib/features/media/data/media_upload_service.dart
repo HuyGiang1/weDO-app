@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import '../../../core/network/api_exception.dart';
+
 class MediaUploadTarget {
   final String storageKey;
   final Uri uploadUrl;
@@ -43,6 +45,7 @@ class MediaUploadTarget {
 }
 
 class MediaUploadService {
+  static const maxImageBytes = 10 * 1024 * 1024;
   final Dio apiDio;
   final Dio directUploadDio;
 
@@ -97,6 +100,47 @@ class MediaUploadService {
     }
   }
 
+  /// Reopenable stream: native videos are never buffered wholesale in Dart.
+  Future<String> uploadStream({
+    required String category,
+    required String contextId,
+    required String fileName,
+    required String contentType,
+    required int length,
+    required Stream<List<int>> Function() openRead,
+    void Function(int, int)? onSendProgress,
+  }) async {
+    try {
+      final response = await apiDio.post(
+        '/api/v1/uploads/presign',
+        data: {
+          'category': category,
+          'contextId': contextId,
+          'fileName': fileName,
+          'contentType': contentType,
+          'fileSize': length,
+        },
+      );
+      final target = MediaUploadTarget.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+      await directUploadDio.putUri(
+        target.uploadUrl,
+        data: openRead(),
+        onSendProgress: onSendProgress,
+        options: Options(
+          headers: {...target.requiredHeaders, 'Content-Length': length},
+          contentType: target.requiredHeaders['Content-Type'],
+          responseType: ResponseType.plain,
+          validateStatus: (s) => s != null && s >= 200 && s < 300,
+        ),
+      );
+      return target.storageKey;
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   Future<String> authorizedReadUrl(String storageKey) async {
     try {
       final response = await apiDio.get<Map<String, dynamic>>(
@@ -104,13 +148,76 @@ class MediaUploadService {
         queryParameters: {'storageKey': storageKey},
       );
       final url = response.data?['url'];
-      if (url is! String || Uri.tryParse(url)?.hasScheme != true) {
+      final uri = url is String ? Uri.tryParse(url) : null;
+      if (uri == null ||
+          !const {'http', 'https'}.contains(uri.scheme) ||
+          uri.host.isEmpty) {
         throw const FormatException('Malformed media access response');
       }
       return url;
     } on DioException {
       throw const MediaUploadException('media_unavailable');
+    } on FormatException {
+      throw const MediaUploadException('media_unavailable');
     }
+  }
+
+  /// Re-authorize each original download. Never forward the session bearer to S3.
+  Future<DownloadedMediaImage> downloadImage(String storageKey) async {
+    final cancel = CancelToken();
+    try {
+      final url = await authorizedReadUrl(storageKey);
+      final response = await directUploadDio.getUri<ResponseBody>(
+        Uri.parse(url),
+        cancelToken: cancel,
+        options: Options(
+          responseType: ResponseType.stream,
+          followRedirects: false,
+          receiveTimeout: const Duration(seconds: 30),
+          validateStatus: (status) => status == 200,
+        ),
+      );
+      final body = response.data;
+      if (body == null || body.contentLength > maxImageBytes) {
+        cancel.cancel();
+        throw const MediaUploadException('invalid_file');
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in body.stream) {
+        if (bytes.length + chunk.length > maxImageBytes) {
+          cancel.cancel();
+          throw const MediaUploadException('invalid_file');
+        }
+        bytes.add(chunk);
+      }
+      return DownloadedMediaImage.fromBytes(bytes.takeBytes());
+    } on DioException {
+      throw const MediaUploadException('media_unavailable');
+    }
+  }
+}
+
+class DownloadedMediaImage {
+  final Uint8List bytes;
+  final String contentType;
+  const DownloadedMediaImage._(this.bytes, this.contentType);
+
+  factory DownloadedMediaImage.fromBytes(Uint8List bytes) {
+    if (bytes.isEmpty || bytes.length > MediaUploadService.maxImageBytes) {
+      throw const MediaUploadException('invalid_file');
+    }
+    bool matches(int offset, List<int> signature) =>
+        bytes.length >= offset + signature.length &&
+        signature.indexed.every((item) => bytes[offset + item.$1] == item.$2);
+    final type = matches(0, [137, 80, 78, 71, 13, 10, 26, 10])
+        ? 'image/png'
+        : matches(0, [255, 216, 255])
+        ? 'image/jpeg'
+        : matches(0, [82, 73, 70, 70]) && matches(8, [87, 69, 66, 80])
+        ? 'image/webp'
+        : null;
+    if (type == null) throw const MediaUploadException('invalid_file');
+    return DownloadedMediaImage._(bytes, type);
   }
 }
 

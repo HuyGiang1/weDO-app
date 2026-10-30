@@ -45,6 +45,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('member'));
     await tester.pumpAndSettle();
+    expect(repo.transferGroupId, isNull);
+    await tester.tap(find.widgetWithText(FilledButton, 'Xác nhận'));
+    await tester.pumpAndSettle();
 
     expect(repo.transferGroupId, 'group-id');
     expect(repo.transferUserId, 'member');
@@ -69,6 +72,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
     await tester.tap(find.text('Rời nhóm'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Xác nhận'));
     await tester.pumpAndSettle();
 
     expect(repo.leaveGroupId, 'group-id');
@@ -99,6 +104,8 @@ void main() {
 
     await tester.scrollUntilVisible(find.text('Rời nhóm'), 300);
     await tester.tap(find.text('Rời nhóm'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Xác nhận'));
     await tester.pumpAndSettle();
 
     expect(repo.leaveGroupId, 'group-id');

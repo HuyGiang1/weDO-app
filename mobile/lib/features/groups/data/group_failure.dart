@@ -99,6 +99,8 @@ class GroupFailure {
         'Liên kết mời đã bị thu hồi.',
       GroupFailureType.inviteLinkLimitReached =>
         'Liên kết mời đã hết lượt sử dụng.',
+      GroupFailureType.alreadyGroupMember => 'Bạn đã ở trong nhóm này.',
+      GroupFailureType.joinRequestAlreadyPending => 'Yêu cầu của bạn đang chờ duyệt.',
       GroupFailureType.network =>
         'Không thể kết nối mạng. Vui lòng kiểm tra lại.',
       GroupFailureType.unauthorized =>

@@ -9,6 +9,11 @@ public final class ChatRequests {
     private ChatRequests() { }
 
     public record OpenDirect(UUID userId) { }
+    public record CreatePoll(
+            UUID activityId,
+            @jakarta.validation.constraints.NotNull UUID clientMessageId,
+            @jakarta.validation.Valid @jakarta.validation.constraints.NotNull
+            com.wedo.backend.poll.dto.CreatePollRequest poll) { }
     public record SendMessage(@Size(max = 5000) String content, UUID replyToMessageId, UUID clientMessageId,
                               @Size(max = 4) List<@Size(max = 255) String> attachmentStorageKeys) {
         public SendMessage(String content, UUID replyToMessageId, UUID clientMessageId) {

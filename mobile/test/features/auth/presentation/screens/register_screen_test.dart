@@ -1,3 +1,4 @@
+import 'package:mobile/core/ui/widgets/wedo_brand_mark.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -32,13 +33,7 @@ void main() {
       expect(find.text('Connect with your community.'), findsOneWidget);
 
       // Logo asset
-      expect(find.byType(Image), findsOneWidget);
-      final image = tester.widget<Image>(find.byType(Image));
-      expect(image.image, isA<AssetImage>());
-      expect(
-        (image.image as AssetImage).assetName,
-        equals('assets/images/wedo_logo.png'),
-      );
+      expect(find.byType(WeDoBrandMark), findsOneWidget);
 
       // Form labels
       expect(find.text('Email'), findsOneWidget);

@@ -1597,6 +1597,8 @@ Supports expiration and usage limit. QR is generated from invite code/deep link;
 
 `AUTO_JOIN` creates active membership if valid; `APPROVAL_REQUIRED` creates a pending join request. Invite-link usage count increments only when active membership is actually created.
 
+Resolve preview also returns authenticated viewer flags `alreadyMember` (ACTIVE membership, including Owner/Admin) and `requestPending` (nonmember with PENDING request for APPROVAL_REQUIRED). The client shows “Bạn đã ở trong nhóm này” + open-group action for members, waiting state for pending applicants, and offers admission only otherwise. These read-only projections do not create membership/requests or consume link usage. POST still enforces all rules under existing locks; concurrent `ALREADY_GROUP_MEMBER` / `JOIN_REQUEST_ALREADY_PENDING` triggers an authoritative preview refetch, never an automatic admission retry. No schema change.
+
 ### GROUP-21 Join Requests
 
 `GET /api/v1/groups/{groupId}/join-requests`
@@ -1900,18 +1902,32 @@ Transaction + locking flow:
 5. If full -> WAITLIST and assign monotonic FIFO position.
 6. When GOING slot is freed, promote first WAITLIST automatically.
 7. Write RSVP history.
-8. Publish `RSVP_CHANGED` / `WAITLIST_PROMOTED` events.
+8. Publish one `ACTIVITY_RSVP_CHANGED` invalidation for the mutation, including its FIFO promotions, for delivery only AFTER_COMMIT. Existing waitlist-promotion inbox/push notifications remain separate.
 
 Late GOING is allowed while IN_PROGRESS. Completed/cancelled RSVP is locked.
 
 ### ACT-09 Participants
 
 `GET /api/v1/activities/{activityId}/participants`  
-Groups response by GOING, MAYBE, NOT_GOING, NO_RESPONSE, WAITLIST.
+Returns current registrations (GOING, MAYBE, WAITLIST). NOT_GOING and NO_RESPONSE records remain persisted for RSVP/history but are excluded from this list and its registration count. Detail status counters remain status-specific. RSVP mutation refetches detail and participants immediately. The uncommitted RSVP realtime slice adds authorized Activity invalidations; physical two-device acceptance is still pending (see §41.6).
 
 ---
 
 ## 12. Poll API
+
+### R3 — Poll in group Chat (additive V13 contract)
+
+`POST /api/v1/conversations/{conversationId}/polls` accepts `{ "activityId": null, "clientMessageId": "<UUID>", "poll": <existing POLL-01 create body> }` and returns201 with the ordinary viewer-tailored Chat Message plus `type:"POLL"` and `pollId`. `activityId` is optional: server derives group ownership from the authorized GROUP conversation, rejects DIRECT/outsider/archived mutation, and verifies a supplied Activity belongs to that exact group. No hidden Activity is created. Poll/options/message/sequence and creation events commit atomically; rollback leaves neither resource nor event. A repeated command UUID from the same sender/conversation returns the canonical message without creating another Poll or advancing the sequence; reuse for an unrelated message/conversation is rejected. The client must retain the command UUID while retrying an uncertain submission.
+
+Poll response now includes required `groupId` and nullable `activityId`; existing Activity-linked callers retain their IDs/contracts. `GET /api/v1/groups/{groupId}/polls` is authorized group history including group-only and Activity-linked Polls; existing Activity list remains filtered to its own Activity. Voting/options/close/voters continue using canonical `/polls/{pollId}` endpoints and existing SINGLE/MULTIPLE, replacement, privacy and permission rules. Group-only Poll access uses active group membership; the scope is `group:<groupId>`. Activity-linked invalidations retain `activity:<activityId>` and include `groupId` so group history can converge. Vote invalidations contain no voter identity or vote payload. Existing shared socket, AFTER_COMMIT and Redis handling are reused.
+
+Chat history, live MESSAGE_CREATED and reconnect pages expose the same durable `pollId`, never viewer-independent cached results or anonymous identities. Poll question is not editable as ordinary Chat text; unsend follows the existing sender/window rules and hides the original card without deleting its canonical Poll/history. Group-only creation uses ordinary Chat notification delivery, not an invented Activity notification/deep link.
+
+R3 UX/V14: a committed actual PUBLIC vote on a Chat-linked Poll appends exactly one sequence-ordered `POLL_VOTED` (first) or `POLL_VOTE_CHANGED` message with the same `pollId`, actor and localized durable content. It uses ordinary MESSAGE_CREATED after commit plus targeted Poll invalidation; it does not reload the conversation per vote. Identical canonical option sets are no-ops. Optional `clientRequestId` UUID on PUT vote is a command receipt keyed by Poll/user/request: replay returns current authorized state without overwriting a later vote or appending another message. Legacy clients without an ID still get identical-state no-op protection. Receipts, ballot mutation, sequence and message share one transaction; rejected/rolled-back operations leave none. Activity messages cannot be edited/unsent. The original `POLL` reference remains unique; activity rows may share its FK.
+
+Anonymous Polls deliberately produce **no per-vote timeline row**, including generic system-sender rows, to avoid timing/author metadata identification; actor-free Poll hints still update aggregate results. Poll DTO adds unique `participantCount` and at most five `participantPreview` identities only for PUBLIC/viewable results. `/voters` retains option/userIds compatibility and adds `participants` names/avatar keys; both anonymous and not-yet-visible results are denied server-side. MULTIPLE ballots count once as a participant, with per-option selections in the permitted voter response.
+
+Deadline enforcement is server-side on every vote. List/history reads project effective CLOSED status after deadline with **no expiry batch writes**. An authorized detail read locks at most its one Poll, transitions OPEN→CLOSED once and publishes closure after commit; repeated reads are no-op transitions. A known-deadline UI wake-up and reconnect resync request this authoritative state, not local voting authority. Delivery remains best effort, not durable event replay or a continuously running expiry scheduler.
 
 ### POLL-01 Create Poll
 
@@ -2012,7 +2028,7 @@ Only for PUBLIC polls. Anonymous polls still store user IDs internally for integ
 ```
 
 Task may have 1+ assignees or remain unassigned. Multiple assignees share ONE task status.
-Any ACTIVE group member with readable Activity access may create a Task. Every assignee must be an ACTIVE GroupMembership in the Activity's Group; ActivityParticipant is not used for eligibility.
+Any ACTIVE group member with mutable Activity access may create a Task. Every NEW assignee must have ACTIVE GroupMembership in the Activity's Group AND GOING Activity RSVP. MAYBE/WAITLIST/NOT_GOING/NO_RESPONSE are ineligible (`TASK_ASSIGNEE_NOT_PARTICIPANT`, 409). Existing assignments survive Activity departure and may be retained on metadata edits; explicit removal and re-addition requires current eligibility. Retained assignees keep status rights while group access remains valid.
 `dueAt` is an optional complete instant and the consumer collects both local date and
 time, serializing an explicit UTC offset. Same-day future times are valid. A passed
 `dueAt` means overdue only: it does not change `status` to `DONE` or delete the Task.
@@ -2026,8 +2042,8 @@ Filters: status, assignedToMe.
 Each Task response includes server-derived `permissions`: `canEdit`,
 `canManageAssignees`, `canClaim`, `canChangeStatus`, and `canDelete`. Creation,
 core edits, and deletion are available to the Task creator or Group Owner/Admin;
-claim is available to an active member while unassigned; status changes are available
-to an assignee, Task creator, Activity creator, or Group Owner/Admin. Clients render
+claim is available to an active member with GOING Activity RSVP while unassigned; status changes are available
+only to a current assignee, including Task/Activity creators and Group Owner/Admin. Clients render
 these flags and do not implement authorization rules locally.
 
 ### TASK-03 Update Task
@@ -2045,7 +2061,7 @@ Core task and assignee edits are controlled by Task Creator/Owner/Admin.
 }
 ```
 
-Any assignee, Owner/Admin or Activity Creator can change shared status. Every transition is logged with actor, old status, new status and timestamp.
+Only current assignees can change shared status. Owner/Admin and Task/Activity creators are rejected with TASK_UPDATE_NOT_ALLOWED unless assigned. Every transition is logged with actor, old status, new status and timestamp.
 
 ### TASK-05 Claim Unassigned Task
 
@@ -3625,3 +3641,207 @@ The next design phase is **SYSTEM ARCHITECTURE**, where the project will finaliz
 - **Ephemeral Typing Key:** `typing:{conversationId}:{userId}` (`5s` TTL).
 - **Multi-Session Presence Set:** `presence:user:{userId}:sessions` (`120s` TTL). A user remains online until their last active WebSocket session closes, at which point `user_presence_snapshots.last_seen_at` is updated in PostgreSQL.
 - **Graceful Local Fallback:** When Redis is unreachable, `ChatRealtimeCoordinator` falls back to in-memory session delivery, typing, and presence sets without breaking REST Chat or single-node WebSocket delivery.
+
+### 41.6 Uncommitted Activity RSVP Realtime Vertical Slice
+
+- Reuses the header-authenticated socket above. Client sends `SUBSCRIBE_SCOPE` / `UNSUBSCRIBE_SCOPE` with `scope: activity:<activityId>`; parent `group:<groupId>` is also supported for Activity lists. Server replies `SCOPE_SUBSCRIBED`, `SCOPE_DENIED`, or `SCOPE_REVOKED`; `SCOPE_RESYNC` requests an authoritative reload. Active-user and existing readable membership/Activity checks apply at subscription and protected delivery. Membership loss removes the subscription before any further protected frame.
+- Envelope: `type: DOMAIN_CHANGED`, random UUID `eventId`, `eventType: ACTIVITY_RSVP_CHANGED`, `aggregateType: ACTIVITY`, `aggregateId: <activityId>`, `groupId`, nullable `actorId` (null for membership cleanup), `scope: activity:<activityId>`, UTC `occurredAt`, `payload: {}`. No participant DTO, count delta, credentials, or financial data is broadcast.
+- A changed RSVP emits one hint after the complete transaction, including any FIFO waitlist promotions. Idempotent no-op RSVP emits none. Membership cleanup uses the same event type; capacity edits retain `ACTIVITY_UPDATED` and also trigger authoritative Activity refetch. Existing waitlist-promotion Notification events remain separate and unchanged.
+- Publication uses Spring `AFTER_COMMIT` and the existing bounded `PostCommitDelivery` workers. Rollbacks produce no delivery. Redis `wedo:domain:realtime` distributes the same event ID across instances; local delivery works if Redis fails. This is best effort, not an outbox, replay log, or durable subscription.
+- No reliable aggregate revision exists in this slice: **no version is manufactured**. `occurredAt` is diagnostic mutation time, not commit order. Flutter deduplicates event IDs and does not discard unversioned hints by timestamp; an 80 ms coalesced, serialized refetch reloads only that Activity detail and participants. Generation/disposal guards reject obsolete responses. Open participant/waitlist views listen to the same controller.
+- Reconnect restores desired scopes; the authorized subscription ACK triggers REST resync, closing the lost-frame window. Resume also requests resync. No polling or global/root refresh. A hint lost while the connection remains healthy has no guaranteed repair until resync/manual refresh.
+- Secondary Home/Calendar/Group-list fan-out is **off by default**, retained only behind `wedo.realtime.read-model-fanout-enabled=true` for later review. Other uncommitted domain integrations remain in the worktree but are not accepted by this slice. Chat/domain subscription registries remain separate; consolidation is deferred to avoid changing Chat presence/typing/FCM suppression here. Physical two-device validation remains a separate gate.
+
+## 42. Private Group Moments and Albums — R4 implemented contract
+
+The implemented [R4 endpoint/DTO/permission matrix](R4_MOMENTS_ALBUM_DELIVERY.md#api-and-permission-contract)
+is part of this contract. All paths use `/api/v1` and existing bearer auth.
+Group feed/create: `GET/POST /groups/{group}/moments`; resource
+`GET/PATCH/DELETE /moments/{id}`; `PUT /moments/{id}/reaction`;
+`GET/POST /moments/{id}/comments`; `DELETE /moments/{id}/comments/{comment}`.
+Albums: `GET/POST/PATCH /groups/{group}/albums`; `GET/DELETE /albums/{id}`;
+`GET/PUT /albums/{id}/media`; `DELETE /albums/{id}/media/{media}`.
+`GET /moment-media/{id}/access` returns a60-second private signed GET only after
+current group authorization. New Moment read DTOs contain stable media IDs,
+MIME/name/size/order, not raw object keys. Feed/album `activityId` is optional and
+must reference the same group; no hidden Activity or public Community visibility.
+
+Creation/comment/album requests carry client UUIDs; repeated creation does not
+duplicate durable content. Caption max5000, comments2000, album name160/description
+2000; one of six existing emoji per user, null removes. Page fields are
+`items,nextBefore,hasMore,canCreate`; `before` is a UUID cursor, feed/comments/
+albums20 rows, album media40. Success defaults200, including POST/DELETE.
+Creator/Owner/Admin may manage content/album items; active readable membership
+is mandatory for all protected reads, mutable membership for writes.
+
+Existing presign upload supports `MOMENT_IMAGE` (JPEG/PNG/WebP, default10MiB) and
+`MOMENT_VIDEO` (MP4/video/mp4, default50MiB), max8 attachments/post. Match MIME/
+extension and signed/actual metadata/size; use H.264/AAC for native playback.
+No transcoder, file-byte codec probe, public URL or orphan-object garbage collector.
+An already issued URL has a residual validity window up to60 seconds following
+revocation; new URL issuance is denied immediately by membership checks.
+
+`MOMENT_CREATED/UPDATED/DELETED`, `MOMENT_REACTION_CHANGED`,
+`MOMENT_COMMENT_CHANGED`, `ALBUM_CREATED/UPDATED/DELETED` use shared
+group-scoped `DOMAIN_CHANGED`, aggregate UUID, empty payload and null actor.
+Existing AFTER_COMMIT/Redis/eventId deduplication/resubscribe-resync applies;
+no new socket, artificial aggregate version, polling or durable outbox.
+Visible cards fetch their own resource; publication does not send private media.
+
+## 43. Community Core — R5 implemented contract
+
+Authenticated `/api/v1/community`: `GET/POST /posts`, `GET/PATCH/DELETE /posts/{id}`,
+`PUT /posts/{id}/reaction`, `GET/POST /posts/{id}/comments`,
+`DELETE /posts/{id}/comments/{comment}`, `PUT /posts/{id}/hidden`,
+`POST /posts/{id}/reports`, `GET /media/{id}/access`.
+The [R5 endpoint/DTO/permission matrix](R5_COMMUNITY_CORE_DELIVERY.md#rest-contract)
+defines actual requests and becomes part of this contract. Successful responses
+default200. UUID-idempotent create/comment;20-row opaque UUID `before` cursor.
+Feed query `feed=FOR_YOU|FRIENDS|PROFILE`, optional authorId required for PROFILE.
+For You is freshness ordering across ALL eligible posts, including own nonpublic
+posts (user correction2026-10-27); visibility is not a tab bucket. Friends adds actual author friendship;
+profile posts apply the same eligibility predicate. No R8 ranking/R6 listing API.
+
+PUBLIC/FRIENDS_OF_FRIENDS/FRIENDS/GROUP_ONLY implemented. Blocks override all paths;
+confirmed active two-hop graph, current group membership/bans, hide, live post and
+active author enforced for feeds/detail/media/comments/reactions/profile/socket.
+GROUP_ONLY requires group FK and mutable author membership; archived group writes
+denied. Creator manages own posts; group Owner/Admin may moderate group-only posts
+but cannot republish another author's private media publicly. No invented global
+admin API. Reports persist structured reason/status without automatic takedown or
+ordinary-user reports listing. Full review workflow/user-report API deferred R7.
+
+Post read DTO exposes stable image IDs/MIME/name/size/order and projected permissions,
+never raw keys or location. COMMUNITY_IMAGE presign context is current uploader
+UUID; reuse existing signed PUT/metadata verification and10MiB JPEG/PNG/WebP limit,
+max8 per post.60-second private GET after post eligibility; previously issued
+signed URLs keep the documented bounded validity window. No automatic reuse of
+private group Moment keys in public content; Community video not in this MVP.
+
+Shared socket scopes `community:<own-user-id>` and eligible `post:<post-id>`.
+AFTER_COMMIT `COMMUNITY_POST_CREATED/UPDATED/DELETED`,
+`COMMUNITY_REACTION_CHANGED`, `COMMUNITY_COMMENT_CHANGED`; no second socket.
+New-post hints only to eligible subscribers; reaction/comment only to visible post
+scopes. Generic `COMMUNITY_POLICY_CHANGED` frames use recipient UUID, empty payload,
+null actor, no private post/author ID. Graph/block/group changes recheck scopes.
+Per-scope eventId derived deterministically from original mutation eventId supports
+client dedupe across resource/feed scopes; no aggregate version or outbox claim.
+
+
+## 44. Recruitment + Join — R6 implemented contract
+
+Authenticated base `/api/v1/community`; default successful status200. Canonical
+CommunityPost now supports LOOKING_FOR_MEMBERS with nullable recruitment projection.
+No parallel feed, membership store or public Group/Activity DTO endpoint.
+
+| Method/path | Contract |
+| --- | --- |
+| GET `/recruitment-options` | Actual eligible Owner/Admin groups; ACTIVE + APPROVAL_REQUIRED, unbanned |
+| GET `/recruitments` | OPEN eligible posts, keyword/tag/location/from/to filters, UUID before cursor20+sentinel; eligibility before limit |
+| POST `/recruitments` | Stable UUID clientRequestId, groupId required, optional same-group activityId, caption, visibility, requestedCount1..100, broadLocation, ≤6 tags, plannedAt/expiresAt, canonical mediaKeys |
+| GET `/recruitments/{id}/preview` | Sanitized snapshot group/optional Activity title+time, metadata/status/approved+remaining count, own request/membership state and projected permissions |
+| POST `/recruitments/{id}/join` | Canonical PENDING, no membership; repeated pending/member read idempotent; new writes require OPEN |
+| POST `/recruitments/{id}/cancel` | Existing canonical requester cancellation |
+| POST `/recruitments/{id}/close` | Current Owner/Admin only; idempotent manual closure, no reopen |
+| GET `/recruitments/{id}/requests` | Current eligible manager only, canonical pending requests originating here |
+| POST `/recruitments/{id}/requests/{request}/approve` or `/reject` | Delegate canonical admission; provenance verified; bounded quota also enforced through older canonical approval route |
+
+Target/group/Activity metadata immutable. Caption/visibility/delete/hide/report use
+canonical Community routes; group-only edits cannot move ownership context. Activity
+must belong to group and not be cancelled/completed. Recruitment publication is
+explicit Owner/Admin consent; no ordinary-member publication or AUTO_JOIN fallback.
+Snapshot preview never exposes private description/members/Chat/Moments/Finance,
+phone numbers, GPS or invite codes. Existing visibility/block/ban rules apply before
+read/subscription/admission. Public content never grants membership.
+
+Status precedence CLOSED (manual/ineligible group/author/Activity), EXPIRED, FILLED,
+OPEN. Expiry explicit, else plannedAt, else30days. Lifetime distinct canonical
+APPROVED applicants count toward target; later departure does not refund quota.
+Current membership independently determines access. Remaining=min(target−credits,
+100−active group members), floored0. Group→metadata locks serialize canonical
+provenance approvals; pending reserves no capacity. Group admission creates no RSVP.
+
+Existing shared socket: `COMMUNITY_RECRUITMENT_CREATED` eligible new-post hint,
+`COMMUNITY_RECRUITMENT_CHANGED` targeted invalidation. Existing `post:{id}` safe
+resource scope; manager-only `review:{id}` rechecked at subscribe/delivery, role loss
+clears applicant data. Recipient policy hints recheck eligibility. No global feed
+refresh for every join request, extra socket, polling or invented version. Clock
+expiry is authoritative at REST/write/resync, not an idle scheduled broadcast.
+See [exact implementation/evidence](R6_RECRUITMENT_JOIN_DELIVERY.md).
+
+
+## 45. R7 Privacy and authorized moderation — implemented contract
+
+Existing R5/R6 eligibility remains authoritative for all ordinary Community reads,
+media/interaction/profile/discovery/pagination and realtime. No new ordinary
+Community search/notification body API, audience bypass or public Moment route.
+For You remains mixed eligible, Friends author filter. [Complete contract/rules](R7_PRIVACY_MODERATION_DELIVERY.md).
+
+Authenticated `/api/v1` endpoints, default200, existing block commands204:
+
+| Method/path | Request/result |
+| --- | --- |
+| GET `/moderation/access` | globalModerator/canReview flags; no implicit global Owner/Admin |
+| GET `/moderation/reports` | optional status OPEN/REVIEWED/DISMISSED, reason, type POST/COMMENT/USER, before UUID; scoped20-row cursor page |
+| GET `/moderation/reports/{id}` | minimal captured evidence, current status, allowedActions, immutable history and stable POST media metadata; no reporter identity/raw keys |
+| POST `/moderation/reports/{id}/actions` | clientRequestId UUID, action DISMISS/RESOLVE/REMOVE/RESTORE, reason nonblank≤1000; idempotent matching command, audited actor/time/reason/before/after |
+| GET `/moderation/reports/{id}/media/{media}/access` | exact authorized report + matching post media,60sec signed GET; no unrelated/author-deleted access |
+| POST `/users/{id}/reports` | reason, canonical active other-user target; no account-ban side effect |
+| POST `/community/comments/{id}/reports` | reason, readable live unblocked comment, canonical post context |
+| POST `/community/posts/{id}/reports` | existing post/recruitment route, same extended report store |
+| GET `/community/hidden-posts?before=` | eligible personal hidden IDs/captions,20+sentinel UUID cursor |
+| DELETE `/community/posts/{id}/hidden` | idempotent requester-only unhide, does not override other denials |
+
+Canonical Social block/unblock/blocked-list endpoints retained. Five report reasons:
+SPAM/HARASSMENT/INAPPROPRIATE_CONTENT/SCAM/OTHER; old INAPPROPRIATE accepted and
+normalized. One OPEN report per target/type/reporter, no automatic hide/removal.
+Explicit revocable global grant required for global/public/user reports. Current
+ACTIVE-group Owner/Admin only GROUP_ONLY post/comment reports of their group;
+linked public recruitment does not grant global moderation. Queue cursor/detail/
+actions/evidence check current scope; no user-facing grant API.
+
+Content ACTIVE/REMOVED remains canonical; report OPEN is review state. Restore is
+ACTIVE plus audited RESTORE action, preserving audience/block/author deletion and
+manual recruitment closure. No permanent account bans. Per-report/target row locks
+and UUID action receipt protect concurrency; actions do not mutate membership.
+Own `moderation:<userId>` shared-socket scope requires review capability;
+MODERATION_QUEUE_CHANGED is current-report-authorized, empty payload. Removal/
+restoration use existing Community invalidation/revocation; no private reports to
+ordinary feeds or new transport. Already-issued signed URLs retain bounded60sec
+residual access; reviewer evidence is an explicitly authorized report exception.
+
+
+R7 bounded refresh correction: existing FRIEND_RELATIONSHIP_CHANGED may include
+server metadata `payload.communityPolicyScope=RECIPIENT_ONLY` when block ended no
+friendship or on unblock (which never restores an edge). Each involved recipient
+still gets its normal relationship/policy event; unrelated Community/moderation
+sessions do not refetch. True edge removal/default graph events retain broad FOF
+rechecks. Personal hide/unhide COMMUNITY_POLICY_CHANGED targets its own user.
+Feed hints remain actor-free/empty payload; no new endpoint or socket contract.
+
+## R10 additive contract —2026-10-28
+
+Authenticated `/api/v1` Journey, Task execution/evidence/review and Poll action endpoints, request semantics, permission projections and scoped events are enumerated in [R10 contract table](R10_ACTIVITY_JOURNEY_CHECKIN_POLL_ACTION_DELIVERY.md#rest-endpoints-authenticated-apiv1). This is an additive extension: canonical RSVP/Task statuses/Poll voting remain unchanged. Stop writes use expectedUpdatedAt and complete-order concurrency; command UUIDs protect create/retry. Poll conversion additionally deduplicates option/kind/Activity. Evidence access checks current Task authorization and issues private URLs≤60sec. Review is the explicit manager exception to generic assignee-only Task progress: configured proof and current submission snapshot required, no self-review. Camera source is client-declared, not verified presence. PostgreSQL commits before existing shared realtime; no automatic mutation replay.
+
+### R10 conversion Task title refinement —2026-10-28
+
+`POST /api/v1/polls/{id}/actions` accepts optional `taskTitle` (max255).
+For TASK, omission defaults to canonical Poll question; supplied title must be
+nonblank after trimming. Selected option is retained in Task description and
+source snapshot. STOP still uses selected option as title. Existing UUID and
+option/kind/Activity dedupe return prior target, never rename it on retry. No DB
+migration or new permission; old JSON without taskTitle remains accepted.
+
+
+R10 final acceptance additive correction: Poll conversion also accepts optional `stopTitle` (max255, nonblank after trimming if supplied). STOP defaults to chosen option text when omitted, preserving old clients. An edited Stop title never removes sourceOption/sourceQuestion linkage; selected option is retained in target notes. Natural-key/UUID retry returns the existing target without renaming. No schema or admission/financial/lifecycle rule change.
+
+
+### R2 personal read-model invalidations (2026-10-29)
+
+Existing domain envelope/authorized user scope is unchanged. ReadModelFanout now defaults enabled; explicit `wedo.realtime.read-model-fanout-enabled=false` remains an operational optout. `HOME_CHANGED`, `CALENDAR_CHANGED`, `GROUP_LIST_CHANGED` carry only private read-model invalidation. Access-changing group mutations use `HOME_ACCESS_CHANGED` and `CALENDAR_ACCESS_CHANGED` instead of their ordinary equivalents so retained clients discard permission-sensitive data before REST. No group/actor/business payload or fabricated aggregate version is included. Reconnect/refetch and PostgreSQL remain authoritative. No REST mutation or ledger contract changed.
+
+### R8 — For You ranking and targeted refresh (2026-10-29)
+
+Existing authenticated `GET /api/v1/community/posts?feed=FOR_YOU&before=<UUID>` keeps `{items,nextBefore,hasMore}`. For You `nextBefore` is now opaque viewer-bound version1 ranking snapshot state (15min fixed TTL, bounded local cache), not a post ID. Invalid, malformed, other-viewer, expired/evicted/restarted cursor →400 `COMMUNITY_FEED_CURSOR_INVALID`; start a new explicit first-page refresh. No score/internal features/author IDs embedded in cursor. Friends/Profile/comments keep chronological UUID semantics. Initial selection and all continuation pages enforce current R7 permissions; ranking never grants access. Ordering freezes within200-candidate chronological windows and traverses older windows with the same reference time. Details/defaults and single-instance deployment limitations: `R8_FEED_RANKING_DELIVERY.md`.
+
+Add authenticated read-only `POST /api/v1/community/posts/refresh` body `{feed:FOR_YOU|FRIENDS|PROFILE,authorId?:UUID,ids:[UUID...]}` (0..100 non-null IDs; PROFILE requires authorId). Response uses existing Page<Post>, eligible IDs deduplicated in requested order, nextBefore=null/hasMore=false. Current audience/block/hide/moderation and feed-specific author/friend constraints apply; For You additionally excludes the viewer's own reported POSTs. Reporting alone does not remove others' content or alter direct detail/media authorization. No writes/events from this read. Existing canonical post report additionally emits recipient-only AFTER_COMMIT policy invalidation for discovery reconciliation.

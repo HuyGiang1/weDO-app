@@ -135,7 +135,7 @@ class GroupRepository {
       _guard(() => api.cancelJoinRequest(requestId));
 
   // M6: Bans
-  Future<GroupBanResponse> banMember(
+  Future<void> banMember(
     String groupId,
     String userId,
     BanMemberRequest q,

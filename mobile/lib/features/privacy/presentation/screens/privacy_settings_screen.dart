@@ -247,7 +247,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
               const SizedBox(height: AppSpacing.xl),
               ElevatedButton(
                 onPressed: _saving || !_isDirty ? null : _save,
-                style: profilePrimaryButtonStyle(),
+                style: profilePrimaryButtonStyle(context),
                 child: _saving
                     ? const CircularProgressIndicator()
                     : const Text('Lưu cài đặt quyền riêng tư'),

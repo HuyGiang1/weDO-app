@@ -2,7 +2,8 @@ import 'dart:convert' show utf8;
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
@@ -88,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
@@ -111,17 +112,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       clipBehavior: Clip.hardEdge,
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(12.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryShadow.withValues(
-                              alpha: 0.04,
-                            ),
-                            blurRadius: 20.0,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
                       ),
                       padding: const EdgeInsets.all(AppSpacing.xl),
                       child: Form(
@@ -135,35 +127,26 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: Container(
                                 width: 96.0,
                                 height: 96.0,
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: AppColors.backgroundGradientStart,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primaryShadow,
-                                      blurRadius: 16.0,
-                                      offset: Offset(0, 4),
-                                    ),
-                                  ],
+                                  color: Theme.of(context)
+                                      .scaffoldBackgroundColor,
                                 ),
                                 child: ClipOval(
-                                  child: Image.asset(
-                                    'assets/images/wedo_logo.png',
-                                    fit: BoxFit.cover,
-                                  ),
+                                  child: const WeDoBrandMark(size: 72),
                                 ),
                               ),
                             ),
                             const SizedBox(height: AppSpacing.lg),
-                            const Text(
+                            Text(
                               'Chào mừng trở lại',
-                              style: AppTextStyles.headline,
+                              style: AppTextStyles.of(context).headline,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.xs),
-                            const Text(
+                            Text(
                               'Đăng nhập để tiếp tục kết nối cùng mọi người.',
-                              style: AppTextStyles.bodyMedium,
+                              style: AppTextStyles.of(context).bodyMedium,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.xl),
@@ -183,9 +166,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               runSpacing: AppSpacing.xs,
                               children: [
-                                const Text(
+                                Text(
                                   'Mật khẩu',
-                                  style: AppTextStyles.label,
+                                  style: AppTextStyles.of(context).label,
                                 ),
                                 TextButton(
                                   onPressed: _isSubmitting
@@ -197,9 +180,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     tapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'Quên mật khẩu?',
-                                    style: AppTextStyles.link,
+                                    style: AppTextStyles.of(context).link,
                                   ),
                                 ),
                               ],
@@ -228,7 +211,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   _obscurePassword
                                       ? Icons.visibility_outlined
                                       : Icons.visibility_off_outlined,
-                                  color: AppColors.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -242,9 +227,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               alignment: WrapAlignment.center,
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                const Text(
+                                Text(
                                   'Chưa có tài khoản? ',
-                                  style: AppTextStyles.bodySmall,
+                                  style: AppTextStyles.of(context).bodySmall,
                                 ),
                                 TextButton(
                                   onPressed: _isSubmitting
@@ -256,9 +241,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     tapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'Tạo tài khoản',
-                                    style: AppTextStyles.link,
+                                    style: AppTextStyles.of(context).link,
                                   ),
                                 ),
                               ],
@@ -335,7 +320,7 @@ class _LoginFieldState extends State<_LoginField> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.label != null) ...[
-          Text(widget.label!, style: AppTextStyles.label),
+          Text(widget.label!, style: AppTextStyles.of(context).label),
           const SizedBox(height: AppSpacing.xs),
         ],
         TextFormField(
@@ -347,29 +332,19 @@ class _LoginFieldState extends State<_LoginField> {
           keyboardType: widget.keyboardType,
           textInputAction: widget.textInputAction,
           onFieldSubmitted: widget.onSubmitted,
-          style: AppTextStyles.input,
+          style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: AppTextStyles.inputHint,
+            hintStyle: Theme.of(context).inputDecorationTheme.hintStyle,
             filled: true,
-            fillColor: _focused ? AppColors.surface : AppColors.inputBackground,
+            fillColor: _focused
+                ? Theme.of(context).colorScheme.surfaceContainerLowest
+                : Theme.of(context).colorScheme.surfaceContainerLow,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16.0,
               vertical: 12.0,
             ),
             suffixIcon: widget.suffixIcon,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: const BorderSide(color: AppColors.primary),
-            ),
           ),
         ),
       ],
@@ -391,24 +366,27 @@ class _LoginButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.7),
-          foregroundColor: AppColors.onPrimary,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          disabledBackgroundColor: Theme.of(context).colorScheme.primary
+              .withValues(alpha: 0.7),
+          foregroundColor: Theme.of(context).colorScheme.onPrimary,
           elevation: 0,
-          shape: const StadiumBorder(),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
         ),
         child: isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22.0,
                 height: 22.0,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.5,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    AppColors.onPrimary,
+                    Theme.of(context).colorScheme.onPrimary,
                   ),
                 ),
               )
-            : const Text('Đăng nhập', style: AppTextStyles.buttonPrimary),
+            : Text('Đăng nhập', style: AppTextStyles.of(context).buttonPrimary),
       ),
     );
   }

@@ -1,5 +1,5 @@
+import 'app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:mobile/app/theme/app_colors.dart';
 import 'package:mobile/core/models/paged_response.dart';
 import 'package:mobile/features/social/application/social_controllers.dart';
 import 'package:mobile/features/social/data/models/social_models.dart';
@@ -218,13 +218,9 @@ void main() {
     MaterialApp(
       title: 'weDO Social M4 Demo',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          primary: AppColors.primary,
-        ),
-      ),
+      theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: ThemeMode.system,
       home: Builder(
         builder: (context) => FriendsScreen(
           controller: friendsController,

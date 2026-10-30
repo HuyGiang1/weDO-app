@@ -233,6 +233,43 @@ void main() {
       expect(status.userId, 'user-99');
       expect(status.state, RelationshipState.friends);
     });
+
+    test('parses backend DTO wire shapes (targetUserId, id/since, id/blockedAt, null displayName)', () {
+      final status = RelationshipStatus.fromJson({
+        'targetUserId': 'dec15f3c-9392-4a39-a935-3b08536f54f3',
+        'state': 'NONE',
+      });
+      expect(status.userId, 'dec15f3c-9392-4a39-a935-3b08536f54f3');
+      expect(status.state, RelationshipState.none);
+
+      final friend = Friend.fromJson({
+        'id': 'f-backend-1',
+        'friend': {
+          'id': 'u-2',
+          'username': 'qa_owner',
+          'displayName': null,
+          'avatarStorageKey': null,
+        },
+        'since': '2026-10-18T10:00:00Z',
+      });
+      expect(friend.friendshipId, 'f-backend-1');
+      expect(friend.friend.displayName, 'qa_owner');
+      expect(friend.createdAt, DateTime.parse('2026-10-18T10:00:00Z'));
+
+      final blocked = BlockedUser.fromJson({
+        'id': 'b-backend-1',
+        'blockedUser': {
+          'id': 'u-3',
+          'username': 'qa_outsider',
+          'displayName': 'QA Outsider',
+          'avatarStorageKey': null,
+        },
+        'blockedAt': '2026-10-18T11:00:00Z',
+      });
+      expect(blocked.blockId, 'b-backend-1');
+      expect(blocked.blockedUser.displayName, 'QA Outsider');
+      expect(blocked.createdAt, DateTime.parse('2026-10-18T11:00:00Z'));
+    });
   });
 
   group('PagedResponse Model', () {

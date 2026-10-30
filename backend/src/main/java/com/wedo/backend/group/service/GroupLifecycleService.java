@@ -17,6 +17,8 @@ import java.util.UUID;
 
 @Service
 public class GroupLifecycleService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private final GroupRepository groupRepository;
     private final GroupActivityLogRepository groupActivityLogRepository;
@@ -54,6 +56,7 @@ public class GroupLifecycleService {
                 GroupActivityAction.GROUP_ARCHIVED,
                 now
         ));
+        if (realtime != null) { realtime.group("GROUP_ARCHIVED", groupId, callerUserId); }
     }
 
     @Transactional
@@ -75,6 +78,7 @@ public class GroupLifecycleService {
                 GroupActivityAction.GROUP_RESTORED,
                 now
         ));
+        if (realtime != null) { realtime.group("GROUP_RESTORED", groupId, callerUserId); }
     }
 
     @Transactional
@@ -96,5 +100,6 @@ public class GroupLifecycleService {
                 GroupActivityAction.GROUP_DELETED,
                 now
         ));
+        if (realtime != null) { realtime.group("GROUP_DELETED", groupId, callerUserId); }
     }
 }

@@ -20,7 +20,7 @@ public final class ChatResponses {
                           String status, UUID replyToMessageId, Instant createdAt,
                           Instant editedAt, Instant unsentAt, String myReaction,
                           List<Reaction> reactions, List<MessageAttachment> attachments,
-                          Permissions permissions) { }
+                          Permissions permissions, UUID pollId) { }
     public record MessageAttachment(UUID id, String storageKey, String fileName,
                                     String contentType, long fileSizeBytes, int sortOrder) { }
     public record Reaction(String emoji, long count, boolean reactedByMe) { }

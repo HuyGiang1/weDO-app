@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../core/realtime/realtime_binding.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../groups/data/models/group_models.dart';
 import '../application/fund_controllers.dart';
 import '../data/fund_models.dart';
@@ -28,7 +28,21 @@ class GroupFundScreen extends StatefulWidget {
   State<GroupFundScreen> createState() => _GroupFundScreenState();
 }
 
-class _GroupFundScreenState extends State<GroupFundScreen> {
+class _GroupFundScreenState extends State<GroupFundScreen> with RealtimeBinding<GroupFundScreen> {
+  @override
+  String? get realtimeScope => 'group:${widget.groupId}';
+  @override
+  String get realtimePrefix => 'FUND_';
+  @override
+  bool get realtimeReadNeedsRecovery => _controller.value.failure?.isTransient == true;
+  @override
+  void onRealtimeAccessLost() {
+    _controller.revokeAccess();
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) Navigator.of(context).popUntil((item) => identical(item, route));
+  }
+  @override
+  Future<void> reloadRealtime() async { await _controller.resync(widget.groupId, eventTypes: takeRealtimeEventTypes()); }
   late final GroupFundController _controller;
   late final bool _ownsController;
   int _selectedTab = 0;
@@ -55,7 +69,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(failure.message),
-          backgroundColor: AppColors.error,
+          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -241,11 +255,11 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Trưởng nhóm (Owner) luôn có toàn quyền quản lý quỹ và có thể phân quyền Thủ quỹ cho Quản trị viên (Admin).',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppColors.onSurfaceVariant,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -750,8 +764,8 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       const SizedBox(height: 6),
                       Text(
                         detail.description!,
-                        style: const TextStyle(
-                          color: AppColors.onSurfaceVariant,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -759,7 +773,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLow,
+                        color: Theme.of(context).colorScheme.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Column(
@@ -770,9 +784,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                               const Text('Đã xác nhận thu:'),
                               Text(
                                 '${detail.totalConfirmedAmount.formatted} / ${detail.totalExpectedAmount.formatted}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
+                                  color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                             ],
@@ -911,8 +925,8 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                                   const SizedBox(height: 4),
                                   Text(
                                     'Lý do từ chối: ${c.rejectionReason}',
-                                    style: const TextStyle(
-                                      color: AppColors.error,
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.error,
                                     ),
                                   ),
                                 ],
@@ -1086,18 +1100,18 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: Text(
           widget.groupName?.trim().isNotEmpty == true
               ? 'Quỹ nhóm • ${widget.groupName}'
               : 'Quỹ nhóm',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 19,
             fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         actions: [
@@ -1147,6 +1161,10 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
               children: [
+                if (state.stale) Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text('Dữ liệu chưa được cập nhật. ${state.failure?.message ?? ''}'),
+                ),
                 _FundHeroCard(
                   fund: fund,
                   onOpenManagers: () => _showManagersSheet(fund),
@@ -1258,18 +1276,18 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'Đã thu: ${c.totalConfirmedAmount.formatted} / ${c.totalExpectedAmount.formatted}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'Hoàn thành: ${c.paidMembersCount}/${c.totalMembersCount} thành viên'
                         '${c.pendingContributionsCount > 0 ? ' • ${c.pendingContributionsCount} khoản chờ duyệt' : ''}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       if (c.myObligationStatus != 'NONE') ...[
@@ -1308,8 +1326,8 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
               margin: const EdgeInsets.only(bottom: 10),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: AppColors.errorContainer,
-                  child: const Icon(Icons.call_made, color: AppColors.error),
+                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                  child: Icon(Icons.call_made, color: Theme.of(context).colorScheme.error),
                 ),
                 title: Text(
                   e.title,
@@ -1331,9 +1349,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                 ),
                 trailing: Text(
                   '-${e.amount.formatted}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.error,
+                    color: Theme.of(context).colorScheme.error,
                   ),
                 ),
               ),
@@ -1385,7 +1403,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'Lý do từ chối: ${r.rejectionReason}',
-                        style: const TextStyle(color: AppColors.error),
+                        style: TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
                     ],
                     if (r.canApprove || r.canReject || r.canCancel) ...[
@@ -1477,7 +1495,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                               : Icons.north_east_rounded,
                           color: tx.isInflow
                               ? Colors.green.shade700
-                              : AppColors.error,
+                              : Theme.of(context).colorScheme.error,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -1498,7 +1516,7 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                             fontWeight: FontWeight.w800,
                             color: tx.isInflow
                                 ? Colors.green.shade700
-                                : AppColors.error,
+                                : Theme.of(context).colorScheme.error,
                           ),
                         ),
                       ],
@@ -1510,9 +1528,9 @@ class _GroupFundScreenState extends State<GroupFundScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Thực hiện bởi: ${tx.createdBy.displayLabel}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.onSurfaceVariant,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     if (tx.reversed) ...[
@@ -1574,13 +1592,13 @@ class _EmptyFundView extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withValues(alpha: 0.18),
+                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.18),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.savings_outlined,
                 size: 36,
-                color: AppColors.primary,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(height: 16),
@@ -1589,10 +1607,10 @@ class _EmptyFundView extends StatelessWidget {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Quỹ nhóm giúp quản lý các đợt thu tiền thành viên, chi trực tiếp từ quỹ, hoàn ứng và sổ cái giao dịch minh bạch.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.onSurfaceVariant),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
@@ -1632,15 +1650,9 @@ class _FundHeroCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
-          BoxShadow(
-            color: AppColors.softVioletShadow,
-            blurRadius: 18,
-            offset: Offset(0, 4),
-          ),
-        ],
+
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1660,12 +1672,12 @@ class _FundHeroCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'SỐ DƯ KHẢ DỤNG',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               letterSpacing: 0.6,
             ),
           ),
@@ -1673,10 +1685,10 @@ class _FundHeroCard extends StatelessWidget {
           Text(
             fund.availableBalance.formatted,
             key: const Key('fund-available-balance-text'),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(height: 12),
@@ -1780,9 +1792,9 @@ class _MetricTile extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: AppColors.onSurfaceVariant,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 2),
@@ -1805,15 +1817,15 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primaryContainer.withValues(alpha: 0.16),
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: AppColors.primary,
+          color: Theme.of(context).colorScheme.primary,
         ),
       ),
     );
@@ -1858,12 +1870,12 @@ class _EmptySectionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: AppColors.onSurfaceVariant),
+          Icon(icon, size: 36, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(height: 10),
           Text(
             title,
@@ -1873,9 +1885,9 @@ class _EmptySectionCard extends StatelessWidget {
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: AppColors.onSurfaceVariant,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],

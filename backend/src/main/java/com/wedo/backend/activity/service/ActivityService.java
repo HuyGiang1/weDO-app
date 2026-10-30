@@ -30,6 +30,8 @@ import java.util.UUID;
 /** M7 persistence/read foundation only; it deliberately has no RSVP orchestration. */
 @Service
 public class ActivityService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private final ActivityRepository activityRepository;
     private final ActivityStatusHistoryRepository statusHistoryRepository;
     private final ActivityChangeLogRepository changeLogRepository;
@@ -109,6 +111,7 @@ public class ActivityService {
                 ));
             }
         }
+        if (realtime != null) realtime.activity("ACTIVITY_CREATED", activity.getId(), groupId, creatorId);
         return responses.detail(activity, creatorId, access);
     }
 

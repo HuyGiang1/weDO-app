@@ -1,7 +1,9 @@
+import '../../../../app/navigation/app_bottom_navigation.dart';
+import '../../../../app/routes.dart';
 import 'package:flutter/material.dart';
 import '../../../../core/l10n/domain_labels.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../core/ui/widgets/app_management.dart';
 import '../../data/models/group_models.dart';
 
 import 'dart:typed_data';
@@ -52,12 +54,12 @@ class GroupAvatar extends StatelessWidget {
     return '$cleanBase/api/v1/media/$cleanKey';
   }
 
-  Widget _buildFallback() => Text(
+  Widget _buildFallback(BuildContext context) => Text(
     name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase(),
     style: TextStyle(
       fontSize: radius * .75,
       fontWeight: FontWeight.w700,
-      color: AppColors.primary,
+      color: Theme.of(context).colorScheme.primary,
     ),
   );
 
@@ -66,14 +68,14 @@ class GroupAvatar extends StatelessWidget {
     if (imageBytes != null && imageBytes!.isNotEmpty) {
       return CircleAvatar(
         radius: radius,
-        backgroundColor: const Color(0xFFEDE9FE),
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         child: ClipOval(
           child: Image.memory(
             imageBytes!,
             width: radius * 2,
             height: radius * 2,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildFallback(),
+            errorBuilder: (context, error, stackTrace) => _buildFallback(context),
           ),
         ),
       );
@@ -84,7 +86,7 @@ class GroupAvatar extends StatelessWidget {
     if ((key != null && key.isNotEmpty) || (url != null && url.isNotEmpty)) {
       return CircleAvatar(
         radius: radius,
-        backgroundColor: const Color(0xFFEDE9FE),
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         child: ClipOval(
           child: MediaStorageImage(
             storageKey: url ?? key!,
@@ -98,7 +100,7 @@ class GroupAvatar extends StatelessWidget {
             width: radius * 2,
             height: radius * 2,
             fit: BoxFit.cover,
-            fallback: (_) => _buildFallback(),
+            fallback: (_) => _buildFallback(context),
           ),
         ),
       );
@@ -106,8 +108,8 @@ class GroupAvatar extends StatelessWidget {
 
     return CircleAvatar(
       radius: radius,
-      backgroundColor: const Color(0xFFEDE9FE),
-      child: _buildFallback(),
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      child: _buildFallback(context),
     );
   }
 }
@@ -117,28 +119,7 @@ class GroupRoleBadge extends StatelessWidget {
   const GroupRoleBadge({super.key, required this.role});
   @override
   Widget build(BuildContext context) {
-    final color = switch (role) {
-      GroupRole.owner => AppColors.primary,
-      GroupRole.admin => const Color(0xFF006B5F),
-      GroupRole.member => const Color(0xFF64748B),
-    };
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .13),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        child: Text(
-          role.label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ),
-    );
+    return AppStatusLabel(role.label);
   }
 }
 
@@ -153,20 +134,17 @@ class GroupsBottomNavigation extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int>? onTap;
   const GroupsBottomNavigation({super.key, this.currentIndex = 1, this.onTap});
+  // Compatibility adapter for existing screen callback indices. Group pages
+  // remain accessible through Home; they are no longer a sixth/global tab.
   @override
-  Widget build(BuildContext context) => BottomNavigationBar(
-    currentIndex: currentIndex,
-    onTap: onTap,
-    type: BottomNavigationBarType.fixed,
-    items: [
-      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Trang chủ'),
-      BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Nhóm'),
-      BottomNavigationBarItem(icon: Icon(Icons.chat_bubble), label: 'Tin nhắn'),
-      BottomNavigationBarItem(
-        icon: Icon(Icons.calendar_today),
-        label: 'Lịch',
-      ),
-      BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Hồ sơ'),
-    ],
+  Widget build(BuildContext context) => AppBottomNavigation(
+    selectedIndex: currentIndex < 0 ? 0 : currentIndex < 2 ? 1 : currentIndex,
+    onFallback: (index) {
+      if (index == 0) {
+        Navigator.of(context).pushNamed(AppRoutes.community);
+      } else {
+        onTap?.call(index == 1 ? 0 : index);
+      }
+    },
   );
 }

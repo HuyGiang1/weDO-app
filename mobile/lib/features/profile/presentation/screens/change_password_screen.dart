@@ -198,7 +198,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: _submitting ? null : _submit,
-                style: profilePrimaryButtonStyle(),
+                style: profilePrimaryButtonStyle(context),
                 child: _submitting
                     ? const SizedBox(
                         height: 20,

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../activity_presentation_models.dart';
 
 const _pagePadding = EdgeInsets.fromLTRB(20, 20, 20, 32);
@@ -26,7 +25,7 @@ class ActivityListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     body: SafeArea(
       child: Padding(
         padding: _pagePadding,
@@ -64,14 +63,14 @@ class ActivityListScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Expanded(child: _listBody()),
+            Expanded(child: _listBody(context)),
           ],
         ),
       ),
     ),
   );
 
-  Widget _listBody() => switch (state) {
+  Widget _listBody(BuildContext context) => switch (state) {
     ActivityListVisualState.loading => const Center(
       child: CircularProgressIndicator(),
     ),
@@ -79,7 +78,7 @@ class ActivityListScreen extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, size: 44, color: AppColors.error),
+          Icon(Icons.error_outline, size: 44, color: Theme.of(context).colorScheme.error),
           const SizedBox(height: 12),
           const Text('Unable to load activities.'),
           const SizedBox(height: 8),
@@ -128,8 +127,8 @@ class ActivityDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
-    appBar: AppBar(backgroundColor: AppColors.background),
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    appBar: AppBar(backgroundColor: Theme.of(context).scaffoldBackgroundColor),
     body: ListView(
       padding: _pagePadding,
       children: [
@@ -295,10 +294,10 @@ class _ActivityParticipantsScreenState
         ? widget.participants
         : widget.participants.where((p) => p.rsvp == filter).toList();
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Participants'),
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       ),
       body: Padding(
         padding: _pagePadding,
@@ -361,19 +360,19 @@ class ActivityWaitlistScreen extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
-    appBar: AppBar(backgroundColor: AppColors.background),
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+    appBar: AppBar(backgroundColor: Theme.of(context).scaffoldBackgroundColor),
     body: Padding(
       padding: _pagePadding,
       child: Column(
         children: [
           const Spacer(),
-          const CircleAvatar(
+          CircleAvatar(
             radius: 38,
-            backgroundColor: AppColors.primaryFixed,
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
             child: Icon(
               Icons.hourglass_top,
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
               size: 38,
             ),
           ),
@@ -384,10 +383,10 @@ class ActivityWaitlistScreen extends StatelessWidget {
           Text(
             "You're #${data.queuePosition} in line",
             key: const ValueKey('queue-position'),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(height: 24),
@@ -506,10 +505,10 @@ class _ActivityFormScreenState extends State<_ActivityFormScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: Text(widget.title),
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     ),
     body: ListView(
       padding: _pagePadding,
@@ -719,10 +718,10 @@ class _PageTitle extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     value,
     textAlign: centered ? TextAlign.center : TextAlign.start,
-    style: const TextStyle(
+    style: TextStyle(
       fontSize: 28,
       fontWeight: FontWeight.w800,
-      color: AppColors.onSurface,
+      color: Theme.of(context).colorScheme.onSurface,
     ),
   );
 }
@@ -732,9 +731,9 @@ class _SurfaceCard extends StatelessWidget {
   const _SurfaceCard({required this.child});
   @override
   Widget build(BuildContext context) => Card(
-    color: AppColors.surfaceContainerLowest,
+    color: Theme.of(context).colorScheme.surfaceContainerLowest,
     elevation: 2,
-    shadowColor: AppColors.primaryShadow,
+    shadowColor: Colors.transparent,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     child: Padding(padding: const EdgeInsets.all(16), child: child),
   );
@@ -748,12 +747,12 @@ class _LifecycleBadge extends StatelessWidget {
     label: Text(lifecycle.label),
     visualDensity: VisualDensity.compact,
     backgroundColor: lifecycle == ActivityLifecycle.cancelled
-        ? AppColors.errorContainer
-        : AppColors.primaryFixed,
-    labelStyle: const TextStyle(
+        ? Theme.of(context).colorScheme.errorContainer
+        : Theme.of(context).colorScheme.primaryContainer,
+    labelStyle: TextStyle(
       fontSize: 11,
       fontWeight: FontWeight.w700,
-      color: AppColors.primary,
+      color: Theme.of(context).colorScheme.primary,
     ),
   );
 }
@@ -781,7 +780,7 @@ class _InfoLine extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 19, color: AppColors.onSurfaceVariant),
+        Icon(icon, size: 19, color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(width: 10),
         Expanded(child: Text(label)),
       ],
@@ -795,7 +794,7 @@ class _EmptyActivities extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(Icons.event_busy, size: 52, color: AppColors.primary),
+      Icon(Icons.event_busy, size: 52, color: Theme.of(context).colorScheme.primary),
       const SizedBox(height: 12),
       const Text(
         'No activities yet',
@@ -813,16 +812,16 @@ class _EmptyActivities extends StatelessWidget {
 class _LockBanner extends StatelessWidget {
   const _LockBanner();
   @override
-  Widget build(BuildContext context) => const Padding(
+  Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.only(bottom: 12),
     child: Material(
-      color: AppColors.primaryFixed,
+      color: Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.all(Radius.circular(12)),
       child: Padding(
         padding: EdgeInsets.all(12),
         child: Row(
           children: [
-            Icon(Icons.lock_outline, color: AppColors.primary),
+            Icon(Icons.lock_outline, color: Theme.of(context).colorScheme.primary),
             SizedBox(width: 8),
             Expanded(
               child: Text(

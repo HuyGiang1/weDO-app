@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/realtime/realtime_binding.dart';
+import 'package:mobile/core/realtime/realtime_sync.dart';
+import 'package:mobile/features/chat/data/chat_realtime_client.dart';
 import 'package:mobile/features/calendar/data/calendar_api.dart';
 import 'package:mobile/features/calendar/data/calendar_repository.dart';
 import 'package:mobile/features/calendar/presentation/calendar_screen.dart';
@@ -11,6 +14,44 @@ import 'package:mobile/features/groups/data/group_api.dart';
 import 'package:mobile/features/groups/data/group_repository.dart';
 
 void main() {
+  for (final eventType in ['GROUP_MEMBERSHIP_CHANGED','CALENDAR_ACCESS_CHANGED']) { testWidgets('membership invalidation clears Calendar when lookup fails $eventType', (tester) async {
+    final adapter=_CalendarAdapter();
+    final dio=Dio(BaseOptions(baseUrl:'https://test'))..httpClientAdapter=adapter;
+    final sync=RealtimeSync(const NoopChatRealtimeClient());
+    await tester.pumpWidget(RealtimeHost(sync:sync,child:MaterialApp(home:CalendarScreen(repository:CalendarRepository(CalendarApi(dio)),groups:GroupRepository(api:GroupApi(dio)),onOpenActivity:(_){},onGroups:(){},onChat:(){},onProfile:(){}))));
+    await tester.pumpAndSettle();expect(find.text('Sample event'),findsOneWidget);
+    adapter.offline=true;
+    sync.accept({'type':'DOMAIN_CHANGED','eventId':'membership','eventType':eventType,'scope':'user:me','aggregateId':'me'});
+    await tester.pump(const Duration(milliseconds:100));await tester.pumpAndSettle();expect(find.text('Sample event'),findsNothing);
+    await tester.pumpWidget(const SizedBox());await tester.runAsync(sync.dispose);
+  });
+  }
+
+  testWidgets('membership resync clears a removed selected group before rebuilding dropdown', (tester) async {
+    final adapter = _CalendarAdapter();
+    final dio = Dio(BaseOptions(baseUrl: 'https://test'))..httpClientAdapter = adapter;
+    final sync = RealtimeSync(const NoopChatRealtimeClient());
+    await tester.pumpWidget(RealtimeHost(sync: sync, child: MaterialApp(home: CalendarScreen(
+      repository: CalendarRepository(CalendarApi(dio)),
+      groups: GroupRepository(api: GroupApi(dio)), onOpenActivity: (_) {},
+      onGroups: () {}, onChat: () {}, onProfile: () {},
+    ))));
+    await tester.pumpAndSettle();
+    await _select(tester, 'calendar_group_filter', 'Group One');
+    expect(adapter.calendarQueries.last['groupId'], 'group-1');
+    adapter.groupsRemoved = true;
+    sync.accept({'type': 'DOMAIN_CHANGED', 'eventId': 'removed',
+      'eventType': 'GROUP_MEMBERSHIP_CHANGED', 'scope': 'user:me', 'aggregateId': 'me'});
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('Tất cả nhóm'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(adapter.calendarQueries.last, isNot(contains('groupId')));
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(sync.dispose);
+  });
   testWidgets('calendar filters compose, clear independently, and reset', (
     tester,
   ) async {
@@ -118,6 +159,8 @@ Future<void> _select(WidgetTester tester, String key, String option) async {
 
 class _CalendarAdapter implements HttpClientAdapter {
   final List<Map<String, dynamic>> calendarQueries = [];
+  bool groupsRemoved = false;
+  bool offline = false;
 
   @override
   Future<ResponseBody> fetch(
@@ -125,6 +168,7 @@ class _CalendarAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    if (offline) return ResponseBody.fromString('{}',503);
     final now = DateTime.now();
     final sampleStartAt = DateTime(now.year, now.month, now.day, 12);
     final isCalendar = options.path == '/api/v1/calendar/activities';
@@ -151,7 +195,7 @@ class _CalendarAdapter implements HttpClientAdapter {
             },
           ]
         : {
-            'items': [
+            'items': groupsRemoved ? [] : [
               {
                 'id': 'group-1',
                 'name': 'Group One',

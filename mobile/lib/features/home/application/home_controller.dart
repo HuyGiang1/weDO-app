@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../core/network/api_exception.dart';
 
 import '../data/home_models.dart';
 import '../data/home_repository.dart';
@@ -13,9 +14,17 @@ class HomeController extends ChangeNotifier {
   bool _disposed = false;
   int _generation = 0;
 
-  Future<void> load() async {
+  void invalidateAccess() {
+    if (_disposed) return;
+    _generation++;
+    value = null;
+    notifyListeners();
+  }
+
+  Future<void> load({bool silent = false}) async {
+    if (_disposed) return;
     final generation = ++_generation;
-    loading = true;
+    loading = !silent;
     error = null;
     notifyListeners();
     try {
@@ -25,6 +34,7 @@ class HomeController extends ChangeNotifier {
     } catch (exception) {
       if (_disposed || generation != _generation) return;
       error = exception;
+      if (exception is ApiException && [401,403,404].contains(exception.statusCode)) value = null;
     } finally {
       if (!_disposed && generation == _generation) {
         loading = false;

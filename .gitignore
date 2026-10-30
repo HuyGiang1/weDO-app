@@ -10,6 +10,24 @@
 .env
 .env.*
 !.env.example
+!infra/teammate.env.example
+
+# Local signing/provider configuration and standalone scratch experiments.
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.pem
+*.key
+**/key.properties
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+**/*firebase-admin*.json
+**/*service-account*.json
+infra/local-secrets/
+mobile/test/temp_test.dart
 
 # Backend
 backend/target/
@@ -18,6 +36,7 @@ backend/target/
 backend/.local-media/
 .dev-runtime/
 .dev-logs/
+.local-checkpoint-preserved/
 
 # Flutter
 mobile/.dart_tool/

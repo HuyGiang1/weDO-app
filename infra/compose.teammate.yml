@@ -1,0 +1,52 @@
+# Separate project, ports and volumes: never targets the Mac QA containers.
+name: wedo-teammate
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: wedo
+      POSTGRES_USER: wedo
+      POSTGRES_PASSWORD: ${WEDO_DB_PASSWORD:?Generate .env.teammate first}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedo -d wedo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  minio:
+    profiles: [media]
+    image: quay.io/minio/aistor/minio:RELEASE.2026-09-19T17-05-25Z
+    command: server /data --console-address ":9001" --license /minio.license
+    environment:
+      MINIO_ROOT_USER: ${WEDO_MEDIA_ACCESS_KEY:?Generate .env.teammate first}
+      MINIO_ROOT_PASSWORD: ${WEDO_MEDIA_SECRET_KEY:?Generate .env.teammate first}
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - minio_data:/data
+      # An independently obtained license is required; never copy the QA license.
+      - type: bind
+        source: ${WEDO_AISTOR_LICENSE_PATH:-./local-secrets/minio.license}
+        target: /minio.license
+        read_only: true
+        bind:
+          create_host_path: false
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

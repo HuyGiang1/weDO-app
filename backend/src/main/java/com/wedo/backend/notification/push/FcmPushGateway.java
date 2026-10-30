@@ -8,10 +8,12 @@ import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Notification;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /** Sends one committed notification to one Firebase registration token. */
 @Component
+@ConditionalOnProperty(name = "wedo.push.enabled", havingValue = "true", matchIfMissing = true)
 public class FcmPushGateway implements PushGateway {
 
     private final FirebaseMessaging firebaseMessaging;

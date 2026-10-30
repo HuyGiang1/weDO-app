@@ -39,7 +39,7 @@ public class FriendshipEntity {
     }
 
     public FriendshipEntity(UUID id, UUID userId1, UUID userId2, FriendshipStatus status, Instant createdAt, Instant endedAt) {
-        if (userId1.compareTo(userId2) >= 0) {
+        if (userId1.toString().compareTo(userId2.toString()) >= 0) {
             throw new IllegalArgumentException("Canonical pair violation: userId1 must be strictly less than userId2");
         }
         this.id = id;
@@ -51,8 +51,8 @@ public class FriendshipEntity {
     }
 
     public static FriendshipEntity createActive(UUID id, UUID userA, UUID userB, Instant now) {
-        UUID u1 = userA.compareTo(userB) < 0 ? userA : userB;
-        UUID u2 = userA.compareTo(userB) < 0 ? userB : userA;
+        UUID u1 = userA.toString().compareTo(userB.toString()) < 0 ? userA : userB;
+        UUID u2 = userA.toString().compareTo(userB.toString()) < 0 ? userB : userA;
         return new FriendshipEntity(id, u1, u2, FriendshipStatus.ACTIVE, now, null);
     }
 

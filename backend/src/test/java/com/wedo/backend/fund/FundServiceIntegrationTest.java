@@ -66,6 +66,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @AutoConfigureMockMvc
 class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.FirebaseApp firebaseAdminApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.messaging.FirebaseMessaging firebaseMessaging;
     @Autowired FundService fundService;
     @Autowired GroupService groupService;
     @Autowired GroupBanService groupBanService;
@@ -77,6 +79,34 @@ class FundServiceIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired InMemoryObjectStorageService objectStorage;
     @Autowired MockMvc mockMvc;
     @Autowired JwtService jwtService;
+    @Autowired com.wedo.backend.realtime.DomainRealtimeCoordinator realtime;
+
+    @Test
+    void committedFundMutationsInvalidatePeerResourcesWithoutBroadcastingPrivateDto() throws Exception {
+        Fixture f = fixture();
+        try (var peer = new com.wedo.backend.realtime.RealtimeProbe(realtime, f.member(), "group:" + f.groupId())) {
+            var fund = fundService.createFund(f.groupId(), f.owner(), null);
+            peer.await("FUND_CREATED");
+            var collection = fundService.createCollection(fund.fundId(), f.owner(),
+                    new CreateCollectionRequest("Realtime collection", null, null, "EQUAL_PER_MEMBER",
+                            new BigDecimal("100.00"), List.of(f.member()), null));
+            peer.await("FUND_COLLECTION_CREATED");
+            var contribution = fundService.submitContribution(collection.collectionId(), f.member(),
+                    new CreateContributionRequest(null, new BigDecimal("100.00"), null, null, null));
+            peer.await("FUND_CONTRIBUTION_CREATED");
+            fundService.confirmContribution(contribution.contributionId(), f.owner());
+            peer.await("FUND_CONTRIBUTION_APPROVED");
+            fundService.createFundExpense(fund.fundId(), f.owner(),
+                    new CreateFundExpenseRequest("Private receipt", new BigDecimal("10.00"), null, null, null, null));
+            peer.await("FUND_EXPENSE_CREATED");
+            var reimbursement = fundService.createReimbursement(fund.fundId(), f.member(),
+                    new CreateReimbursementRequest(new BigDecimal("10.00"), "Private note", null));
+            peer.await("FUND_REIMBURSEMENT_CREATED");
+            fundService.approveReimbursement(reimbursement.reimbursementId(), f.owner());
+            peer.await("FUND_REIMBURSEMENT_APPROVED");
+            assertTrue(peer.frames.stream().noneMatch(frame -> frame.contains("Private receipt") || frame.contains("Private note")));
+        }
+    }
 
     @Test
     void concurrentContributionsCannotOverReserveAnObligation() throws Exception {

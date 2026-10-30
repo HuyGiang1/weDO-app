@@ -8,6 +8,90 @@ import 'package:mobile/core/storage/secure_storage_service.dart';
 import 'package:mobile/features/notification/application/notification_push_service.dart';
 
 void main() {
+  test('push platform preserves Android and registers Apple as IOS', () {
+    expect(notificationDevicePlatform(TargetPlatform.android), 'ANDROID');
+    expect(notificationDevicePlatform(TargetPlatform.iOS), 'IOS');
+    expect(notificationDevicePlatform(TargetPlatform.macOS), isNull);
+    expect(notificationDevicePlatform(TargetPlatform.windows), isNull);
+    expect(notificationDevicePlatform(TargetPlatform.linux), isNull);
+  });
+
+  test('Android obtains FCM without touching APNs', () async {
+    var reads = 0;
+    final token = await resolvePushToken(
+      platform: TargetPlatform.android,
+      apnsToken: () async => throw StateError('Android must not call APNs'),
+      fcmToken: () async {
+        reads++;
+        return 'synthetic-fcm';
+      },
+    );
+    expect(token, 'synthetic-fcm');
+    expect(reads, 1);
+  });
+
+  test(
+    'iOS pending or empty APNs never requests dependent FCM token',
+    () async {
+      for (final value in <String?>[null, '', '  ']) {
+        final token = await resolvePushToken(
+          platform: TargetPlatform.iOS,
+          apnsToken: () async => value,
+          fcmToken: () async => throw StateError('APNs not ready'),
+        );
+        expect(token, isNull);
+      }
+    },
+  );
+
+  test('iOS awaits APNs then obtains exactly one FCM token', () async {
+    final apns = Completer<String?>();
+    var reads = 0;
+    final result = resolvePushToken(
+      platform: TargetPlatform.iOS,
+      apnsToken: () => apns.future,
+      fcmToken: () async {
+        reads++;
+        return 'synthetic-fcm';
+      },
+    );
+    expect(reads, 0);
+    apns.complete('synthetic-apns');
+    expect(await result, 'synthetic-fcm');
+    expect(reads, 1);
+  });
+
+  test('APNs errors propagate to existing startup failure boundary', () async {
+    await expectLater(
+      resolvePushToken(
+        platform: TargetPlatform.iOS,
+        apnsToken: () async => throw StateError('Programming failure'),
+        fcmToken: () async => 'unused',
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      resolvePushToken(
+        platform: TargetPlatform.iOS,
+        apnsToken: () async =>
+            throw PlatformException(code: 'apns-unavailable'),
+        fcmToken: () async => 'unused',
+      ),
+      throwsA(isA<PlatformException>()),
+    );
+  });
+
+  test('unsupported native platforms do not request either token', () async {
+    expect(
+      await resolvePushToken(
+        platform: TargetPlatform.linux,
+        apnsToken: () async => throw StateError('Unsupported'),
+        fcmToken: () async => throw StateError('Unsupported'),
+      ),
+      isNull,
+    );
+  });
+
   late _FakeMessaging messaging;
   late _MemorySecureStore store;
   late SecureStorageService storage;

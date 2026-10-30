@@ -2,7 +2,8 @@ import '../../../../core/network/api_exception.dart';
 
 class ExpenseFailure implements Exception {
   final String message;
-  const ExpenseFailure(this.message);
+  final ApiException? apiError;
+  const ExpenseFailure(this.message, {this.apiError});
 
   factory ExpenseFailure.fromApi(ApiException error) => ExpenseFailure(
     switch (error.code) {
@@ -26,5 +27,6 @@ class ExpenseFailure implements Exception {
       'GROUP_NOT_FOUND' => 'Bạn không có quyền xem dữ liệu nhóm này.',
       _ => 'Chưa thể hoàn tất thao tác. Vui lòng thử lại.',
     },
+    apiError: error,
   );
 }

@@ -21,8 +21,8 @@ public interface FriendshipRepository extends JpaRepository<FriendshipEntity, UU
     Optional<FriendshipEntity> findActiveByCanonicalPair(@Param("u1") UUID u1, @Param("u2") UUID u2);
 
     default Optional<FriendshipEntity> findActiveBetween(UUID userA, UUID userB) {
-        UUID u1 = userA.compareTo(userB) < 0 ? userA : userB;
-        UUID u2 = userA.compareTo(userB) < 0 ? userB : userA;
+        UUID u1 = userA.toString().compareTo(userB.toString()) < 0 ? userA : userB;
+        UUID u2 = userA.toString().compareTo(userB.toString()) < 0 ? userB : userA;
         return findActiveByCanonicalPair(u1, u2);
     }
 
@@ -38,8 +38,8 @@ public interface FriendshipRepository extends JpaRepository<FriendshipEntity, UU
     int endActiveFriendship(@Param("u1") UUID u1, @Param("u2") UUID u2, @Param("now") Instant now);
 
     default int endActiveFriendshipBetween(UUID userA, UUID userB, Instant now) {
-        UUID u1 = userA.compareTo(userB) < 0 ? userA : userB;
-        UUID u2 = userA.compareTo(userB) < 0 ? userB : userA;
+        UUID u1 = userA.toString().compareTo(userB.toString()) < 0 ? userA : userB;
+        UUID u2 = userA.toString().compareTo(userB.toString()) < 0 ? userB : userA;
         return endActiveFriendship(u1, u2, now);
     }
 }

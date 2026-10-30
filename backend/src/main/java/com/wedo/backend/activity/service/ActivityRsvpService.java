@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ActivityRsvpService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
     private final ActivityRepository activities; private final ActivityParticipantRepository participants;
     private final ActivityWaitlistSequenceRepository sequences; private final ActivityRsvpHistoryRepository histories;
     private final GroupParticipationService participation; private final Clock clock;
@@ -43,6 +45,7 @@ public class ActivityRsvpService {
         if(after==before && (after!=ActivityRsvpStatus.WAITLIST || sequence.equals(participant.getWaitlistSequence()))) return response(participant);
         participant.changeTo(after,after==ActivityRsvpStatus.WAITLIST?sequence:null,now); history(activityId,userId,before,after,userId,now);
         if(before==ActivityRsvpStatus.GOING && after!=ActivityRsvpStatus.GOING) promoteAll(activity,now);
+        if (realtime != null) realtime.activity("ACTIVITY_RSVP_CHANGED", activityId, activity.getGroupId(), userId);
         return response(participant);
     }
     /** Caller holds the canonical group/activity locks; promote FIFO until capacity is exhausted. */
@@ -53,6 +56,8 @@ public class ActivityRsvpService {
             ActivityParticipantEntity participant = next.get();
             participant.changeTo(ActivityRsvpStatus.GOING, null, now);
             history(activity.getId(), participant.getUserId(), ActivityRsvpStatus.WAITLIST, ActivityRsvpStatus.GOING, null, now);
+            // The caller publishes one invalidation after the full mutation,
+            // including all FIFO promotions. Never broadcast intermediate counts.
             if (eventPublisher != null) {
                 eventPublisher.publishEvent(new com.wedo.backend.notification.event.NotificationDomainEvent(
                         "ACTIVITY_WAITLIST_PROMOTED:" + activity.getId() + ":" + participant.getUserId() + ":" + now.toEpochMilli(),

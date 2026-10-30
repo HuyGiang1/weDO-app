@@ -1,9 +1,11 @@
 import 'dart:convert' show utf8;
 
 import 'package:flutter/material.dart';
+
+import '../../../../core/ui/widgets/wedo_brand_mark.dart';
+
 import 'package:flutter/services.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 
@@ -129,7 +131,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         password.isNotEmpty && utf8.encode(password).length <= 72;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundGradientStart,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
@@ -145,17 +147,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       width: double.infinity,
                       clipBehavior: Clip.hardEdge,
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(24.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryShadow.withValues(
-                              alpha: 0.04,
-                            ),
-                            blurRadius: 20.0,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       padding: const EdgeInsets.all(AppSpacing.lg),
                       child: Form(
@@ -164,23 +157,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Center(
-                              child: Image.asset(
-                                'assets/images/wedo_logo.png',
-                                height: 48.0,
-                                fit: BoxFit.contain,
-                              ),
-                            ),
+                            Center(child: const WeDoBrandMark(size: 72)),
                             const SizedBox(height: AppSpacing.lg),
-                            const Text(
+                            Text(
                               'New Password',
-                              style: AppTextStyles.headline,
+                              style: AppTextStyles.of(context).headline,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.xs),
-                            const Text(
+                            Text(
                               'Choose a password with 8–72 characters.',
-                              style: AppTextStyles.bodyMedium,
+                              style: AppTextStyles.of(context).bodyMedium,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: AppSpacing.lg),
@@ -222,7 +209,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                   _isNewPasswordVisible
                                       ? Icons.visibility_off_outlined
                                       : Icons.visibility_outlined,
-                                  color: AppColors.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -251,7 +240,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                   _isConfirmPasswordVisible
                                       ? Icons.visibility_off_outlined
                                       : Icons.visibility_outlined,
-                                  color: AppColors.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -267,9 +258,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                             ),
                             if (_resetSucceeded) ...[
                               const SizedBox(height: AppSpacing.sm),
-                              const Text(
+                              Text(
                                 'Password updated. You can now log in.',
-                                style: AppTextStyles.bodySmall,
+                                style: AppTextStyles.of(context).bodySmall,
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -279,12 +270,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                   ? null
                                   : widget.onBackToLogin,
                               icon: const Icon(Icons.arrow_back, size: 18.0),
-                              label: const Text(
+                              label: Text(
                                 'Back to Login',
-                                style: AppTextStyles.bodySmall,
+                                style: AppTextStyles.of(context).bodySmall,
                               ),
                               style: TextButton.styleFrom(
-                                foregroundColor: AppColors.onSurfaceVariant,
+                                foregroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                                 minimumSize: const Size(48.0, 40.0),
                               ),
                             ),
@@ -360,7 +353,7 @@ class _ResetFieldState extends State<_ResetField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.label, style: AppTextStyles.label),
+        Text(widget.label, style: AppTextStyles.of(context).label),
         const SizedBox(height: AppSpacing.xs),
         TextFormField(
           controller: widget.controller,
@@ -372,31 +365,19 @@ class _ResetFieldState extends State<_ResetField> {
           textInputAction: widget.textInputAction,
           inputFormatters: widget.inputFormatters,
           onFieldSubmitted: widget.onSubmitted,
-          style: AppTextStyles.input,
+          style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: widget.hintText,
-            hintStyle: AppTextStyles.inputHint,
+            hintStyle: Theme.of(context).inputDecorationTheme.hintStyle,
             filled: true,
             fillColor: _isFocused
-                ? AppColors.surface
-                : AppColors.inputBackground,
+                ? Theme.of(context).colorScheme.surface
+                : Theme.of(context).colorScheme.surfaceContainerLow,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16.0,
               vertical: 12.0,
             ),
             suffixIcon: widget.suffixIcon,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-              borderSide: const BorderSide(color: AppColors.primary),
-            ),
           ),
         ),
       ],
@@ -418,14 +399,17 @@ class _RequirementsCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.backgroundGradientStart,
+        color: Theme.of(context).scaffoldBackgroundColor,
         borderRadius: BorderRadius.circular(12.0),
-        border: Border.all(color: const Color(0xFFE0E3E5)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Password requirements:', style: AppTextStyles.label),
+          Text(
+            'Password requirements:',
+            style: AppTextStyles.of(context).label,
+          ),
           const SizedBox(height: AppSpacing.xs),
           _RequirementRow(
             label: '8–72 characters',
@@ -455,10 +439,14 @@ class _RequirementRow extends StatelessWidget {
         Icon(
           isSatisfied ? Icons.check_circle : Icons.radio_button_unchecked,
           size: 16.0,
-          color: isSatisfied ? AppColors.primary : AppColors.onSurfaceVariant,
+          color: isSatisfied
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: AppSpacing.xs),
-        Expanded(child: Text(label, style: AppTextStyles.bodySmall)),
+        Expanded(
+          child: Text(label, style: AppTextStyles.of(context).bodySmall),
+        ),
       ],
     );
   }
@@ -476,41 +464,35 @@ class _UpdatePasswordButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999.0),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryShadow.withValues(alpha: 0.12),
-            blurRadius: 16.0,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
       child: SizedBox(
         height: AppSpacing.buttonHeightLarge,
         child: ElevatedButton(
           onPressed: isLoading ? null : onPressed,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.7),
-            foregroundColor: AppColors.onPrimary,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            disabledBackgroundColor: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.7),
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
             elevation: 0,
-            shape: const StadiumBorder(),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
           ),
           child: isLoading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 24.0,
                   height: 24.0,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.onPrimary,
+                      Theme.of(context).colorScheme.onPrimary,
                     ),
                   ),
                 )
-              : const Text(
+              : Text(
                   'Update Password',
-                  style: AppTextStyles.buttonPrimary,
+                  style: AppTextStyles.of(context).buttonPrimary,
                 ),
         ),
       ),

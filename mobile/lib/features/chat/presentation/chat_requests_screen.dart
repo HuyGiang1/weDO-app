@@ -60,10 +60,10 @@ class _ChatRequestsScreenState extends State<ChatRequestsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Lời mời trò chuyện'),
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       actions: [
         IconButton(
           tooltip: 'Tải lại',

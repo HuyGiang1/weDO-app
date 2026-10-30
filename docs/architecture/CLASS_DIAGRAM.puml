@@ -17,10 +17,11 @@ class CalendarController
 class CalendarService
 class CalendarRepository
 class CalendarActivityResponse { id: UUID\ngroupId: UUID\ngroupName: String\nstatus: ActivityStatus\nstartAt: Instant\nendAt: Instant?\ntimezone: String?\ncallerRsvpStatus: ActivityRsvpStatus\nreminderEnabled: boolean\nreminderAt: Instant? }
-class PollEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: PollStatus }
+class PollEntity { id: UUID\ngroupId: UUID\nactivityId: UUID?\ncreatedBy: UUID\nstatus: PollStatus }
 class PollOptionEntity { id: UUID\npollId: UUID\nisDisabled: boolean }
 class PollVoteEntity { id: UUID\npollId: UUID\nuserId: UUID }
 class PollVoteChoiceEntity { voteId: UUID\noptionId: UUID }
+class PollVoteCommand <<JDBC receipt>> { pollId: UUID\nuserId: UUID\nrequestId: UUID\ncreatedAt: Instant }
 class TaskEntity { id: UUID\nactivityId: UUID\ncreatedBy: UUID\nstatus: TaskStatus }
 class TaskAssigneeEntity { taskId: UUID\nuserId: UUID }
 class TaskStatusHistoryEntity { taskId: UUID\nfromStatus: TaskStatus?\ntoStatus: TaskStatus }
@@ -30,7 +31,7 @@ class DirectConversationEntity { conversationId: UUID\nuserId1: UUID\nuserId2: U
 class GroupConversationEntity { conversationId: UUID\ngroupId: UUID }
 class ConversationSequenceEntity { conversationId: UUID\ncurrentSequence: long }
 class MessageRequestEntity { id: UUID\nsenderId: UUID\nreceiverId: UUID\nstatus: RequestStatus\nresolvedAt: Instant? }
-class MessageEntity { id: UUID\nsequence: long\nsenderId: UUID?\ntype: TEXT | IMAGE\ncontent: String?\nstatus: ACTIVE | UNSENT\nreplyToMessageId: UUID? }
+class MessageEntity { id: UUID\nsequence: long\nsenderId: UUID?\ntype: TEXT | IMAGE | POLL | POLL_VOTED | POLL_VOTE_CHANGED\ncontent: String?\npollId: UUID?\nstatus: ACTIVE | UNSENT\nreplyToMessageId: UUID? }
 class MessageAttachmentEntity { id: UUID\nstorageKey: String\ncontentType: String\nfileSizeBytes: long\nsortOrder: int }
 class MessageEditHistoryEntity { id: UUID\npreviousContent: String?\neditedAt: Instant }
 class MessageHiddenUserEntity { messageId: UUID\nuserId: UUID\nhiddenAt: Instant }
@@ -79,10 +80,13 @@ CalendarController --> ActivityReminderEntity : reads and configures per-user re
 ActivityReminderDeliveryScheduler --> ActivityEntity : try-locks eligible Activity first
 ActivityReminderDeliveryScheduler --> ActivityReminderEntity : locks and rechecks due reminder
 ActivityReminderDeliveryScheduler --> NotificationService : atomically persists inbox with sent_at
-ActivityEntity "1" -- "0..*" PollEntity
+ActivityEntity "0..1" -- "0..*" PollEntity
+GroupEntity "1" -- "0..*" PollEntity : canonical ownership
+MessageEntity "0..1" --> "0..1" PollEntity : unique durable pollId (POLL only)
 PollEntity "1" -- "2..*" PollOptionEntity
 PollEntity "1" -- "0..*" PollVoteEntity
 PollVoteEntity "1" -- "1..*" PollVoteChoiceEntity
+PollEntity "1" -- "0..*" PollVoteCommand
 PollOptionEntity "1" -- "0..*" PollVoteChoiceEntity
 ActivityEntity "1" -- "0..*" TaskEntity
 TaskEntity "1" -- "0..*" TaskAssigneeEntity
@@ -152,4 +156,156 @@ NotificationService ..> UserDeviceResponse : registers/deactivates device push t
 NotificationService --> PushGateway : dispatches push outside DB transaction
 NotificationService --> ChatRealtimeCoordinator : suppresses push on open conversation
 FcmPushGateway ..|> PushGateway : isolates provider errors and invalid tokens
+package "Private Group Memories (R4 / V15)" {
+  class MomentController
+  class MomentService
+  class GroupMoment <<group_moments>> {
+    id : UUID
+    groupId : UUID
+    activityId : UUID?
+    createdBy : UUID
+    caption : String
+    deletedAt : Instant?
+  }
+  class MomentMedia <<moment_media>> {
+    id : UUID
+    storageKey : String [private]
+    contentType : String
+    fileSize : long
+    sortOrder : int
+  }
+  class MomentReaction <<moment_reactions>>
+  class MomentComment <<moment_comments>>
+  class GroupAlbum <<group_albums>>
+  class AlbumItem <<album_items>>
+  MomentController --> MomentService
+  MomentService --> GroupPermissionService : current membership
+  MomentService --> MediaReferenceService : uploader/group/metadata
+  MomentService --> ObjectStorageService : private signed GET (60 seconds)
+  MomentService --> RealtimePublisher : group hint AFTER_COMMIT
+  GroupEntity "1" -- "0..*" GroupMoment
+  ActivityEntity "0..1" -- "0..*" GroupMoment : same group
+  GroupMoment "1" -- "0..*" MomentMedia
+  GroupMoment "1" -- "0..*" MomentReaction : unique user
+  GroupMoment "1" -- "0..*" MomentComment
+  GroupEntity "1" -- "0..*" GroupAlbum
+  ActivityEntity "0..1" -- "0..*" GroupAlbum : same group
+  GroupAlbum "1" -- "0..*" AlbumItem
+  MomentMedia "1" -- "0..*" AlbumItem : no byte copy
+}
+package "Community Core (R5 / V16)" {
+  class CommunityController
+  class CommunityService
+  class CommunityAccess {
+    canRead(postId, viewerId) : boolean
+    ELIGIBLE : shared SQL predicate
+  }
+  class CommunityPost <<community_posts>> {
+    id : UUID
+    authorId : UUID
+    postType : GENERAL | LOOKING_FOR_MEMBERS
+    visibility : PUBLIC | FRIENDS_OF_FRIENDS | FRIENDS | GROUP_ONLY
+    groupId : UUID?
+    moderationStatus : ACTIVE | REMOVED
+    deletedAt : Instant?
+  }
+  class CommunityMedia <<community_media>>
+  class CommunityReaction <<community_reactions>>
+  class CommunityComment <<community_comments>>
+  class CommunityHiddenPost <<community_hidden_posts>>
+  class CommunityReport <<community_reports>> {
+    targetType : POST | COMMENT | USER
+    reason : SPAM | HARASSMENT | INAPPROPRIATE_CONTENT | SCAM | OTHER
+    status : OPEN | REVIEWED | DISMISSED
+    reporterId : UUID (private)
+    evidence : String (reviewer only)
+  }
+  class CommunityModerator <<community_moderators>> {
+    userId : UUID
+    grantedAt : Instant
+    grantedBy : UUID
+    revokedAt : Instant?
+  }
+  class CommunityModerationAction <<community_moderation_actions>> {
+    id : UUID (command receipt)
+    moderatorId : UUID
+    action : DISMISS | RESOLVE | REMOVE | RESTORE
+    reason : String
+    createdAt : Instant
+  }
+  class ModerationController
+  class ModerationService
+  ModerationController --> ModerationService
+  ModerationService --> CommunityAccess : ordinary submission eligibility
+  ModerationService --> CommunityModerator : explicit global role
+  ModerationService --> GroupMembershipEntity : GROUP_ONLY reviewer
+  ModerationService --> RealtimePublisher : AFTER_COMMIT
+  ModerationService --> ObjectStorageService : exact report signed evidence
+  RealtimeScopeAccess --> ModerationService : scope + report delivery check
+  CommunityReport "1" -- "0..*" CommunityModerationAction
+  CommunityReport --> UserEntity : private reporter / USER target
+  CommunityReport --> CommunityComment : optional COMMENT target
+  CommunityModerator --> UserEntity
+  CommunityModerationAction --> UserEntity : reviewer
+  CommunityController --> CommunityService
+  CommunityService --> CommunityAccess : shared authorization
+  RealtimeScopeAccess --> CommunityAccess : post delivery predicate
+  CommunityService --> MediaReferenceService : uploader UUID context
+  CommunityService --> ObjectStorageService : private signed GET
+  CommunityService --> RealtimePublisher : AFTER_COMMIT
+  UserEntity "1" -- "0..*" CommunityPost
+  GroupEntity "0..1" -- "0..*" CommunityPost : GROUP_ONLY
+  CommunityPost "1" -- "0..*" CommunityMedia
+  CommunityPost "1" -- "0..*" CommunityReaction
+  CommunityPost "1" -- "0..*" CommunityComment
+  CommunityPost "1" -- "0..*" CommunityHiddenPost
+  CommunityPost "0..1" -- "0..*" CommunityReport
+}
+package "R6 Recruitment + canonical admission" {
+  class RecruitmentController
+  class RecruitmentService
+  class RecruitmentProjection
+  class RecruitmentAdmissionGuard
+  class RecruitmentEvents
+  class CommunityRecruitment <<community_recruitment>>
+  class RecruitmentApplication <<recruitment_applications>>
+  RecruitmentController --> RecruitmentService
+  RecruitmentService --> CommunityService : canonical post
+  RecruitmentService --> GroupAdmissionService : pending / approve / reject / cancel
+  RecruitmentService --> RecruitmentProjection : safe snapshot + status
+  GroupAdmissionService --> RecruitmentAdmissionGuard : provenance quota under locks
+  RecruitmentAdmissionGuard --> RecruitmentProjection
+  RealtimeScopeAccess --> RecruitmentProjection : manager review scope
+  RecruitmentEvents --> RealtimePublisher : existing AFTER_COMMIT
+  CommunityPost "1" -- "0..1" CommunityRecruitment
+  GroupEntity "1" -- "0..*" CommunityRecruitment
+  ActivityEntity "0..1" -- "0..*" CommunityRecruitment
+  CommunityRecruitment "1" -- "0..*" RecruitmentApplication
+  RecruitmentApplication --> GroupJoinRequestEntity : provenance only
+}
+package "R10 Journey / evidence / explicit actions" {
+  class ActivityStop
+  class ActivityStopCheckin
+  class TaskExecution
+  class TaskEvidence
+  class TaskEvidenceMedia
+  class TaskEvidenceReview
+  class PollConversionLink
+  ActivityEntity "1" -- "0..*" ActivityStop
+  ActivityStop "1" -- "0..*" ActivityStopCheckin
+  ActivityStopCheckin --> GroupMoment : canonical Moment FK
+  TaskExecution --> ActivityStop : optional same Activity
+  TaskEntity "1" -- "0..1" TaskExecution
+  TaskEntity "1" -- "0..*" TaskEvidence
+  TaskEvidence "1" -- "1..*" TaskEvidenceMedia
+  TaskEvidence "1" -- "0..1" TaskEvidenceReview
+  PollConversionLink --> ActivityStop : STOP target
+  PollConversionLink --> TaskEntity : TASK target
+  PollConversionLink --> PollEntity : optional source
+  PollConversionLink --> PollOptionEntity : optional option
+  note right of PollConversionLink
+    UUID + option/kind/Activity dedupe
+    retained source snapshots
+  end note
+}
 @enduml

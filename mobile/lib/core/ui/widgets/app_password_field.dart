@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import 'app_text_field.dart';
 
 /// Password input field with integrated visibility toggle.
@@ -48,9 +47,9 @@ class _AppPasswordFieldState extends State<AppPasswordField> {
       controller: widget.controller,
       hintText: widget.hintText,
       prefixIcon: widget.prefixIcon ??
-          const Icon(
+          Icon(
             Icons.lock_outline_rounded,
-            color: AppColors.onSurfaceVariant,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             size: 20.0,
           ),
       suffixIcon: IconButton(
@@ -58,11 +57,11 @@ class _AppPasswordFieldState extends State<AppPasswordField> {
           _obscureText
               ? Icons.visibility_outlined
               : Icons.visibility_off_outlined,
-          color: AppColors.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           size: 20.0,
         ),
         onPressed: widget.enabled ? _toggleVisibility : null,
-        tooltip: _obscureText ? 'Show password' : 'Hide password',
+        tooltip: _obscureText ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
       ),
       obscureText: _obscureText,
       validator: widget.validator,

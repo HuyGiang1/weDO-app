@@ -50,6 +50,11 @@ import java.util.UUID;
 
 @Service
 public class GroupAdmissionService {
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.wedo.backend.community.RecruitmentAdmissionGuard recruitment;
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entityManager;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.wedo.backend.realtime.RealtimePublisher realtime;
 
     private static final int CAPACITY_LIMIT = 100;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -152,6 +157,7 @@ public class GroupAdmissionService {
                 now
         ));
 
+        if (realtime != null) { realtime.group("GROUP_MEMBER_JOINED", groupId, userId); realtime.user("GROUP_MEMBERSHIP_CHANGED", userId); }
         return membership;
     }
 
@@ -215,6 +221,7 @@ public class GroupAdmissionService {
             ));
         }
 
+        if (realtime != null) realtime.user("GROUP_INVITATION_CHANGED", invitation.getInviteeId());
         return GroupInvitationResponse.of(invitation, access.group().getName(), access.group().getAvatarStorageKey(), inviterName);
     }
 
@@ -260,6 +267,7 @@ public class GroupAdmissionService {
         Instant now = clock.instant();
         admitMemberUnderGroupLock(invitation.getGroupId(), callerUserId);
         invitation.accept(now);
+        if (realtime != null) realtime.user("GROUP_INVITATION_CHANGED", invitation.getInviteeId());
     }
 
     @Transactional
@@ -277,6 +285,7 @@ public class GroupAdmissionService {
         }
 
         invitation.decline(clock.instant());
+        if (realtime != null) realtime.user("GROUP_INVITATION_CHANGED", invitation.getInviteeId());
     }
 
     @Transactional
@@ -296,6 +305,7 @@ public class GroupAdmissionService {
         }
 
         invitation.cancel(clock.instant());
+        if (realtime != null) realtime.user("GROUP_INVITATION_CHANGED", invitation.getInviteeId());
     }
 
     // =========================================================================
@@ -406,7 +416,13 @@ public class GroupAdmissionService {
         GroupSettingsEntity settings = groupSettingsRepository.findById(group.getId())
                 .orElseThrow(() -> new IllegalStateException("Group settings missing"));
 
-        return GroupInviteSummaryResponse.of(group, memberCount, settings.getJoinPolicy());
+        boolean alreadyMember = groupMembershipRepository.findFirstByGroupIdAndUserIdAndStatus(
+                group.getId(), callerUserId, GroupMembershipStatus.ACTIVE).isPresent();
+        boolean requestPending = !alreadyMember && settings.getJoinPolicy() == GroupJoinPolicy.APPROVAL_REQUIRED
+                && groupJoinRequestRepository.existsByGroupIdAndUserIdAndStatus(
+                        group.getId(), callerUserId, GroupJoinRequestStatus.PENDING);
+        return new GroupInviteSummaryResponse(group.getId(), group.getName(), group.getDescription(),
+                group.getAvatarStorageKey(), memberCount, settings.getJoinPolicy(), alreadyMember, requestPending);
     }
 
     @Transactional
@@ -466,6 +482,10 @@ public class GroupAdmissionService {
             String displayName = user != null ? user.getDisplayName() : null;
             String avatarKey = user != null ? user.getAvatarStorageKey() : null;
 
+            if (realtime != null) {
+                publishJoinRequestChange("GROUP_JOIN_REQUESTED", groupId);
+                realtime.user("GROUP_JOIN_REQUESTED", callerUserId);
+            }
             return JoinRequestResponse.of(joinRequest, group.getName(), displayName, avatarKey);
         }
     }
@@ -473,6 +493,25 @@ public class GroupAdmissionService {
     // =========================================================================
     // Join Requests
     // =========================================================================
+    /** Recruitment creates a canonical PENDING request, never AUTO_JOIN membership. */
+    @Transactional
+    public GroupJoinRequestEntity requestForRecruitment(UUID groupId,UUID callerUserId) {
+        userService.requireActiveUser(callerUserId);
+        GroupEntity group=groupRepository.findByIdForUpdate(groupId)
+                .filter(g->g.getStatus()==GroupStatus.ACTIVE).orElseThrow(()->new BusinessException(ErrorCode.GROUP_NOT_FOUND));
+        if(groupSettingsRepository.findById(groupId).orElseThrow().getJoinPolicy()!=GroupJoinPolicy.APPROVAL_REQUIRED)
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        if(groupBanRepository.existsByGroupIdAndUserIdAndUnbannedAtIsNull(groupId,callerUserId))
+            throw new BusinessException(ErrorCode.USER_BANNED_FROM_GROUP);
+        if(groupMembershipRepository.findFirstByGroupIdAndUserIdAndStatus(groupId,callerUserId,GroupMembershipStatus.ACTIVE).isPresent())
+            throw new BusinessException(ErrorCode.ALREADY_GROUP_MEMBER);
+        var existing=groupJoinRequestRepository.findByGroupIdAndUserIdAndStatus(groupId,callerUserId,GroupJoinRequestStatus.PENDING);
+        if(existing.isPresent())return existing.get();
+        var request=groupJoinRequestRepository.saveAndFlush(new GroupJoinRequestEntity(UUID.randomUUID(),groupId,callerUserId,GroupJoinRequestStatus.PENDING,clock.instant(),null,null));
+        if(realtime!=null){publishJoinRequestChange("GROUP_JOIN_REQUESTED",groupId);realtime.user("GROUP_JOIN_REQUESTED",callerUserId);}
+        return request;
+    }
+
     @Transactional(readOnly = true)
     public PagedResponse<JoinRequestResponse> getJoinRequests(UUID groupId, UUID callerUserId, int page, int size) {
         ReadableGroupAccess access = groupPermissionService.requireAdminOrOwner(groupId, callerUserId);
@@ -499,13 +538,18 @@ public class GroupAdmissionService {
 
         groupPermissionService.requireAdminOrOwner(request.getGroupId(), callerUserId);
 
+        boolean recruitmentRequest=recruitment!=null&&recruitment.lock(requestId);
+        if(recruitmentRequest)entityManager.refresh(request);
+
         if (request.getStatus() != GroupJoinRequestStatus.PENDING) {
             throw new BusinessException(ErrorCode.JOIN_REQUEST_ALREADY_RESOLVED);
         }
 
         Instant now = clock.instant();
+        if(recruitmentRequest)recruitment.checkApproval(requestId,callerUserId);
         admitMemberUnderGroupLock(request.getGroupId(), request.getUserId());
         request.approve(callerUserId, now);
+        if(recruitmentRequest)recruitment.changed(requestId);
 
         if (eventPublisher != null) {
             GroupEntity group = groupRepository.findById(request.getGroupId()).orElse(null);
@@ -528,6 +572,7 @@ public class GroupAdmissionService {
                     now
             ));
         }
+        if (realtime != null) { publishJoinRequestChange("GROUP_JOIN_APPROVED", request.getGroupId()); realtime.user("GROUP_JOIN_APPROVED", request.getUserId()); }
     }
 
     @Transactional
@@ -536,12 +581,16 @@ public class GroupAdmissionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.JOIN_REQUEST_NOT_FOUND));
 
         groupPermissionService.requireAdminOrOwner(request.getGroupId(), callerUserId);
+        boolean recruitmentRequest=recruitment!=null&&recruitment.lock(requestId);
+        if(recruitmentRequest)entityManager.refresh(request);
 
         if (request.getStatus() != GroupJoinRequestStatus.PENDING) {
             throw new BusinessException(ErrorCode.JOIN_REQUEST_ALREADY_RESOLVED);
         }
 
         request.reject(callerUserId, clock.instant());
+        if(recruitmentRequest)recruitment.changed(requestId);
+        if (realtime != null) { publishJoinRequestChange("GROUP_JOIN_REJECTED", request.getGroupId()); realtime.user("GROUP_JOIN_REJECTED", request.getUserId()); }
     }
 
     @Transactional
@@ -554,11 +603,24 @@ public class GroupAdmissionService {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
+        boolean recruitmentRequest=recruitment!=null&&recruitment.lock(requestId);
+        if(recruitmentRequest)entityManager.refresh(request);
+
         if (request.getStatus() != GroupJoinRequestStatus.PENDING) {
             throw new BusinessException(ErrorCode.JOIN_REQUEST_ALREADY_RESOLVED);
         }
 
         request.cancel(clock.instant());
+        if(recruitmentRequest)recruitment.changed(requestId);
+        if (realtime != null) { publishJoinRequestChange("GROUP_JOIN_CANCELLED", request.getGroupId()); realtime.user("GROUP_JOIN_CANCELLED", request.getUserId()); }
+    }
+
+    private void publishJoinRequestChange(String type, UUID groupId) {
+        if (realtime == null) return;
+        groupMembershipRepository.findActiveMemberResponsesByGroupId(groupId).stream()
+                .filter(member -> "OWNER".equals(member.getRole()) || "ADMIN".equals(member.getRole()))
+                .forEach(member -> realtime.resource(type, "GROUP", groupId,
+                        "user:" + member.getUserId(), null, null));
     }
 
     private String generateSecureInviteCode() {

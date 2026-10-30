@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../groups/presentation/widgets/group_widgets.dart';
 import '../../social/presentation/widgets/user_avatar.dart';
 import '../data/chat_models.dart';
@@ -87,10 +86,10 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.background,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     appBar: AppBar(
       title: const Text('Trò chuyện'),
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       actions: [
         IconButton(
           tooltip: 'Tải lại cuộc trò chuyện',
@@ -199,9 +198,9 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
                     ? null
                     : Text(
                         chatListTime(conversation.lastMessageAt!),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                 onTap: () => widget.onOpenConversation(conversation),

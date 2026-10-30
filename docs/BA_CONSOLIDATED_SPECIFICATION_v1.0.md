@@ -211,7 +211,9 @@ Rules:
 - Unassigned may be claimed.
 - Shared status for multi-assignee task.
 - TODO / IN_PROGRESS / DONE.
-- Assignee + Owner/Admin + Activity Creator may update.
+- New assignees/claims require active group membership and GOING RSVP in this Activity (PRE-DEMO rule change, 2026-10-19).
+- Only current Task assignees may change operational status; management roles do not bypass assignment.
+- Existing assignments survive Activity departure for history and retain status rights while group access is valid. Explicitly removed assignments require current GOING eligibility before re-adding.
 - Activity completion does not auto-complete task.
 - No subtasks MVP.
 
@@ -421,3 +423,7 @@ Overview | Chat | Activities | Finance | Members
 - Critical flows testable end-to-end.
 
 **BA CONSOLIDATED SPECIFICATION v1.0 — BASELINE ESTABLISHED**
+
+## R10 authorized product extension —2026-10-28
+
+Activity Journey contains ordered stops with dates, location label, organizer, optional nonledger cost and explicit lifecycle. RSVP belongs only to Activity. Stop check-in creates one canonical group/Activity Moment; camera declaration and client time do not verify GPS/presence, server time records receipt. Task modes NONE/DIRECT_COMPLETE/REQUIRE_REVIEW preserve TODO/IN_PROGRESS/DONE; assigned current members submit private photos. In review mode, a different current authorized manager approves a current unmodified submission and records canonical DONE/history, explicitly extending the generic assignee-only status rule. Rejected/superseded evidence remains historical; no automatic social sharing. Poll conversion is an explicit selected-option action with source snapshots/idempotency, not automatic winner execution. [Detailed permission/lifecycle contract](R10_ACTIVITY_JOURNEY_CHECKIN_POLL_ACTION_DELIVERY.md). Physical R10 acceptance pending.

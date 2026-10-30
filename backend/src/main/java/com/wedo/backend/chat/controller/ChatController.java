@@ -28,6 +28,12 @@ public class ChatController {
     private final ChatService service;
     public ChatController(ChatService service) { this.service = service; }
 
+    @PostMapping("/conversations/{id}/polls")
+    public ResponseEntity<ChatResponses.Message> createPoll(@AuthenticationPrincipal AuthenticatedUserPrincipal p,
+            @PathVariable UUID id, @Valid @RequestBody ChatRequests.CreatePoll request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.createPoll(id, p.userId(), request));
+    }
+
     @GetMapping("/conversations")
     public List<ChatResponses.Conversation> list(@AuthenticationPrincipal AuthenticatedUserPrincipal p) {
         return service.list(p.userId());

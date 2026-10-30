@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 
 /// A 6-cell OTP input widget designed for verification codes.
@@ -147,10 +146,10 @@ class OtpCodeFieldState extends State<OtpCodeField> {
                           enabled: widget.enabled,
                           keyboardType: TextInputType.number,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 22.0,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.onSurface,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
@@ -161,33 +160,33 @@ class OtpCodeFieldState extends State<OtpCodeField> {
                             counterText: '',
                             filled: true,
                             fillColor: isFocused
-                                ? AppColors.surface
-                                : AppColors.inputBackground,
+                                ? Theme.of(context).colorScheme.surface
+                                : Theme.of(context).colorScheme.surfaceContainerLow,
                             contentPadding: EdgeInsets.zero,
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16.0),
+                              borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide.none,
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16.0),
+                              borderRadius: BorderRadius.circular(8),
                               borderSide: hasError
-                                  ? const BorderSide(
-                                      color: AppColors.error,
+                                  ? BorderSide(
+                                      color: Theme.of(context).colorScheme.error,
                                       width: 1.5,
                                     )
                                   : BorderSide.none,
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16.0),
+                              borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide(
                                 color: hasError
-                                    ? AppColors.error
-                                    : AppColors.primary,
+                                    ? Theme.of(context).colorScheme.error
+                                    : Theme.of(context).colorScheme.primary,
                                 width: 1.5,
                               ),
                             ),
                             disabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16.0),
+                              borderRadius: BorderRadius.circular(8),
                               borderSide: BorderSide.none,
                             ),
                           ),
@@ -205,10 +204,10 @@ class OtpCodeFieldState extends State<OtpCodeField> {
           const SizedBox(height: AppSpacing.xs),
           Text(
             widget.errorText!,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13.0,
               fontWeight: FontWeight.w500,
-              color: AppColors.error,
+              color: Theme.of(context).colorScheme.error,
             ),
             textAlign: TextAlign.center,
           ),

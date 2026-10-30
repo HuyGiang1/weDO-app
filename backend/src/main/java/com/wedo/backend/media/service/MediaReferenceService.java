@@ -21,10 +21,11 @@ public class MediaReferenceService {
             "image/jpeg", "image/png", "image/webp");
 
     private static final Pattern KEY = Pattern.compile(
-            "^(chat|expense-receipt|fund-contribution-proof|fund-expense-receipt|fund-reimbursement-receipt)/"
+            "^(chat|expense-receipt|fund-contribution-proof|fund-expense-receipt|fund-reimbursement-receipt|moment-image|moment-video|community-image)/"
                     + "([0-9a-fA-F-]{36})/([0-9a-fA-F-]{36})/([0-9a-fA-F-]{36})$");
 
     private final ObjectStorageService storage;
+    @org.springframework.beans.factory.annotation.Autowired private MomentMediaPolicy momentPolicy;
 
     public MediaReferenceService(ObjectStorageService storage) {
         this.storage = storage;
@@ -56,7 +57,13 @@ public class MediaReferenceService {
                 || !parsed.uploaderId().equals(expectedUploaderId)) {
             throw invalidReference();
         }
-        validateObject(storageKey);
+        if(expectedCategory==UploadCategory.MOMENT_IMAGE||expectedCategory==UploadCategory.MOMENT_VIDEO||expectedCategory==UploadCategory.COMMUNITY_IMAGE) {
+            try {
+                var head=storage.head(storageKey);
+                momentPolicy.validate(expectedCategory,head.contentType(),originalFileName(storageKey),head.size());
+                if(head.metadata()==null||!Long.toString(head.size()).equals(head.metadata().get("declared-size")))throw invalidReference();
+            } catch(ObjectStorageException e) { throw invalidReference(); }
+        } else validateObject(storageKey);
         return parsed;
     }
 
@@ -133,6 +140,9 @@ public class MediaReferenceService {
 
     private String namespace(UploadCategory category) {
         return switch (category) {
+            case COMMUNITY_IMAGE -> "community-image";
+            case MOMENT_IMAGE -> "moment-image";
+            case MOMENT_VIDEO -> "moment-video";
             case CHAT_IMAGE -> "chat";
             case EXPENSE_RECEIPT -> "expense-receipt";
             case FUND_CONTRIBUTION_PROOF -> "fund-contribution-proof";
@@ -144,6 +154,9 @@ public class MediaReferenceService {
 
     private UploadCategory category(String namespace) {
         return switch (namespace) {
+            case "community-image" -> UploadCategory.COMMUNITY_IMAGE;
+            case "moment-image" -> UploadCategory.MOMENT_IMAGE;
+            case "moment-video" -> UploadCategory.MOMENT_VIDEO;
             case "chat" -> UploadCategory.CHAT_IMAGE;
             case "expense-receipt" -> UploadCategory.EXPENSE_RECEIPT;
             case "fund-contribution-proof" -> UploadCategory.FUND_CONTRIBUTION_PROOF;

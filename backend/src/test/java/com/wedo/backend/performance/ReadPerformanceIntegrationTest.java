@@ -44,6 +44,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @ActiveProfiles("test")
 @Testcontainers
 class ReadPerformanceIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.FirebaseApp isolatedFirebaseApp;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.google.firebase.messaging.FirebaseMessaging isolatedFirebaseMessaging;
     @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
     @DynamicPropertySource static void database(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);

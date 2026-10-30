@@ -40,7 +40,7 @@ class UserQrControllerTest extends AbstractPostgresIntegrationTest {
     @Test
     void activeOwnerGetsStableQrRegardlessOfUsernameOrQrPrivacy() throws Exception {
         UUID ownerId = createUser(UserStatus.ACTIVE, "owner");
-        String expected = "wedo://user/" + ownerId;
+        String expected = "https://wedo-3304c.web.app/u/" + ownerId;
         MvcResult first = mockMvc.perform(get("/api/v1/me/qr").header("Authorization", bearer(ownerId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deepLink").value(expected))
@@ -59,22 +59,26 @@ class UserQrControllerTest extends AbstractPostgresIntegrationTest {
     void resolverUsesSafeProjectionAndUniformNotFoundSemantics() throws Exception {
         UUID callerId = createUser(UserStatus.ACTIVE, "caller");
         UUID targetId = createUser(UserStatus.ACTIVE, "target");
-        MvcResult success = resolve(callerId, "wedo://user/" + targetId);
+        MvcResult success = resolve(callerId, "https://wedo-3304c.web.app/u/" + targetId);
         assertEquals(200, success.getResponse().getStatus());
         assertEquals(Set.of("id", "username", "displayName", "avatarStorageKey", "bio"), fields(success));
+
+        MvcResult legacySuccess = resolve(callerId, "wedo://user/" + targetId);
+        assertEquals(200, legacySuccess.getResponse().getStatus());
 
         UserPrivacySettingsEntity settings = privacyRepository.findById(targetId).orElseThrow();
         settings.setDiscoverByQr(false);
         privacyRepository.saveAndFlush(settings);
-        MvcResult disabled = resolve(callerId, "wedo://user/" + targetId);
-        MvcResult unknown = resolve(callerId, "wedo://user/" + UUID.randomUUID());
-        MvcResult malformed = resolve(callerId, "wedo://user/not-a-uuid");
-        MvcResult pending = resolve(callerId, "wedo://user/" + createUser(UserStatus.PENDING_VERIFICATION, "pending"));
-        MvcResult suspended = resolve(callerId, "wedo://user/" + createUser(UserStatus.SUSPENDED, "suspended"));
-        MvcResult deactivated = resolve(callerId, "wedo://user/" + createUser(UserStatus.DEACTIVATED, "deactivated"));
-        MvcResult extraPath = resolve(callerId, "wedo://user/" + targetId + "/extra");
-        MvcResult query = resolve(callerId, "wedo://user/" + targetId + "?x=1");
-        for (MvcResult result : new MvcResult[]{disabled, unknown, malformed, pending, suspended, deactivated, extraPath, query}) assertNotFound(result);
+        MvcResult disabled = resolve(callerId, "https://wedo-3304c.web.app/u/" + targetId);
+        MvcResult unknown = resolve(callerId, "https://wedo-3304c.web.app/u/" + UUID.randomUUID());
+        MvcResult malformed = resolve(callerId, "https://wedo-3304c.web.app/u/not-a-uuid");
+        MvcResult untrustedHost = resolve(callerId, "https://evil.example.com/u/" + targetId);
+        MvcResult pending = resolve(callerId, "https://wedo-3304c.web.app/u/" + createUser(UserStatus.PENDING_VERIFICATION, "pending"));
+        MvcResult suspended = resolve(callerId, "https://wedo-3304c.web.app/u/" + createUser(UserStatus.SUSPENDED, "suspended"));
+        MvcResult deactivated = resolve(callerId, "https://wedo-3304c.web.app/u/" + createUser(UserStatus.DEACTIVATED, "deactivated"));
+        MvcResult extraPath = resolve(callerId, "https://wedo-3304c.web.app/u/" + targetId + "/extra");
+        MvcResult query = resolve(callerId, "https://wedo-3304c.web.app/u/" + targetId + "?x=1");
+        for (MvcResult result : new MvcResult[]{disabled, unknown, malformed, untrustedHost, pending, suspended, deactivated, extraPath, query}) assertNotFound(result);
         assertEquals(fields(disabled), fields(unknown));
         assertEquals(fields(unknown), fields(malformed));
         assertEquals(fields(malformed), fields(pending));

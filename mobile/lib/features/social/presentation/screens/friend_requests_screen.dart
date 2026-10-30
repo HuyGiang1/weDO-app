@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/realtime/realtime_binding.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/theme/app_text_styles.dart';
 import '../../application/social_controllers.dart';
@@ -26,7 +26,14 @@ class FriendRequestsScreen extends StatefulWidget {
 }
 
 class _FriendRequestsScreenState extends State<FriendRequestsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RealtimeBinding<FriendRequestsScreen> {
+  @override
+  String? get realtimeScope => 'user:self';
+  @override
+  String get realtimePrefix => 'FRIEND_';
+  @override
+  Future<void> reloadRealtime() async { await Future.wait([widget.controller.loadReceived(refresh: true), widget.controller.loadSent(refresh: true)]); }
+
   late final TabController _tabController;
 
   @override
@@ -46,10 +53,10 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         toolbarHeight: 64.0,
-        backgroundColor: AppColors.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: Navigator.of(context).canPop()
@@ -57,7 +64,7 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
                 padding: const EdgeInsets.only(left: 8.0),
                 child: IconButton(
                   icon: const Icon(Icons.arrow_back_rounded),
-                  color: AppColors.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   tooltip: 'Quay lại',
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
@@ -65,36 +72,36 @@ class _FriendRequestsScreenState extends State<FriendRequestsScreen>
             : null,
         title: Text(
           'Lời mời kết bạn',
-          style: AppTextStyles.headline.copyWith(
+          style: AppTextStyles.of(context).headline.copyWith(
             fontSize: 24.0,
             fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48.0),
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: AppColors.surfaceContainerHigh,
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
                   width: 1.0,
                 ),
               ),
             ),
             child: TabBar(
               controller: _tabController,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.onSurfaceVariant,
-              indicatorColor: AppColors.primary,
+              labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              indicatorColor: Theme.of(context).colorScheme.primary,
               indicatorWeight: 2.0,
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
-              labelStyle: AppTextStyles.label.copyWith(
+              labelStyle: AppTextStyles.of(context).label.copyWith(
                 fontSize: 14.0,
                 fontWeight: FontWeight.w600,
               ),
-              unselectedLabelStyle: AppTextStyles.label.copyWith(
+              unselectedLabelStyle: AppTextStyles.of(context).label.copyWith(
                 fontSize: 14.0,
                 fontWeight: FontWeight.w600,
               ),
@@ -206,8 +213,8 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
       valueListenable: widget.controller.receivedRequests,
       builder: (context, state, _) {
         if (state.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+          return Center(
+            child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
           );
         }
 
@@ -222,7 +229,7 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
 
         if (state.isEmpty || state.items.isEmpty) {
           return RefreshIndicator(
-            color: AppColors.primary,
+            color: Theme.of(context).colorScheme.primary,
             onRefresh: () => widget.controller.loadReceived(refresh: true),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -241,7 +248,7 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
         }
 
         return RefreshIndicator(
-          color: AppColors.primary,
+          color: Theme.of(context).colorScheme.primary,
           onRefresh: () => widget.controller.loadReceived(refresh: true),
           child: ListView.separated(
             controller: _scrollController,
@@ -265,7 +272,7 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                     ),
                   );
                 }
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.all(AppSpacing.md),
                   child: Center(
                     child: SizedBox(
@@ -273,7 +280,7 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                       height: 24.0,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
@@ -285,15 +292,9 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
 
               return Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLowest,
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
                   borderRadius: BorderRadius.circular(12.0),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.softShadow,
-                      blurRadius: 20.0,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
+
                 ),
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
@@ -311,10 +312,10 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                         children: [
                           Text(
                             item.sender.displayName,
-                            style: AppTextStyles.label.copyWith(
+                            style: AppTextStyles.of(context).label.copyWith(
                               fontSize: 14.0,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.onSurface,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -322,9 +323,9 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                           const SizedBox(height: 2.0),
                           Text(
                             '@${item.sender.username}',
-                            style: AppTextStyles.bodyMedium.copyWith(
+                            style: AppTextStyles.of(context).bodyMedium.copyWith(
                               fontSize: 14.0,
-                              color: AppColors.onSurfaceVariant,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -334,12 +335,12 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                     ),
                     const SizedBox(width: 8.0),
                     if (isActionPending)
-                      const SizedBox(
+                      SizedBox(
                         width: 24.0,
                         height: 24.0,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.0,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       )
                     else
@@ -349,7 +350,7 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                           OutlinedButton(
                             onPressed: () => _handleDecline(item),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.onSurfaceVariant,
+                              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                               side: BorderSide.none,
                               backgroundColor: Colors.transparent,
                               shape: const StadiumBorder(),
@@ -360,10 +361,10 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                             ),
                             child: Text(
                               'Từ chối',
-                              style: AppTextStyles.label.copyWith(
+                              style: AppTextStyles.of(context).label.copyWith(
                                 fontSize: 14.0,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.onSurfaceVariant,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -371,8 +372,8 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                           FilledButton(
                             onPressed: () => _handleAccept(item),
                             style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.onPrimary,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimary,
                               elevation: 1.0,
                               shape: const StadiumBorder(),
                               padding: const EdgeInsets.symmetric(
@@ -382,10 +383,10 @@ class _ReceivedRequestsViewState extends State<_ReceivedRequestsView> {
                             ),
                             child: Text(
                               'Chấp nhận',
-                              style: AppTextStyles.label.copyWith(
+                              style: AppTextStyles.of(context).label.copyWith(
                                 fontSize: 14.0,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.onPrimary,
+                                color: Theme.of(context).colorScheme.onPrimary,
                               ),
                             ),
                           ),
@@ -461,8 +462,8 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
       valueListenable: widget.controller.sentRequests,
       builder: (context, state, _) {
         if (state.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+          return Center(
+            child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
           );
         }
 
@@ -477,7 +478,7 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
 
         if (state.isEmpty || state.items.isEmpty) {
           return RefreshIndicator(
-            color: AppColors.primary,
+            color: Theme.of(context).colorScheme.primary,
             onRefresh: () => widget.controller.loadSent(refresh: true),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -496,7 +497,7 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
         }
 
         return RefreshIndicator(
-          color: AppColors.primary,
+          color: Theme.of(context).colorScheme.primary,
           onRefresh: () => widget.controller.loadSent(refresh: true),
           child: ListView.separated(
             controller: _scrollController,
@@ -520,7 +521,7 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                     ),
                   );
                 }
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.all(AppSpacing.md),
                   child: Center(
                     child: SizedBox(
@@ -528,7 +529,7 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                       height: 24.0,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
@@ -540,15 +541,9 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
 
               return Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLowest,
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
                   borderRadius: BorderRadius.circular(12.0),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.softShadow,
-                      blurRadius: 20.0,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
+
                 ),
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
@@ -566,10 +561,10 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                         children: [
                           Text(
                             item.receiver.displayName,
-                            style: AppTextStyles.label.copyWith(
+                            style: AppTextStyles.of(context).label.copyWith(
                               fontSize: 14.0,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.onSurface,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -577,9 +572,9 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                           const SizedBox(height: 2.0),
                           Text(
                             '@${item.receiver.username}',
-                            style: AppTextStyles.bodyMedium.copyWith(
+                            style: AppTextStyles.of(context).bodyMedium.copyWith(
                               fontSize: 14.0,
-                              color: AppColors.onSurfaceVariant,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -589,12 +584,12 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                     ),
                     const SizedBox(width: 12.0),
                     if (isCanceling)
-                      const SizedBox(
+                      SizedBox(
                         width: 24.0,
                         height: 24.0,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.0,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       )
                     else
@@ -602,8 +597,8 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                         onPressed: () => _handleCancel(item),
                         style: OutlinedButton.styleFrom(
                           backgroundColor:
-                              const Color(0x1A630ED4), // primary/10
-                          foregroundColor: AppColors.primary,
+                              Theme.of(context).colorScheme.surfaceContainer, // primary/10
+                          foregroundColor: Theme.of(context).colorScheme.primary,
                           side: BorderSide.none,
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
@@ -613,10 +608,10 @@ class _SentRequestsViewState extends State<_SentRequestsView> {
                         ),
                         child: Text(
                           'Hủy',
-                          style: AppTextStyles.label.copyWith(
+                          style: AppTextStyles.of(context).label.copyWith(
                             fontSize: 14.0,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),

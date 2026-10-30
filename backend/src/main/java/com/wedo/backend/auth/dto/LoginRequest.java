@@ -14,6 +14,11 @@ public record LoginRequest(
         @NotBlank(message = "Password must not be blank")
         String password
 ) {
+    @Override
+    public String toString() {
+        return "LoginRequest[email=<redacted>, password=<redacted>]";
+    }
+
     @AssertTrue(message = "Password must not exceed 72 bytes in UTF-8 encoding")
     public boolean isPasswordByteLengthValid() {
         return password == null || password.getBytes(StandardCharsets.UTF_8).length <= 72;

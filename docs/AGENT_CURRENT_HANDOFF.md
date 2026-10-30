@@ -1,3 +1,37 @@
+## VERIFIED — source checkpoint published; focused auth-log hardening
+
+- Sharedbranch **integration/r9-qa-checkpoint**, sourcecommit **e8255c55e1a083f03ac50bc3f04690c2ce42f397**.
+  Sourcepush/fetchverified:368reviewedfiles/1057treefiles,21migrations andall8
+  mandatoryMoment/Realtimepaths;0untracked/modifiedJava-Dartproductionfiles.
+- Follow-upinthiscommit: LoginRequest/LoginResponse/RefreshTokenRequest redact
+  diagnosticcredentials, and twoSpringHTTPbodyloggers stayINFO evenwithbroad
+  localDEBUG. Thisfixesarealpostrotationloginpasswordlog, withoutchangingJSON,
+  tokenclaims, validation, routes orauthenticationsemantics. NewregressionwasRED
+  beforefix; **51focusedauth/session/logchecksPASS**, packagePASS, backend-only
+  restartwiththesameapprovedrotatedkeys. RealloginOwner/Member, oldJWT401and
+  existinggroups/chatreadsPASS; finalruntimelogprivatevalue/fullJWTmatches**0**.
+  Knowncredentialentriesinagent-ownedpreviouslogsredacted; norawvaluespublished.
+- Finalcumulativesourcechanges:373uniquepathsafterthis5-pathsecurityaddition
+  (3DTOs,baseconfig,1newtest); finaltree1058files. A normalfollowuppush/fetch
+  verifiesbranchtipandcodeagain; latestSHAisresolvedbyGit, nothardcodedhere.
+- QAdata/sessionrows/PG/Redis/MinIO/media/signing/Firebaseunchanged. Approved3-key
+  rotationonly; noopaque-refreshrowrevocation, noaccountpasswordrotation. Both
+  phoneslockedwhenreloginattempted, soactualdeviceUIloginremainsunverified;
+  APIsuccessisnotphysicalPASS. KeepQAbackendrunningwithprivateoperatorconfig.
+- Privateclientfiles/scratch/builds/secrets/licenses/fulloriginalnotes staylocal.
+  Onlyintentionalworktreeoverrideis3ownerDEVELOPMENT_TEAMlinesiniOSproject;
+  sharedprojectportable. Allactualfeatureeditsincluded. Originalbranchrefsand
+  protectedstashtouchedneither; nomain/devmerge, noforcepush/historyrewrite.
+- Transport: staleHTTPScacheandwrong ghCLIaccountcouldnotpush. ExistingSSH
+  identityconfirmedrepositoryowner, usedper-commandpushURLwithoutglobalconfig
+  changes. RemoteURL:https://github.com/HuyGiang1/weDO-app/tree/integration/r9-qa-checkpoint
+- TeammateWindowscoreguide included; generatedprivateenv/noFirebasecorebuild
+  verified. ActualWindowsfirst-runnotverified; mediarequiresindependentAIStor
+  license/approvedS3, FCMrequiresownapprovedconfiguration. R9 **INPROGRESS**
+  pendingiOSAPNs/FCMsetup+actualOSreceipt/tap, notproductionrelease-ready.
+
+### Earlier preparation and acceptance evidence (sanitized)
+
 ## CURRENT — Integration checkpoint preparation after approved QA key rotation
 
 Branch: **integration/r9-qa-checkpoint**, created from originalfeat/pre-m19-ui-polish/HEADcdb0bd7e3ef564a0430e45b1db331b80cfbf10f0. User explicitly approved3-keyrotation plus re-login, safe source remediation, staging/commit and normalpush. **R1–R8/R10 COMPLETE; R9 INPROGRESS pending iOS APNs/FCM setup and actual OSreceipt/tap.** No main/dev merge or historyrewrite. This current section supersedes chronological blocked notes below.

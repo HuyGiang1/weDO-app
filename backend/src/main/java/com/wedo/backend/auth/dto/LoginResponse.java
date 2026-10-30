@@ -16,6 +16,11 @@ public record LoginResponse(
         Instant accessTokenExpiresAt,
         UserSummaryDto user
 ) {
+    @Override
+    public String toString() {
+        return "LoginResponse[nextStep=" + nextStep + ", credentials=<redacted>]";
+    }
+
     public static final String NEXT_STEP_COMPLETE_PROFILE = "COMPLETE_PROFILE";
     public static final String NEXT_STEP_AUTHENTICATED = "AUTHENTICATED";
     public static final String TOKEN_TYPE_BEARER = "Bearer";

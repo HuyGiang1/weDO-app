@@ -1,3 +1,17 @@
+# FINAL — source pushed/verified and minimal log-leak fix included
+
+Sourcecommit e8255c55e1a083f03ac50bc3f04690c2ce42f397 isonGitHub and368reviewed
+filesmatchedremotebyhash. Finalfollow-upadds5securitypaths (3DTOs/config/test):
+confirmedSpringDEBUGloginpassworddiagnosticwasreproducedwithsyntheticREDtest,
+thenfixed.51focusedauth/log/sessionchecksPASS; finalbackendloginanddatareads
+PASS, credential/JWTlogscan0. Agent-ownedpreviouslogcredentialvaluesredacted.
+Noadditionalkeyrotation, DB/sessiondeletion, signing/Firebase change orAppinstall.
+
+Total373uniquefileschanged/1058treefilesexpectedatfinaltip; allproductionand
+migrations/setupincluded. Privateassets/oldunredactednotesexcluded/preserved;
+onlyintentionalownerXcodesigningoverride remainsinworktree. Finalnormalpush
+andfetchverifyexacttip/tree; noforcepush/historyrewrite/main-devchanges.
+
 # Current checkpoint status — approved rotation validated; preparing source commit
 
 User approved the previously documented QA rotation/session impact. Three new

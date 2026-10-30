@@ -1,3 +1,19 @@
+# Published source and final security follow-up
+
+Sourcecheckpoint **e8255c55e1a083f03ac50bc3f04690c2ce42f397** waspushed/fetched
+andall368reviewedfilesverified. Thisfollow-upadds3credential-safeDTOdiagnostics,
+2HTTPbodyloggerINFOsettingsand3regressionchecks (51focusedauth/sessiontestsPASS).
+ActualfreshOwner/MemberloginanddatareadsPASStwiceafterrotation; finalruntimelog
+secret/fullJWTmatches0. Noauthcontractorbusinessrulechange.
+
+Cumulativechanges373uniquefiles/1058treefiles,21migrations. NoJava/Dartproduction
+sourceomitted; onlylocalXcodeowner-teamoverrideleftoutsidecommit. Currentremote
+SHA:https://github.com/HuyGiang1/weDO-app/tree/integration/r9-qa-checkpoint
+
+Bothphoneslockedatrelogincheck; UIreloginpending, notclaimedPASS. QAdata/signing/
+providercredentialskept. Historicalretiredkeysremaininancestors; noforcepush or
+historyrewrite. R9pendingiOSpush/config/physicalgate.
+
 # Integration QA source checkpoint
 
 Branch: `integration/r9-qa-checkpoint` from `cdb0bd7e3ef564a0430e45b1db331b80cfbf10f0`.

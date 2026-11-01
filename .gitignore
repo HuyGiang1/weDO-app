@@ -11,6 +11,8 @@
 .env.*
 !.env.example
 !infra/teammate.env.example
+!infra/staging.env.example
+infra/staging-secrets/
 
 # Local signing/provider configuration and standalone scratch experiments.
 *.p8

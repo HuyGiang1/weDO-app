@@ -1,0 +1,128 @@
+# Validation only. GHCR publication proposal remains inactive under infra/staging/.
+name: weDO staging validation
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'backend/**'
+      - 'infra/**'
+      - 'scripts/**'
+      - '.github/workflows/staging-validation.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: wedo-staging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    outputs:
+      source_sha: ${{ steps.identity.outputs.sha }}
+      image_id: ${{ steps.archive.outputs.image_id }}
+      archive_sha: ${{ steps.archive.outputs.archive_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - id: identity
+        name: Verify exact source commit and runner capacity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import shutil
+          if shutil.disk_usage('.').free < 15 * 1024**3:
+              raise SystemExit('Blocked: need 15 GiB before image/test build; no automatic cleanup')
+          PY
+          mkdir -p "$RUNNER_TEMP/wedo-d2-diagnostics"
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Static isolation and CI-helper regression
+        run: |
+          python3 scripts/validate-staging.py
+          python3 -m unittest discover -s scripts/tests -p 'test_staging_ci.py' -v
+      - name: Focused Java profile and isolated PostgreSQL/Redis integration
+        working-directory: backend
+        run: |
+          set +e
+          bash mvnw -B -ntp -Dtest=StagingProfileTest,OptionalPushConfigurationTest,StagingBootstrapIntegrationTest test > "$RUNNER_TEMP/wedo-d2-maven.raw.log" 2>&1
+          result=$?
+          export TEST_EXIT="$result"
+          python3 - <<'PY'
+          import json, os, pathlib, re, xml.etree.ElementTree as ET
+          rows = []
+          for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest'):
+              for path in pathlib.Path('target/surefire-reports').glob('TEST-*.' + name + '.xml'):
+                  root = ET.parse(path).getroot()
+                  row = dict(name=name, **{key: int(root.get(key, '0')) for key in ('tests','failures','errors','skipped')})
+                  failure = '\n'.join(node.text or '' for node in root.findall('.//error') + root.findall('.//failure'))
+                  # Allow-list identifiers only; never export raw exception messages/XML/stack traces.
+                  row['exceptionTypes'] = list(dict.fromkeys(re.findall(r'\b(?:java|javax|org\.springframework|org\.hibernate|org\.flywaydb|org\.testcontainers|org\.postgresql|com\.github\.dockerjava)(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\.(?:[A-Za-z_$][A-Za-z0-9_$]*Exception|[A-Za-z_$][A-Za-z0-9_$]*Error)\b', failure)))[:25]
+                  row['projectFrames'] = list(dict.fromkeys(re.findall(r'\bat (com\.wedo\.backend\.[A-Za-z0-9_.$]+\([A-Za-z0-9_.]+:\d+\))', failure)))[:20]
+                  markers = {'missingDefaultSecretTree': '/run/secrets', 'configImport': 'ConfigDataResourceNotFoundException',
+                             'connectionRefused': 'Connection refused', 'schemaValidation': 'Schema-validation',
+                             'unresolvedPlaceholder': 'Could not resolve placeholder', 'dockerDiscovery': 'Could not find a valid Docker environment'}
+                  row['markers'] = [label for label, needle in markers.items() if needle in failure]
+                  rows.append(row)
+          report = {'mavenExit': int(os.environ['TEST_EXIT']), 'suites': rows}
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'wedo-d2-diagnostics'
+          output.mkdir(exist_ok=True)
+          (output / 'java-summary.json').write_text(json.dumps(report, indent=2))
+          print(json.dumps(report))
+          PY
+          exit "$result"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: wedo-d1-ci:${{ env.SOURCE_SHA }}
+          build-args: VCS_REF=${{ env.SOURCE_SHA }}
+      - name: Test actual image REST/WebSocket and application/database recreation
+        run: python3 scripts/staging-container-smoke.py "wedo-d1-ci:$SOURCE_SHA"
+      - id: archive
+        name: Preserve exact validated image without rebuilding
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/wedo-d2-image"
+          image_id=$(docker image inspect "wedo-d1-ci:$SOURCE_SHA" --format '{{.Id}}')
+          test "$(docker image inspect "wedo-d1-ci:$SOURCE_SHA" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+          image_size=$(docker image inspect "wedo-d1-ci:$SOURCE_SHA" --format '{{.Size}}')
+          docker save "wedo-d1-ci:$SOURCE_SHA" | gzip > "$RUNNER_TEMP/wedo-d2-image/image.tar.gz"
+          archive_sha=$(sha256sum "$RUNNER_TEMP/wedo-d2-image/image.tar.gz" | cut -d' ' -f1)
+          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+          echo "archive_sha=$archive_sha" >> "$GITHUB_OUTPUT"
+          export IMAGE_ID="$image_id" IMAGE_SIZE="$image_size" ARCHIVE_SHA="$archive_sha"
+          python3 - <<'PYMETA'
+          import json, os, pathlib
+          record = {'sourceSha': os.environ['SOURCE_SHA'], 'imageId': os.environ['IMAGE_ID'],
+                    'imageSizeBytes': int(os.environ['IMAGE_SIZE']), 'archiveSha256': os.environ['ARCHIVE_SHA'],
+                    'platform': 'linux/amd64', 'externalS3': 'PENDING', 'push': 'DISABLED'}
+          (pathlib.Path(os.environ['RUNNER_TEMP']) / 'wedo-d2-diagnostics' / 'image-summary.json').write_text(json.dumps(record, indent=2))
+          print(json.dumps(record))
+          PYMETA
+          printf 'Source SHA: %s\nImage ID: %s\nArchive SHA256: %s\nExternal S3: PENDING; FCM: DISABLED\n' "$SOURCE_SHA" "$image_id" "$archive_sha" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validated-image-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/wedo-d2-image/image.tar.gz
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: sanitized-staging-diagnostics-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/wedo-d2-diagnostics/*.json
+          retention-days: 7
+          if-no-files-found: warn

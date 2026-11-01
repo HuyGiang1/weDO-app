@@ -57,12 +57,21 @@ jobs:
           result=$?
           export TEST_EXIT="$result"
           python3 - <<'PY'
-          import json, os, pathlib, xml.etree.ElementTree as ET
+          import json, os, pathlib, re, xml.etree.ElementTree as ET
           rows = []
           for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest'):
               for path in pathlib.Path('target/surefire-reports').glob('TEST-*.' + name + '.xml'):
                   root = ET.parse(path).getroot()
-                  rows.append(dict(name=name, **{key: int(root.get(key, '0')) for key in ('tests','failures','errors','skipped')}))
+                  row = dict(name=name, **{key: int(root.get(key, '0')) for key in ('tests','failures','errors','skipped')})
+                  failure = '\n'.join(node.text or '' for node in root.findall('.//error') + root.findall('.//failure'))
+                  # Allow-list identifiers only; never export raw exception messages/XML/stack traces.
+                  row['exceptionTypes'] = list(dict.fromkeys(re.findall(r'\b(?:java|javax|org\.springframework|org\.hibernate|org\.flywaydb|org\.testcontainers|org\.postgresql|com\.github\.dockerjava)(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\.(?:[A-Za-z_$][A-Za-z0-9_$]*Exception|[A-Za-z_$][A-Za-z0-9_$]*Error)\b', failure)))[:25]
+                  row['projectFrames'] = list(dict.fromkeys(re.findall(r'\bat (com\.wedo\.backend\.[A-Za-z0-9_.$]+\([A-Za-z0-9_.]+:\d+\))', failure)))[:20]
+                  markers = {'missingDefaultSecretTree': '/run/secrets', 'configImport': 'ConfigDataResourceNotFoundException',
+                             'connectionRefused': 'Connection refused', 'schemaValidation': 'Schema-validation',
+                             'unresolvedPlaceholder': 'Could not resolve placeholder', 'dockerDiscovery': 'Could not find a valid Docker environment'}
+                  row['markers'] = [label for label, needle in markers.items() if needle in failure]
+                  rows.append(row)
           report = {'mavenExit': int(os.environ['TEST_EXIT']), 'suites': rows}
           output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'wedo-d2-diagnostics'
           output.mkdir(exist_ok=True)

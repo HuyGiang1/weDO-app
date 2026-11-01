@@ -19,11 +19,14 @@ import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.SpringBootContextLoader;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.MergedContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -34,11 +37,23 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /** CI-only until adequate local disk is available. All fixtures/containers are isolated. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("staging")
+@ContextConfiguration(loader = StagingBootstrapIntegrationTest.SecretTreeContextLoader.class)
 @Testcontainers
 class StagingBootstrapIntegrationTest {
     @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
     @Container static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
     static final Path SECRETS = secretTree();
+
+    /** Config imports are resolved before DynamicPropertySource context customization. */
+    public static class SecretTreeContextLoader extends SpringBootContextLoader {
+        @Override
+        protected String[] getInlinedProperties(MergedContextConfiguration config) {
+            String[] properties = super.getInlinedProperties(config);
+            String[] early = java.util.Arrays.copyOf(properties, properties.length + 1);
+            early[properties.length] = "WEDO_STAGING_SECRETS_DIR=" + SECRETS + "/";
+            return early;
+        }
+    }
 
     private static Path secretTree() {
         try {
@@ -54,7 +69,6 @@ class StagingBootstrapIntegrationTest {
     }
 
     @DynamicPropertySource static void isolated(DynamicPropertyRegistry r) {
-        r.add("WEDO_STAGING_SECRETS_DIR", () -> SECRETS + "/");
         r.add("WEDO_DB_URL", POSTGRES::getJdbcUrl);
         r.add("WEDO_DB_USERNAME", POSTGRES::getUsername);
         r.add("WEDO_DB_PASSWORD", POSTGRES::getPassword);

@@ -1,0 +1,80 @@
+# Explicit opt-in only. Does not inherit local/teammate QA configuration.
+spring:
+  config:
+    import: "configtree:${WEDO_STAGING_SECRETS_DIR:/run/secrets/}"
+  datasource:
+    url: ${WEDO_DB_URL:jdbc:postgresql://postgres:5432/wedo_staging}
+    username: ${WEDO_DB_USERNAME:wedo_staging}
+    password: ${WEDO_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    clean-disabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+  data:
+    redis:
+      host: ${WEDO_REDIS_HOST:redis}
+      port: ${WEDO_REDIS_PORT:6379}
+
+server:
+  address: 0.0.0.0
+  port: 8080
+  shutdown: graceful
+  forward-headers-strategy: none
+
+media:
+  s3:
+    bootstrap-bucket: false
+    endpoint: ${WEDO_MEDIA_S3_ENDPOINT}
+    public-endpoint: ${WEDO_MEDIA_PUBLIC_ENDPOINT}
+    bucket: ${WEDO_MEDIA_BUCKET}
+    region: ${WEDO_MEDIA_REGION}
+    access-key: ${WEDO_MEDIA_ACCESS_KEY}
+    secret-key: ${WEDO_MEDIA_SECRET_KEY}
+    path-style: ${WEDO_MEDIA_PATH_STYLE:true}
+
+wedo:
+  deployment:
+    # Operator metadata only; this does not reconfigure installed mobile apps.
+    public-api-origin: ${WEDO_PUBLIC_API_ORIGIN}
+  local-test-data:
+    enabled: false
+  push:
+    enabled: ${WEDO_PUSH_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis
+        liveness:
+          include: livenessState
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN

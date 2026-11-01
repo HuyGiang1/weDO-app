@@ -1,0 +1,122 @@
+# Proposal artifact only. Do not run on the VPS without separate approval.
+name: wedo-staging
+x-runtime: &runtime
+  restart: unless-stopped
+  pids_limit: 256
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *runtime
+    image: ${WEDO_POSTGRES_IMAGE:-postgres:17@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1}
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: wedo_staging
+      POSTGRES_USER: wedo_staging
+      POSTGRES_PASSWORD_FILE: /run/secrets/WEDO_DB_PASSWORD
+    secrets:
+      - source: db_password
+        target: WEDO_DB_PASSWORD
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    networks: [data]
+    mem_limit: 1g
+    cpus: 0.5
+    shm_size: 128m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wedo_staging -d wedo_staging"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    <<: *runtime
+    image: ${WEDO_REDIS_IMAGE:-redis:7-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f}
+    platform: linux/amd64
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes: ["redis_data:/data"]
+    networks: [data]
+    mem_limit: 256m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    <<: *runtime
+    # Pull only. There is deliberately no build section on the shared VPS.
+    image: ${WEDO_BACKEND_IMAGE:?Set a reviewed image digest before deployment}
+    platform: linux/amd64
+    user: "10001:10001"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=128m,mode=1777"]
+    # Existing legacy avatar API still writes local media; never use QA media here.
+    volumes: ["legacy_media:/opt/wedo/.local-media"]
+    ports:
+      - "${WEDO_HTTP_BIND_IP:-127.0.0.1}:${WEDO_HTTP_PORT:-18280}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+      WEDO_STAGING_SECRETS_DIR: /run/secrets/
+      WEDO_PUBLIC_API_ORIGIN: ${WEDO_PUBLIC_API_ORIGIN:?Set the future HTTPS API origin}
+      WEDO_MEDIA_S3_ENDPOINT: ${WEDO_MEDIA_S3_ENDPOINT:?Set an approved S3 endpoint}
+      WEDO_MEDIA_PUBLIC_ENDPOINT: ${WEDO_MEDIA_PUBLIC_ENDPOINT:?Set the reachable HTTPS signing origin}
+      WEDO_MEDIA_BUCKET: ${WEDO_MEDIA_BUCKET:?Set a dedicated private staging bucket}
+      WEDO_MEDIA_REGION: ${WEDO_MEDIA_REGION:?Set the provider region}
+      WEDO_MEDIA_PATH_STYLE: ${WEDO_MEDIA_PATH_STYLE:-true}
+      # Enabling FCM needs a separately reviewed credential mount/override.
+      WEDO_PUSH_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx768m -XX:+ExitOnOutOfMemoryError"
+    secrets:
+      - source: db_password
+        target: WEDO_DB_PASSWORD
+      - source: jwt_secret
+        target: WEDO_JWT_SECRET_BASE64
+      - source: auth_pepper
+        target: WEDO_AUTH_TOKEN_PEPPER_BASE64
+      - source: profile_secret
+        target: WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64
+      - source: s3_access
+        target: WEDO_MEDIA_ACCESS_KEY
+      - source: s3_secret
+        target: WEDO_MEDIA_SECRET_KEY
+    networks: [data, egress]
+    mem_limit: 1536m
+    cpus: 1.0
+    stop_grace_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Inherits the image's JRE-only readiness health check.
+
+networks:
+  data:
+    internal: true
+  egress: {}
+volumes:
+  postgres_data: {}
+  redis_data: {}
+  legacy_media: {}
+secrets:
+  db_password:
+    file: ${WEDO_STAGING_SECRET_DIR:?Set a dedicated external secrets directory}/WEDO_DB_PASSWORD
+  jwt_secret:
+    file: ${WEDO_STAGING_SECRET_DIR}/WEDO_JWT_SECRET_BASE64
+  auth_pepper:
+    file: ${WEDO_STAGING_SECRET_DIR}/WEDO_AUTH_TOKEN_PEPPER_BASE64
+  profile_secret:
+    file: ${WEDO_STAGING_SECRET_DIR}/WEDO_PROFILE_COMPLETION_TOKEN_SECRET_BASE64
+  s3_access:
+    file: ${WEDO_STAGING_SECRET_DIR}/WEDO_MEDIA_ACCESS_KEY
+  s3_secret:
+    file: ${WEDO_STAGING_SECRET_DIR}/WEDO_MEDIA_SECRET_KEY

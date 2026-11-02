@@ -27,6 +27,7 @@ public class UploadService {
     private final ObjectStorageService storage;
     private final UserService userService;
     private final GroupPermissionService groupPermissionService;
+    private final MediaUploadAdmissionGuard admission;
     @org.springframework.beans.factory.annotation.Autowired private MomentMediaPolicy momentPolicy;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -39,15 +40,18 @@ public class UploadService {
     private FundService fundService;
 
     public UploadService(ObjectStorageService storage, UserService userService,
-                         GroupPermissionService groupPermissionService) {
+                         GroupPermissionService groupPermissionService, MediaUploadAdmissionGuard admission) {
         this.storage = storage;
         this.userService = userService;
         this.groupPermissionService = groupPermissionService;
+        this.admission = admission;
     }
 
     public PresignUploadResponse presign(UUID callerId, PresignUploadRequest request) {
         userService.requireActiveUser(callerId);
+        admission.requireAllowed(callerId);
         String contentType = request.contentType().trim().toLowerCase(Locale.ROOT);
+        admission.requireImageUpload(request.category(), contentType);
         boolean a2 = request.category() != UploadCategory.AVATAR && request.category() != UploadCategory.GROUP_AVATAR;
         long maxBytes = a2 ? MediaReferenceService.A2_MAX_BYTES : MAX_AVATAR_BYTES;
         boolean moment = request.category()==UploadCategory.MOMENT_IMAGE || request.category()==UploadCategory.MOMENT_VIDEO || request.category()==UploadCategory.COMMUNITY_IMAGE;

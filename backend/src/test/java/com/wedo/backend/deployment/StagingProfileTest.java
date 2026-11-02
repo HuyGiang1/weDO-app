@@ -101,8 +101,10 @@ class StagingProfileTest {
         runner().withUserConfiguration(S3ObjectStorageService.class).run(context -> {
             assertThat(context).hasNotFailed();
             var store = context.getBean(S3ObjectStorageService.class);
-            var put = java.net.URI.create(store.presignPut("synthetic/object.png", "image/png", 1,
-                    Duration.ofMinutes(1)).url());
+            var target = store.presignPut("synthetic/object.png", "image/png", 1, Duration.ofMinutes(1));
+            assertThat(target.requiredHeaders().get("content-length")).isEqualTo("1");
+            assertThat(target.requiredHeaders().get("if-none-match")).isEqualTo("*");
+            var put = java.net.URI.create(target.url());
             var get = java.net.URI.create(store.presignGet("synthetic/object.png", Duration.ofMinutes(1)).url());
             for (var uri : new java.net.URI[]{put, get}) {
                 assertThat(uri.getScheme()).isEqualTo("https");
@@ -120,5 +122,23 @@ class StagingProfileTest {
     @Test void missingSecretDirectoryFailsClosed() {
         runner().withPropertyValues("WEDO_STAGING_SECRETS_DIR=" + secrets.resolve("missing") + "/")
                 .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test void stagingUploadYamlDefaultsClosedAndExplicitAllowlistDoesNotGrantOtherUsers() {
+        var user = java.util.UUID.randomUUID();
+        var configuration = runner().withUserConfiguration(com.wedo.backend.media.service.MediaUploadAdmissionGuard.class);
+        configuration.run(context -> {
+            assertThat(context).hasNotFailed();
+            org.junit.jupiter.api.Assertions.assertThrows(com.wedo.backend.common.error.BusinessException.class,
+                    () -> context.getBean(com.wedo.backend.media.service.MediaUploadAdmissionGuard.class).requireAllowed(user));
+        });
+        configuration.withPropertyValues("WEDO_STAGING_MEDIA_UPLOAD_ENABLED=true",
+                "WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS=" + user).run(context -> {
+            assertThat(context).hasNotFailed();
+            var guard = context.getBean(com.wedo.backend.media.service.MediaUploadAdmissionGuard.class);
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> guard.requireAllowed(user));
+            org.junit.jupiter.api.Assertions.assertThrows(com.wedo.backend.common.error.BusinessException.class,
+                    () -> guard.requireAllowed(java.util.UUID.randomUUID()));
+        });
     }
 }

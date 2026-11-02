@@ -19,8 +19,16 @@ SPEC.loader.exec_module(P)
 NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 
 
+# Synthetic test-only identity; never used by the publication record or runtime.
+SYNTHETIC_RECORD = dict(schemaVersion=1, status="VALIDATED", sourceSha="a" * 40,
+        validationRunId=101, validationRunAttempt=1, artifactId=202,
+        archiveSha256="b" * 64, imageId="sha256:" + "c" * 64,
+        platform="linux/amd64", mediaUploadPolicy="CLOSED")
+P.configure(SYNTHETIC_RECORD)
+
+
 def validation():
-    return dict(id=P.VALIDATION_RUN, status="completed", conclusion="success", head_sha=P.SOURCE,
+    return dict(id=P.VALIDATION_RUN, run_attempt=P.VALIDATION_ATTEMPT, status="completed", conclusion="success", head_sha=P.SOURCE,
                 event="pull_request", path=".github/workflows/staging-validation.yml",
                 repository=dict(id=P.REPO_ID, full_name=P.REPO), head_repository=dict(id=P.REPO_ID))
 
@@ -261,18 +269,102 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(text.count('packages: write'), 1)
         before, write_job = text.split('  publish:\n', 1)
         self.assertNotIn('packages: write', before)
-        self.assertIn('needs: preflight', write_job)
+        self.assertIn('needs: [safe-checks, preflight]', write_job)
         self.assertIn('environment: staging-image-publication', write_job)
         self.assertIn("github.event_name == 'push'", write_job)
         self.assertIn("github.ref == 'refs/heads/dev'", write_job)
-        self.assertIn("artifact-ids: '13076784704'", write_job)
-        self.assertIn("run-id: '41291866605'", write_job)
+        self.assertIn("artifact-ids: ${{ needs.safe-checks.outputs.artifact }}", write_job)
+        self.assertIn("run-id: ${{ needs.safe-checks.outputs.run }}", write_job)
+        self.assertIn("needs.safe-checks.outputs.ready == 'true'", write_job)
+        self.assertIn("group: ghcr-wedo-backend-${{ needs.safe-checks.outputs.source }}", write_job)
         self.assertNotIn('build-push-action', text)
         self.assertNotIn('docker build', text)
         push_trigger = text.split('  push:\n', 1)[1].split('# No dispatch', 1)[0]
         self.assertIn('branches: [dev]', push_trigger)
-        self.assertEqual(push_trigger.count('- '), 1)
+        self.assertEqual(push_trigger.count('- '), 2)
+        self.assertIn("- 'infra/staging/publication-candidate.json'", push_trigger)
         self.assertIn("- '.github/workflows/staging-publication.yml'", push_trigger)
+
+
+class ReleaseRecordTests(unittest.TestCase):
+    def read(self, record):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "candidate.json"; path.write_text(json.dumps(record))
+            return P.read_candidate(path)
+
+    def test_reviewed_record_has_strict_identity(self):
+        self.assertEqual(self.read(SYNTHETIC_RECORD), SYNTHETIC_RECORD)
+        for key, value in (("sourceSha", "latest"), ("artifactId", True), ("validationRunId", 0),
+                           ("validationRunAttempt", -1), ("archiveSha256", "unknown"),
+                           ("imageId", "arbitrary-tag"), ("mediaUploadPolicy", "OPEN"), ("platform", "linux/arm64")):
+            with self.subTest(key=key), self.assertRaises(P.Blocked):
+                self.read(dict(SYNTHETIC_RECORD, **{key: value}))
+        with self.assertRaises(P.Blocked): self.read(dict(SYNTHETIC_RECORD, unexpected="field"))
+
+    def test_pending_record_disables_selection_without_network(self):
+        pending = dict(SYNTHETIC_RECORD, status="PENDING_VALIDATION")
+        for key in P.IDENTITY_KEYS: pending[key] = None
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "outputs"
+            with patch.object(P, "read_candidate", return_value=self.read(pending)), \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}, clear=True), \
+                    patch.object(P, "get") as network, patch.object(P, "command") as process, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                P.selection()
+            self.assertEqual(output.read_text(), "ready=false\n")
+            network.assert_not_called(); process.assert_not_called()
+        with self.assertRaisesRegex(P.Blocked, "RELEASE_NOT_VALIDATED"): P.configure(pending)
+        with self.assertRaises(P.Blocked): self.read(dict(pending, sourceSha="a" * 40))
+
+    def test_validated_selection_exports_only_reviewed_values(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "outputs"
+            with patch.object(P, "read_candidate", return_value=SYNTHETIC_RECORD), \
+                    patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}, clear=True), \
+                    contextlib.redirect_stdout(io.StringIO()): P.selection()
+            self.assertEqual(output.read_text(), "ready=true\nsource=" + P.SOURCE + "\nrun=101\nartifact=202\n")
+
+    def test_duplicate_or_symlink_record_is_not_accepted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "candidate.json"; path.write_text('{"status":"VALIDATED","status":"PENDING_VALIDATION"}')
+            with self.assertRaises(P.Blocked): P.read_candidate(path)
+            link = Path(folder) / "link"; link.symlink_to(path)
+            with self.assertRaises(P.Blocked): P.read_candidate(link)
+
+    def test_wrong_run_attempt_rejected(self):
+        with self.assertRaises(P.Blocked): P.provenance(dict(validation(), run_attempt=2), artifact(), NOW)
+
+    def test_pending_audit_cannot_query_network_or_docker(self):
+        pending = dict(SYNTHETIC_RECORD, status="PENDING_VALIDATION")
+        with patch.object(P, "context"), patch.object(P, "read_candidate", return_value=pending), \
+                patch.object(P, "github") as network, patch.object(P, "command") as docker:
+            with self.assertRaises(P.Blocked): P.audit()
+            network.assert_not_called(); docker.assert_not_called()
+
+    def test_source_must_be_ancestor_and_runtime_ci_tree_unchanged(self):
+        with patch.dict(os.environ, {"GITHUB_EVENT_NAME":"push", "GITHUB_SHA":"d" * 40}, clear=True):
+            with patch.object(P, "command", side_effect=["d" * 40, "", ""]): P.source_relationship()
+            with patch.object(P, "command", side_effect=["d" * 40, "", "backend/src/main/changed.java"]):
+                with self.assertRaisesRegex(P.Blocked, "VALIDATED_SOURCE_TREE_CHANGED"): P.source_relationship()
+            with patch.object(P, "command", side_effect=["d" * 40, P.Blocked("DOCKER_COMMAND_FAILED")]):
+                with self.assertRaises(P.Blocked): P.source_relationship()
+            with patch.object(P, "command", return_value="e" * 40):
+                with self.assertRaisesRegex(P.Blocked, "PUBLISHER_CHECKOUT_MISMATCH"): P.source_relationship()
+
+    def test_artifact_evidence_binds_closed_smoke_and_run_before_load(self):
+        record = dict(sourceSha=P.SOURCE, validationRun=P.VALIDATION_RUN, validationRunAttempt=P.VALIDATION_ATTEMPT,
+                      archiveSha256=P.ARCHIVE_SHA, imageId=P.IMAGE_ID, platform="linux/amd64",
+                      mediaUploadPolicy="CLOSED", uploadClosedSmoke="PASS")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "validation.json"
+            path.write_text(json.dumps(record)); P.validation_evidence(path)
+            for key, value in (("sourceSha", "e" * 40), ("uploadClosedSmoke", "FAIL"),
+                               ("mediaUploadPolicy", "OPEN"), ("validationRunAttempt", 2), ("validationRunAttempt", True), ("imageId", "wrong")):
+                path.write_text(json.dumps(dict(record, **{key:value})))
+                with self.subTest(key=key), self.assertRaises(P.Blocked): P.validation_evidence(path)
+            with patch.object(P, "archive_check"), patch.object(P, "command") as docker:
+                with self.assertRaises(P.Blocked): P.load(Path(folder) / "image.tar.gz")
+                docker.assert_not_called()
 
 
 if __name__ == '__main__':

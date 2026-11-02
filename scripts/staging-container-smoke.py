@@ -41,11 +41,11 @@ def run(command, env):
     return result.stdout.strip()
 
 
-def http(base, path, expected, payload=None, token=None):
-    headers = {"Content-Type": "application/json"}
+def http(base, path, expected, payload=None, token=None, raw=None, content_type="application/json"):
+    headers = {"Content-Type": content_type}
     if token:
         headers["Authorization"] = "Bearer " + token
-    data = None if payload is None else json.dumps(payload).encode()
+    data = raw if raw is not None else (None if payload is None else json.dumps(payload).encode())
     request = urllib.request.Request(base + path, data=data, headers=headers)
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
@@ -59,6 +59,26 @@ def http(base, path, expected, payload=None, token=None):
         failure.close()
     require(status == expected, "REST smoke returned unexpected status")
     return json.loads(body) if body else {}
+
+
+UPLOAD_CATEGORIES = ("AVATAR", "GROUP_AVATAR", "CHAT_IMAGE", "EXPENSE_RECEIPT",
+                     "FUND_CONTRIBUTION_PROOF", "FUND_EXPENSE_RECEIPT", "FUND_REIMBURSEMENT_RECEIPT",
+                     "MOMENT_IMAGE", "MOMENT_VIDEO", "COMMUNITY_IMAGE")
+
+
+def upload_closed_smoke(base, token):
+    # Valid active authenticated CI user, so 401/validation failure is not mistaken for CLOSED.
+    for category in UPLOAD_CATEGORIES:
+        http(base, "/api/v1/uploads/presign", 403,
+             {"category": category, "fileName": "synthetic.mp4" if category == "MOMENT_VIDEO" else "synthetic.png",
+              "contentType": "video/mp4" if category == "MOMENT_VIDEO" else "image/png",
+              "fileSize": 68, "contextId": None if category == "AVATAR" else "00000000-0000-4000-8000-000000000001"}, token)
+    boundary = "wedo-ci-only-boundary"
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ9sAAAAASUVORK5CYII=")
+    multipart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"synthetic.png\"\r\n"
+                 "Content-Type: image/png\r\n\r\n").encode() + png + ("\r\n--" + boundary + "--\r\n").encode()
+    http(base, "/api/v1/media/avatar", 403, token=token, raw=multipart,
+         content_type="multipart/form-data; boundary=" + boundary)
 
 
 def websocket(port, token=None):
@@ -164,6 +184,11 @@ def main():
             # Only new disposable CI database: no mail provider and no production verification bypass.
             sql("UPDATE users SET status='ACTIVE', username='d2_smoke', display_name='CI synthetic', email_verified_at=now() WHERE email='d2-smoke@example.invalid'")
             token = login(base)
+            legacy_before = compose("exec", "-T", "backend", "find", "/opt/wedo/.local-media", "-type", "f")
+            upload_closed_smoke(base, token)
+            require(compose("exec", "-T", "backend", "find", "/opt/wedo/.local-media", "-type", "f") == legacy_before,
+                    "CLOSED upload wrote a legacy media file")
+            report["checks"].append("upload-CLOSED-all10categories-and-legacy-avatar")
             for path in ("/api/v1/me", "/api/v1/groups"):
                 http(base, path, 200, token=token)
             websocket(port)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One fixed, previously validated image. No build, arbitrary inputs or visibility changes."""
+"""One reviewed release record; exact validated image only. Never build or select latest."""
 import base64
 from datetime import datetime, timezone
 import hashlib
@@ -15,13 +15,10 @@ import urllib.request
 
 REPO = "HuyGiang1/weDO-app"
 REPO_ID = 1343290226
-SOURCE = "afac8aae74ae12539e94542a3beed21cda562f3a"
-VALIDATION_RUN = 41291866605
-ARTIFACT = 13076784704
-ARCHIVE_SHA = "b6060825639ed27b2f2b2e6acee61f89aa53d9304dad4a41a35d354115922305"
-IMAGE_ID = "sha256:5f25a50568dc9251666aa77a1eff57dd867753b0a76a7541d22cc53b540ee0ff"
+CANDIDATE = Path(__file__).resolve().parents[2] / "infra/staging/publication-candidate.json"
+# Populated ONLY from the checked-in reviewed record, never env/dispatch/CLI inputs.
+SOURCE = VALIDATION_RUN = VALIDATION_ATTEMPT = ARTIFACT = ARCHIVE_SHA = IMAGE_ID = TARGET = None
 IMAGE = "ghcr.io/huygiang1/wedo-backend"
-TARGET = IMAGE + ":" + SOURCE
 ENVIRONMENT = "staging-image-publication"
 MANIFEST_TYPES = ("application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json")
 
@@ -33,6 +30,74 @@ class Blocked(Exception):
 def need(condition, code):
     if not condition:
         raise Blocked(code)
+
+
+RECORD_KEYS = {"schemaVersion", "status", "sourceSha", "validationRunId", "validationRunAttempt",
+               "artifactId", "archiveSha256", "imageId", "platform", "mediaUploadPolicy"}
+IDENTITY_KEYS = ("sourceSha", "validationRunId", "validationRunAttempt", "artifactId", "archiveSha256", "imageId")
+
+
+def unique_fields(entries):
+    result = {}
+    for key, value in entries:
+        need(key not in result, "DUPLICATE_RELEASE_FIELD")
+        result[key] = value
+    return result
+
+
+def read_candidate(path=None):
+    path = path or CANDIDATE
+    need(path.is_file() and not path.is_symlink() and path.stat().st_size <= 8192, "RELEASE_RECORD_REQUIRED")
+    try:
+        record = json.loads(path.read_text(), object_pairs_hook=unique_fields)
+    except (ValueError, OSError, UnicodeError):
+        raise Blocked("INVALID_RELEASE_RECORD") from None
+    need(isinstance(record, dict) and set(record) == RECORD_KEYS
+         and type(record["schemaVersion"]) is int and record["schemaVersion"] == 1
+         and record["platform"] == "linux/amd64" and record["mediaUploadPolicy"] == "CLOSED", "INVALID_RELEASE_RECORD")
+    if record["status"] == "PENDING_VALIDATION":
+        need(all(record[k] is None for k in IDENTITY_KEYS), "PENDING_RECORD_HAS_IDENTITY")
+        return record
+    need(record["status"] == "VALIDATED", "INVALID_RELEASE_STATUS")
+    for key, pattern in (("sourceSha", r"[0-9a-f]{40}"), ("archiveSha256", r"[0-9a-f]{64}"),
+                         ("imageId", r"sha256:[0-9a-f]{64}")):
+        need(isinstance(record[key], str) and re.fullmatch(pattern, record[key]), "INVALID_RELEASE_IDENTITY")
+    for key in ("validationRunId", "validationRunAttempt", "artifactId"):
+        need(type(record[key]) is int and record[key] > 0, "INVALID_RELEASE_IDENTITY")
+    return record
+
+
+def configure(record):
+    global SOURCE, VALIDATION_RUN, VALIDATION_ATTEMPT, ARTIFACT, ARCHIVE_SHA, IMAGE_ID, TARGET
+    need(record["status"] == "VALIDATED", "RELEASE_NOT_VALIDATED")
+    SOURCE, VALIDATION_RUN, VALIDATION_ATTEMPT = record["sourceSha"], record["validationRunId"], record["validationRunAttempt"]
+    ARTIFACT, ARCHIVE_SHA, IMAGE_ID = record["artifactId"], record["archiveSha256"], record["imageId"]
+    TARGET = IMAGE + ":" + SOURCE
+
+
+def selection():
+    record = read_candidate()
+    ready = record["status"] == "VALIDATED"
+    values = {"ready": str(ready).lower()}
+    if ready:
+        configure(record)
+        values.update(source=SOURCE, run=str(VALIDATION_RUN), artifact=str(ARTIFACT))
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a") as destination:
+            for key, value in values.items(): destination.write(key + "=" + value + "\n")
+    print("Release record validated" if ready else "PENDING_VALIDATION: publication disabled")
+
+
+def source_relationship():
+    # Full history is fetched by checkout; do not accept a substituted old runtime tree.
+    head = command("git", "rev-parse", "HEAD").strip()
+    if os.environ.get("GITHUB_EVENT_NAME") == "push":
+        need(head == os.environ.get("GITHUB_SHA"), "PUBLISHER_CHECKOUT_MISMATCH")
+    command("git", "merge-base", "--is-ancestor", SOURCE, head)
+    differences = command("git", "diff", "--name-only", SOURCE, head, "--", "backend", "mobile", "scripts",
+                          "infra/compose.staging.yml", "infra/staging.env.example", ".github/workflows/staging-validation.yml")
+    need(not differences.strip(), "VALIDATED_SOURCE_TREE_CHANGED")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -79,7 +144,7 @@ def context(write=False):
 
 def provenance(run, artifact, now=None):
     now = now or datetime.now(timezone.utc)
-    need(run.get("id") == VALIDATION_RUN and run.get("status") == "completed" and run.get("conclusion") == "success", "VALIDATION_NOT_SUCCESSFUL")
+    need(run.get("id") == VALIDATION_RUN and run.get("run_attempt") == VALIDATION_ATTEMPT and run.get("status") == "completed" and run.get("conclusion") == "success", "VALIDATION_NOT_SUCCESSFUL")
     need(run.get("head_sha") == SOURCE and run.get("event") == "pull_request"
          and run.get("path") == ".github/workflows/staging-validation.yml", "VALIDATION_SOURCE_MISMATCH")
     need(run.get("repository", {}).get("id") == REPO_ID and run.get("repository", {}).get("full_name") == REPO
@@ -93,6 +158,8 @@ def provenance(run, artifact, now=None):
 
 def audit():
     context()
+    configure(read_candidate())
+    source_relationship()
     provenance(github(f"/actions/runs/{VALIDATION_RUN}"), github(f"/actions/artifacts/{ARTIFACT}"))
 
 
@@ -148,6 +215,16 @@ def archive_check(path):
     need(digest.hexdigest() == ARCHIVE_SHA, "ARCHIVE_CHECKSUM_MISMATCH")
 
 
+def validation_evidence(path):
+    need(path.is_file() and not path.is_symlink() and path.stat().st_size <= 16384, "VALIDATION_EVIDENCE_REQUIRED")
+    try: record = json.loads(path.read_text(), object_pairs_hook=unique_fields)
+    except (ValueError, OSError, UnicodeError): raise Blocked("INVALID_VALIDATION_EVIDENCE") from None
+    expected = dict(sourceSha=SOURCE, validationRun=VALIDATION_RUN, validationRunAttempt=VALIDATION_ATTEMPT,
+                    imageId=IMAGE_ID, archiveSha256=ARCHIVE_SHA, platform="linux/amd64", mediaUploadPolicy="CLOSED",
+                    uploadClosedSmoke="PASS")
+    need(isinstance(record, dict) and all(type(record.get(k)) is type(v) and record.get(k) == v for k, v in expected.items()), "VALIDATION_EVIDENCE_MISMATCH")
+
+
 def image_metadata(info):
     need(info.get("Id") == IMAGE_ID, "IMAGE_ID_MISMATCH")
     need(info.get("Os") == "linux" and info.get("Architecture") == "amd64", "IMAGE_PLATFORM_MISMATCH")
@@ -164,6 +241,7 @@ def inspect(reference):
 
 def load(path):
     archive_check(path)  # Always BEFORE docker load.
+    validation_evidence(path.parent / "validation.json")
     command("docker", "load", "--input", str(path))
     inspect("wedo-d1-ci:" + SOURCE)
     return inspect(IMAGE_ID)
@@ -222,6 +300,7 @@ def publish(registry):
 
 def evidence(status, **extra):
     report = dict(status=status, repository=REPO, sourceSha=SOURCE, validationRun=VALIDATION_RUN,
+                  validationRunAttempt=VALIDATION_ATTEMPT,
                   artifactId=ARTIFACT, archiveSha256=ARCHIVE_SHA, imageId=IMAGE_ID, target=TARGET,
                   platform="linux/amd64", publisherSha=os.environ.get("GITHUB_SHA", ""), **extra)
     folder = Path(os.environ["RUNNER_TEMP"]) / "wedo-publication-evidence"
@@ -231,6 +310,9 @@ def evidence(status, **extra):
 
 
 def main(mode):
+    if mode == "selection":
+        selection()
+        return
     if mode == "audit":
         audit()
         print("PASS: exact validated artifact provenance; no registry access")
@@ -260,7 +342,7 @@ def main(mode):
 
 if __name__ == "__main__":
     try:
-        need(len(sys.argv) == 2 and sys.argv[1] in ("audit", "gate", "approved", "image", "publish"), "MODE_NOT_ALLOWED")
+        need(len(sys.argv) == 2 and sys.argv[1] in ("selection", "audit", "gate", "approved", "image", "publish"), "MODE_NOT_ALLOWED")
         main(sys.argv[1])
     except Exception as failure:
         code = str(failure) if isinstance(failure, Blocked) else "UNEXPECTED_FAILURE"

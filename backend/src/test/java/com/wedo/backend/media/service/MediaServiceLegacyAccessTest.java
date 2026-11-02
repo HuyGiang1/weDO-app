@@ -16,7 +16,8 @@ import org.junit.jupiter.api.Test;
 class MediaServiceLegacyAccessTest {
     private final MediaStorage localStorage = mock(MediaStorage.class);
     private final MediaService media = new MediaService(localStorage, mock(UserService.class),
-            mock(ObjectStorageService.class), mock(UserRepository.class), mock(GroupRepository.class));
+            mock(ObjectStorageService.class), mock(UserRepository.class), mock(GroupRepository.class),
+            new MediaUploadAdmissionGuard(new org.springframework.mock.env.MockEnvironment()));
 
     @Test
     void publicLegacyReaderNeverLoadsNonAvatarCategories() {

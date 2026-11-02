@@ -30,6 +30,14 @@ class MediaUploadTarget {
         headers is! Map) {
       throw const FormatException('Malformed upload target');
     }
+    final names = <String>{};
+    for (final name in headers.keys) {
+      if (name is! String ||
+          !names.add(name.toLowerCase()) ||
+          name.toLowerCase() == 'authorization') {
+        throw const FormatException('Malformed upload headers');
+      }
+    }
     return MediaUploadTarget(
       storageKey: key,
       uploadUrl: url,
@@ -42,6 +50,43 @@ class MediaUploadTarget {
       }),
     );
   }
+
+  /// Validate before Dio can normalize/overwrite Content-Length. Never log URLs.
+  Map<String, dynamic> uploadHeaders(int length) {
+    if (length <= 0) throw const FormatException('Invalid upload length');
+    final headers = <String, dynamic>{
+      for (final entry in requiredHeaders.entries)
+        entry.key.toLowerCase(): entry.value,
+    };
+    final signed = (uploadUrl.queryParameters['X-Amz-SignedHeaders'] ?? '')
+        .toLowerCase()
+        .split(';');
+    final constrained =
+        headers.containsKey('if-none-match') ||
+        signed.contains('if-none-match');
+    final declared = headers['content-length'];
+    if ((declared != null && declared != '$length') ||
+        (constrained &&
+            (declared == null ||
+                headers['if-none-match'] != '*' ||
+                !signed.contains('content-length') ||
+                !signed.contains('if-none-match')))) {
+      throw const FormatException('Invalid upload constraints');
+    }
+    headers['content-length'] = '$length';
+    // Also removes an accidentally configured default bearer on the separate client.
+    headers['authorization'] = null;
+    return headers;
+  }
+
+  bool get constrained =>
+      requiredHeaders.keys.any(
+        (name) => name.toLowerCase() == 'if-none-match',
+      ) ||
+      (uploadUrl.queryParameters['X-Amz-SignedHeaders'] ?? '')
+          .toLowerCase()
+          .split(';')
+          .contains('if-none-match');
 }
 
 class MediaUploadService {
@@ -80,18 +125,25 @@ class MediaUploadService {
         },
       );
       final target = MediaUploadTarget.fromJson(response.data ?? const {});
-      await directUploadDio.putUri<void>(
-        target.uploadUrl,
-        data: bytes,
-        onSendProgress: onSendProgress,
-        options: Options(
-          headers: target.requiredHeaders,
-          responseType: ResponseType.plain,
-          contentType: target.requiredHeaders['Content-Type'],
-          validateStatus: (status) =>
-              status != null && status >= 200 && status < 300,
-        ),
-      );
+      final headers = target.uploadHeaders(bytes.length);
+      try {
+        await directUploadDio.putUri<void>(
+          target.uploadUrl,
+          data: bytes,
+          onSendProgress: onSendProgress,
+          options: Options(
+            headers: headers,
+            responseType: ResponseType.plain,
+            contentType: headers['content-type'] as String?,
+            followRedirects: !target.constrained,
+            validateStatus: (status) =>
+                status != null && status >= 200 && status < 300,
+          ),
+        );
+      } on DioException catch (error) {
+        if (target.constrained) throw _unknownOutcome(target, error);
+        rethrow;
+      }
       return target.storageKey;
     } on DioException {
       throw const MediaUploadException('network_failure');
@@ -124,20 +176,57 @@ class MediaUploadService {
       final target = MediaUploadTarget.fromJson(
         Map<String, dynamic>.from(response.data as Map),
       );
-      await directUploadDio.putUri(
-        target.uploadUrl,
-        data: openRead(),
-        onSendProgress: onSendProgress,
-        options: Options(
-          headers: {...target.requiredHeaders, 'Content-Length': length},
-          contentType: target.requiredHeaders['Content-Type'],
-          responseType: ResponseType.plain,
-          validateStatus: (s) => s != null && s >= 200 && s < 300,
-        ),
-      );
+      final headers = target.uploadHeaders(length);
+      try {
+        await directUploadDio.putUri(
+          target.uploadUrl,
+          data: target.constrained
+              ? _exactLength(openRead(), length)
+              : openRead(),
+          onSendProgress: onSendProgress,
+          options: Options(
+            headers: headers,
+            contentType: headers['content-type'] as String?,
+            followRedirects: !target.constrained,
+            responseType: ResponseType.plain,
+            validateStatus: (s) => s != null && s >= 200 && s < 300,
+          ),
+        );
+      } on DioException catch (error) {
+        if (target.constrained) throw _unknownOutcome(target, error);
+        rethrow;
+      }
       return target.storageKey;
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
+    } on FormatException {
+      throw const MediaUploadException('invalid_upload_response');
+    }
+  }
+
+  // No write retries or automatic confirmation: 412 can mean an earlier PUT succeeded.
+  // The caller must retain the key and reconcile via an authorized confirmation flow.
+  MediaUploadPendingException _unknownOutcome(
+    MediaUploadTarget target,
+    DioException error,
+  ) => MediaUploadPendingException(
+    error.response?.statusCode == 412
+        ? 'upload_conflict'
+        : 'upload_outcome_unknown',
+    target.storageKey,
+  );
+
+  Stream<List<int>> _exactLength(Stream<List<int>> source, int length) async* {
+    var sent = 0;
+    await for (final chunk in source) {
+      sent += chunk.length;
+      if (sent > length) {
+        throw const MediaUploadException('upload_length_mismatch');
+      }
+      yield chunk;
+    }
+    if (sent != length) {
+      throw const MediaUploadException('upload_length_mismatch');
     }
   }
 
@@ -224,4 +313,11 @@ class DownloadedMediaImage {
 class MediaUploadException implements Exception {
   final String code;
   const MediaUploadException(this.code);
+}
+
+/// A PUT may have committed. Never infer failure from a missing/unavailable HEAD,
+/// retry the same write blindly, or expose its signed request through diagnostics.
+class MediaUploadPendingException extends MediaUploadException {
+  final String storageKey;
+  const MediaUploadPendingException(super.code, this.storageKey);
 }

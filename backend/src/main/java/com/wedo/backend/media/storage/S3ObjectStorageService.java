@@ -6,6 +6,11 @@ import java.util.Base64;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Profile;
@@ -31,10 +36,18 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @Profile("!test")
 public class S3ObjectStorageService implements ObjectStorageService {
     private final String bucket;
+    private final boolean staging;
     private final S3Client client;
     private final S3Presigner presigner;
     private final S3BucketBootstrapper bucketBootstrapper;
 
+    // Preserve direct non-Spring callers and their existing non-staging behavior.
+    public S3ObjectStorageService(String endpoint, String publicEndpoint, String bucket,
+                                  String region, String accessKey, String secretKey, boolean pathStyle) {
+        this(endpoint, publicEndpoint, bucket, region, accessKey, secretKey, pathStyle, null);
+    }
+
+    @Autowired
     public S3ObjectStorageService(
             @Value("${media.s3.endpoint:}") String endpoint,
             @Value("${media.s3.public-endpoint:}") String publicEndpoint,
@@ -42,9 +55,11 @@ public class S3ObjectStorageService implements ObjectStorageService {
             @Value("${media.s3.region:us-east-1}") String region,
             @Value("${media.s3.access-key:}") String accessKey,
             @Value("${media.s3.secret-key:}") String secretKey,
-            @Value("${media.s3.path-style:true}") boolean pathStyle
+            @Value("${media.s3.path-style:true}") boolean pathStyle,
+            Environment environment
     ) {
         this.bucket = bucket;
+        this.staging = environment != null && environment.acceptsProfiles(Profiles.of("staging"));
         AwsCredentialsProvider credentials = credentials(accessKey, secretKey);
         S3Configuration s3Configuration = S3Configuration.builder()
                 .pathStyleAccessEnabled(pathStyle)
@@ -98,6 +113,12 @@ public class S3ObjectStorageService implements ObjectStorageService {
                         ? Map.of("declared-size", Long.toString(declaredSize))
                         : Map.of("declared-size", Long.toString(declaredSize), "original-file-name",
                                 Base64.getUrlEncoder().withoutPadding().encodeToString(originalFileName.getBytes(StandardCharsets.UTF_8))));
+        if (staging) {
+            if (declaredSize <= 0 || contentType == null || !contentType.startsWith("image/")) {
+                throw constraintsUnavailable();
+            }
+            put.contentLength(declaredSize).ifNoneMatch("*");
+        }
         var request = put.build();
         var signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
                 .signatureDuration(expiry)
@@ -108,7 +129,33 @@ public class S3ObjectStorageService implements ObjectStorageService {
                 : Map.of("Content-Type", contentType, "x-amz-meta-declared-size", Long.toString(declaredSize),
                         "x-amz-meta-original-file-name", Base64.getUrlEncoder().withoutPadding()
                                 .encodeToString(originalFileName.getBytes(StandardCharsets.UTF_8)));
+        if (staging) headers = constrainedHeaders(signed.signedHeaders(), declaredSize);
         return new PresignedObject(signed.url().toExternalForm(), expiresAt, headers);
+    }
+
+    /** Return only actual signed headers; Host is supplied by the HTTP transport. */
+    static Map<String, String> constrainedHeaders(Map<String, List<String>> signed, long size) {
+        var result = new LinkedHashMap<String, String>();
+        for (var entry : signed.entrySet()) {
+            String name = entry.getKey().toLowerCase(java.util.Locale.ROOT);
+            var values = entry.getValue();
+            if (values.size() != 1 || values.getFirst().contains("\r") || values.getFirst().contains("\n")
+                    || result.putIfAbsent(name, values.getFirst()) != null
+                    || name.equals("authorization")) throw constraintsUnavailable();
+        }
+        if (size <= 0 || !Long.toString(size).equals(result.get("content-length"))
+                || !"*".equals(result.get("if-none-match"))
+                || !result.containsKey("content-type") || !result.containsKey("host")
+                || !Long.toString(size).equals(result.get("x-amz-meta-declared-size"))) {
+            throw constraintsUnavailable();
+        }
+        result.remove("host");
+        return Map.copyOf(result);
+    }
+
+    private static ObjectStorageException constraintsUnavailable() {
+        // No SDK request, signed URL or exception cause enters diagnostic output.
+        return new ObjectStorageException("Staging upload constraints unavailable", null);
     }
 
     @Override

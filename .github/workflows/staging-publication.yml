@@ -1,4 +1,4 @@
-name: weDO fixed-image publication
+name: weDO reviewed-artifact publication
 on:
   pull_request:
     branches: [dev]
@@ -7,15 +7,22 @@ on:
       - '.github/scripts/ghcr_publication.py'
       - '.github/tests/test_ghcr_publication.py'
       - 'docs/STAGING_GHCR_PUBLICATION.md'
+      - 'infra/staging/publication-candidate.json'
   push:
     branches: [dev]
     paths:
       - '.github/workflows/staging-publication.yml'
+      - 'infra/staging/publication-candidate.json'
 # No dispatch/default-branch change; PRs can execute only read-only validation.
 permissions:
   contents: read
 jobs:
   safe-checks:
+    outputs:
+      ready: ${{ steps.candidate.outputs.ready }}
+      source: ${{ steps.candidate.outputs.source }}
+      run: ${{ steps.candidate.outputs.run }}
+      artifact: ${{ steps.candidate.outputs.artifact }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -26,14 +33,19 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Offline provenance, checksum, gate, collision and redaction regressions
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/tests -p test_ghcr_publication.py -v
-      - name: Read-only audit of the fixed validated artifact
+      - name: Validate reviewed release record; pending means no publication
+        id: candidate
+        run: python3 .github/scripts/ghcr_publication.py selection
+      - name: Read-only audit of the exact validated artifact
+        if: ${{ steps.candidate.outputs.ready == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/ghcr_publication.py audit
   preflight:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'HuyGiang1/weDO-app' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'HuyGiang1/weDO-app' && needs.safe-checks.outputs.ready == 'true' }}
     needs: safe-checks
     runs-on: ubuntu-22.04
     timeout-minutes: 5
@@ -45,18 +57,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Fail closed before scheduling a write-capable environment job
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/ghcr_publication.py gate
   publish:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'HuyGiang1/weDO-app' }}
-    needs: preflight
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && github.repository == 'HuyGiang1/weDO-app' && needs.safe-checks.outputs.ready == 'true' }}
+    needs: [safe-checks, preflight]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     environment: staging-image-publication
     concurrency:
-      group: ghcr-wedo-backend-afac8aae74ae12539e94542a3beed21cda562f3a
+      group: ghcr-wedo-backend-${{ needs.safe-checks.outputs.source }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -67,6 +80,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Verify configured gate and explicit review for this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,8 +88,8 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           repository: HuyGiang1/weDO-app
-          run-id: '41291866605'
-          artifact-ids: '13076784704'
+          run-id: ${{ needs.safe-checks.outputs.run }}
+          artifact-ids: ${{ needs.safe-checks.outputs.artifact }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/wedo-validated-image
           merge-multiple: true

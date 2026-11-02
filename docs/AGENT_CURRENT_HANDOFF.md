@@ -1,3 +1,189 @@
+## CURRENT — D5-NET-02 authenticated inventory + authorized Git checkpoint (2026-11-02)
+
+- One bounded SSH attempt SUCCEEDED using existing approved root/key/strict host
+  checks. Measured 14:34:09UTC /21:34:09Asia/Ho_Chi_Minh: root/Docker available
+  16,056,573,952bytes=14.95385GiB; RAM available5,630,447,616bytes=5.24376GiB;
+  inodes7,277,889free/7,741,440=94.012%;swapunused;load0.05/0.08/0.08.
+  Earlier transport timeouts did NOT establish server downtime.
+- 7containers running/10total, including newly observed kontainer-review-portainer
+  bound127.0.0.1:19050. ai-service, breast_health_staging_api and ai-service-postgres
+  Docker health=healthy; other running containers have no health evidence beyond
+  running. 18280 TCP has no listener. No HTTP/data/config/secret reads or mutations.
+- Disk gate NO-GO:47.26MiB below existing15GiB pre-pull floor; actual release-image
+  pull/extraction peak and concurrent growth remain unmeasured. Do not substitute
+ 7GiB growth envelope for initial consumption or lower reserve8GiB/floor15GiB.
+  No server stop/delete/prune/pull/deploy. Reclaimable cache is NOT free space.
+- Docker df: breast-health-staging-api active8fd8010/image6acddf6e0af9 nominal4.62GB,
+  shared3.485GB/unique1.137GB; six older tags each nominal4.62GB, zero containers,
+  reportedunique1.137GB each. These are candidate metadata ONLY: recovery registry,
+  embedded model/data contents and layer/cache reachability not verified; no safe
+  deletion list or guaranteed reclaimed bytes. nginx image remains in use.
+  ai-service is separate: do not conflate with ai-breastcancer or retire it.
+- Owner explicitly permits parallel Git checkpoint despite deployment disk gate.
+  Fresh origin/dev equals base4e76fb40bc8e3e1324f2f5cf907733fcac9c2bef, no divergence,
+  remote feature name absent. GitHub connector identity HuyGiang1 verified.
+  Review30source/config/tests/docs paths; exclude and preserve R2SignedPutLiveProofTest
+  and logback-cost07b. Pattern scan0key/JWT/GitHubtoken/serviceaccount-private findings;
+  no binary/largegenerated/deletions;21migrations unchanged. Previous tests retained,
+  not rerun. Candidate PENDING/nullidentity retained; source SHA pinned AFTER realCI
+  via separate metadata commit, so no circular source-SHA dependency.
+- This entry precedes authorized selective commit/push/PR. Record actual SHA/PR/CI
+  from GitHub/live Git before treating them as completed. No merge/publication or
+  environment approval yet. Remaining deployment gates include measured capacity,
+  limited GHCR Reader, staging secrets, off-host backup/isolated restore proof and
+  HTTPS/WSS. Mac QA/main.dart/signing/Firebase/runtime/data untouched.
+
+## CURRENT — D5-VPS-DISK capacity reassessment BLOCKED (2026-11-02)
+
+- Owner authorizes fresh read-only capacity inspection and, only if necessary,
+  isolated temporary suspension of confirmed ai-breastcancer containers. Preserve
+  source, models/datasets, credentials, databases, volumes and persistent data.
+  Uncertain image/container recovery requires exact resource approval before removal.
+- Two SSH attempts to approved 96.9.225.75:22 timed out BEFORE authentication,
+  exit255, with BatchMode/StrictHostKeyChecking=yes/UpdateHostKeys=no and existing
+  approved identity. No host key accepted, no private key contents inspected, no
+  remote command executed. No stop/delete/prune/pull/deploy or other server change.
+- Current disk/RAM/inodes/18280/service health and exclusive reconstructible image
+  ownership remain UNKNOWN. D4.2 15.3004GiB free/5.45GiB RAM/94% inode-free are
+  historical only, not a current gate PASS. Do not infer reclaimable bytes from
+  nominal image sizes or stop containers expecting disk to be freed.
+- Seven-GiB D4 envelope includes growth/rollback, not immediate consumption.
+  Reassessment must separately bound compressed pull+extraction peak, fresh PG/WAL,
+  Redis/logs/writable volumes, off-host backup buffers and isolated restore space,
+  plus concurrent other-project growth, while retaining >=8GiB reserve and the
+  existing >=15GiB pre-pull floor. New candidate image sizes are not yet measured.
+- Capacity gate NOT VERIFIED / deployment NO-GO. Next: restore approved SSH network
+  reachability (owner network/provider check, no agent firewall/SSH changes), then
+  redo read-only survey before considering any reclamation. No evidence yet that
+  ai-breastcancer removal is necessary or safely recoverable; no reclaim list approved.
+- Only this isolated handoff updated. All earlier dirty source/local live-probe
+  artifacts, Mac QA/signing/data/runtime preserved. No tests/builds/Git mutation,
+  credentials access or registry/Cloudflare requests during this reassessment.
+
+## CURRENT — D5-DEMO-02 local CLOSED release preparation (2026-11-02)
+
+- Work ONLY /private/tmp/wedo-staging-media-admission, feat/staging-media-admission,
+  HEAD4e76fb4. Read docs/STAGING_DEMO_RELEASE_D5_02.md. All earlier COST06/07A/07B
+  dirty work preserved; no D5 production Java/Flutter edits. QA untouched.
+- Publisher historical constants replaced with reviewed checked-in record
+  infra/staging/publication-candidate.json. PENDING_VALIDATION/allidentitynull NOW:
+  no publisher scheduled, no fake/source-latest fallback. Future record after real
+  CI pins source/run/attempt/artifact/archiveSHA/imageID and CLOSED/linux-amd64.
+- Added ancestor+unchanged runtime/validation tree checks, sidecar validation.json
+  in exact CI artifact, dynamic validated outputs only. Existing dev-push/hosted/
+  read-only PR/environment reviewer gate/packageswrite-only-in-publish retained;
+  checksum beforeload, configID/revision and remote collision/digest checks retained.
+- Prepared hostedCI actual-image CLOSED checks:all10presign403 + valid legacy
+  multipart403/noavatarfilewritten, followed by existing REST/WS/persistence tests.
+  Guard focused tests selected in CI; no live R2 tests. Compose validator asserts
+  CLOSED/empty defaults. Actual new image/CI proof is PENDING, not local PASS.
+- D5 offline Python publisher36+CIhelper18=54PASS,0fail/error/skip; YAML parse4PASS,
+  actual pending selection disables publication, diffcheck clean. No Maven/Flutter/
+  Docker/network/credentials/VPS/Cloudflare/GHCR or accepted-suite reruns.
+- Future inclusion inventory includes all production/config/unit tests/docs/CI;
+  preserve LOCAL and EXCLUDE Mac-specific R2SignedPutLiveProofTest.java plus its
+  logback-cost07b.xml from checkpoint. No ignoredlogs/markers/builds/secrets/signing.
+  Test-only synthetic fixtures remain; no such identity/secret is runtime config.
+- READY owner Git review/approval, NOT merge/publish/deploy readiness. No stage/
+  commit/push/merge/destructive Git. Need selective commit+push approvals, real
+  sourceCI, reviewed record update, dev merge approval, then separate protected
+  publication approval. Preserve source ancestry; no unapproved squash/rebase.
+  Domainwedoapp.site active owner-confirmed, DNS/TLS/VPS headroom/restore pending.
+  Existing productR2 COMPLETE remains; earlier evidence retained below.
+
+## CURRENT — D4.4-COST-07B ONE live proof PASS (2026-11-02)
+
+- Read docs/STAGING_SIGNED_UPLOAD_COST07B.md. New test-only harness used actual
+  COST-07A staging signer in isolated feat/staging-media-admission / 4e76fb4.
+  No production/config/Flutter/infra changes; all earlier dirty work preserved.
+- Java21.0.5, SDK2.55.6, Maven offline, ONE live test PASS/0fail/error/skip,
+  5.663s. Separate new preflight-only/loopback test PASS before live access.
+  No accepted offline suite rerun and no live retry. Test marker prevents rerun;
+  its presence is not renewed authorization. External credentials read ONLY in
+  forked live test process; no values in args/env/logs/shared reports.
+- S1 PUT/HEAD/GET200, expected metadata and PNG bytes match. S2 correctly framed
+  changed Content-Length403 SignatureDoesNotMatch, exact-key HEAD404. S3 missing
+  and modified If-None-Match separately403 SignatureDoesNotMatch, both HEAD404.
+  S4 SAME original URL/key replay412 PreconditionFailed, HEAD/GET200 unchanged.
+- Cleanup independent PASS: four exact-key DELETE204, four post-cleanup HEAD404.
+  Four keys allocated, one object created, five PUT attempts, 368 aggregate
+  request-body bytes,20 explicit API calls. No bucket scan or unrelated objects.
+  Video/malformed framing/chunked oversize/truncated connections NOT TESTED.
+- Evidence proves SDK binding, provider rejection of tested header mutations and
+  create-only replay rejection, NOT a universal provider hard byte/spending cap.
+  No secrets/URLs in sanitized output; SDK logging OFF, bounded secure XML parse.
+- Approach A READY for Technical Lead review/next separately authorized native
+  Android/iOS network checks; no present evidence requires gateway B. Pending
+  quota/rate/orphan/pending-outcome UI/backup consistency/VPS headroom unchanged.
+  Staging upload remains CLOSED; GHCR image still lacks COST-06/07A. Product R2
+  COMPLETE unchanged; no application E2E or staging READY declaration.
+- QA checkout/signing/stash/runtime untouched; 606 production/Flutter/infra paths
+  hash-identical. No stage/commit/push/merge, VPS/Docker/deploy/Cloudflare changes.
+  Stop here: another live run, upload enablement, COST-08+ or deployment each
+  requires its own authorization. Earlier evidence and handoff entries follow.
+
+## CURRENT — D4.4-COST-07A local signed constraints (2026-11-02)
+
+- Worktree/branch/base unchanged: /private/tmp/wedo-staging-media-admission,
+  feat/staging-media-admission, 4e76fb4. Preserve COST-06 plus all uncommitted work.
+  QA checkout and its local D4.3/D4.4 diagnostics/signing/runtime remain untouched.
+- Read docs/STAGING_SIGNED_UPLOAD_COST07A.md before continuing. A1 PASS with real
+  AWS SDK 2.55.6 S3Presigner and independent offline canonical SigV4 verification:
+  content-length and if-none-match are BOTH signed; removing/modifying either
+  invalidates the actual signature. Synthetic credentials only; no live requests.
+- A2 implemented staging-only exact size/create-only presigns, requiredHeaders
+  extracted from actual signed SDK headers (Host omitted), fail-closed constraints,
+  staging video rejection, unchanged COST-06 CLOSED/allowlist and existing module
+  authorization. No migrations/API response shape or non-staging product change.
+- Flutter validates normalized/unique required headers and actual bytes/stream
+  lengths. No bearer forwarding, constrained redirects or automatic PUT retries.
+  412/unknown PUT outcomes retain storage key in a safe pending exception; no
+  automatic confirmation or inference that failed/missing HEAD proves absence.
+  UI reconciliation remains manual; new-key retries may create orphans.
+- A3: 79 unique backend focused tests PASS/0failure/error/skip (78 first run,
+  then affected paths/config38 and signer13 after additional checks; overlapping).
+  Flutter 29 PASS: new constraints26 + existing upload2 + existing stream1.
+  Focused analyzer clean. Maven offline, Java21.0.5, synthetic adapter-only Flutter.
+  No full suite/live R2/credentials/VPS/Docker/image build/device install performed.
+- Local-only READY for Technical Lead review. Provider-enforced bytes/create-only
+  behavior and native Android/iOS wire compatibility remain UNVERIFIED. Staging
+  upload stays CLOSED. Published image has neither COST-06 nor COST-07A.
+  Quota/rate/orphan/retention/backup/headroom and COST-08+ untouched/pending.
+  Do not run live synthetic proof, enable uploads, publish/deploy or commit/push
+  without separate owner approval. Existing product R2 COMPLETE unchanged.
+
+## CURRENT — D4.4-COST-06 isolated staging admission, 61 offline PASS (2026-11-02)
+
+- Work ONLY in /private/tmp/wedo-staging-media-admission, feature branch
+  feat/staging-media-admission from freshly fetched origin/dev4e76fb40bc8e3e1324f2f5cf907733fcac9c2bef.
+  Main QA checkout remains integration/r9-qa-checkpoint0dbb7bf with its dirty/local
+  artifacts, signing, secrets, stash and runtime intact. Do not copy old QA staging
+  artifacts over reviewed dev source. D4.3/DIAG/CONTRACT local-only tests/docs remain
+  in QA checkout, deliberately not copied/staged here or erased.
+- docs/STAGING_MEDIA_ADMISSION_COST06.md records exact config and route limitations.
+  New mandatory constructor-injected MediaUploadAdmissionGuard checks active staging
+  profile, lowercase true switch and1–10distinct canonicalUUID allowlist. CLOSED/
+  missing/invalid config denies403 with generic ACCESS_DENIED; no identities logged.
+  Non-staging ignores settings. Existing activeuser/module/MIME/size auth retained.
+- Guard covers all10presigncategories and legacy multipart avatar service before
+  storage access; multipart ingress/spool remains outside this guard. Task/Journey
+  use existing MOMENT_IMAGE presign; Album no new uploader. DirectissuedPUT/GET,
+  confirm/attach and credential access remain outside admission. No quota/rate/
+  deletion/migration/spendingcap; alreadyissuedURLs not revoked. Startup snapshot,
+  future config changes require separate staging-restart approval; not enabled now.
+- Added CLOSED/empty YAML, Compose forwarding, safe env template fields. No real
+  IDs/credentials/config files, no QA or Cloudflare/VPS changes. Published GHCR
+  digest stays unchanged and DOES NOT include guard; future build/publish separate.
+- Java21.0.5/offlinefocused61PASS/0fail/error/skip:guard21,paths27,existingupload5,
+  legacy1,stagingprofile7. Plain initial Mockito selfattach failed in sandbox; final
+  run existinglocal5.23javaagent passed without POM changes. Synthetic fixtures only,
+  no Docker/DB/R2/live/fullsuite/credentials access. /tmp/wedo-cost06-focused.log.
+- Branch uncommitted; no staging/commit/push/merge. READY Technical Lead review;
+  do not enable/deploy or start COST-07 without separate owner decision. ProductR2
+  stays COMPLETE; historical LIVE-03 remains MavenFAIL with reviewed provider
+  rejection contract, not a new live PASS. Remaining storage budgets/headroom/
+  authorizationE2E/video/backups unchanged pending. Earlier sections retained below.
+
 ## VERIFIED — source checkpoint published; focused auth-log hardening
 
 - Sharedbranch **integration/r9-qa-checkpoint**, sourcecommit **e8255c55e1a083f03ac50bc3f04690c2ce42f397**.

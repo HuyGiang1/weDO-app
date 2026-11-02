@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "staging-container-smoke.py"
 SPEC = importlib.util.spec_from_file_location("staging_ci", SCRIPT)
@@ -98,6 +98,71 @@ class WebSocketTests(unittest.TestCase):
         with patch.object(CI.socket, "create_connection", return_value=FakeSocket(
                 b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: wrong\r\n\r\n")), self.assertRaises(RuntimeError):
             CI.websocket(12345, "synthetic-token")
+
+
+class UploadClosedTests(unittest.TestCase):
+    def test_every_category_and_legacy_route_must_return_403(self):
+        with patch.object(CI, "http", return_value={}) as http:
+            CI.upload_closed_smoke("http://127.0.0.1:12345", "synthetic-token")
+        self.assertEqual(http.call_count, 11)
+        self.assertEqual({c.args[3]["category"] for c in http.call_args_list[:-1]}, set(CI.UPLOAD_CATEGORIES))
+        self.assertTrue(all(c.args[2] == 403 for c in http.call_args_list))
+        last = http.call_args_list[-1]
+        self.assertEqual(last.args[1], "/api/v1/media/avatar")
+        self.assertIn(b'name="file"', last.kwargs["raw"])
+        self.assertTrue(last.kwargs["content_type"].startswith("multipart/form-data; boundary="))
+
+    def test_any_failed_closed_route_stops_ci_validation(self):
+        for index in range(11):
+            with self.subTest(index=index), patch.object(CI, "http", side_effect=[{}] * index + [RuntimeError("Unexpected status")]):
+                with self.assertRaises(RuntimeError): CI.upload_closed_smoke("http://127.0.0.1:12345", "synthetic-token")
+
+    def test_category_inventory_matches_actual_java_enum(self):
+        import re
+        enum = (SCRIPT.parents[1] / "backend/src/main/java/com/wedo/backend/media/dto/UploadCategory.java").read_text()
+        names = set(re.findall(r"^    ([A-Z_]+)[,\s]*$", enum, re.M))
+        self.assertEqual(names, set(CI.UPLOAD_CATEGORIES))
+
+    def test_http_rejects_success_401_or_validation_failure_instead_of_403(self):
+        for status in (200, 201, 400, 401, 500):
+            response = MagicMock(); response.__enter__.return_value = response
+            response.status = status; response.read.return_value = b"{}"
+            opener = MagicMock(); opener.open.return_value = response
+            with self.subTest(status=status), patch.object(CI.urllib.request, "build_opener", return_value=opener):
+                with self.assertRaises(RuntimeError): CI.http("http://127.0.0.1:12345", "/synthetic", 403, raw=b"png")
+
+    def test_raw_multipart_and_existing_json_transport_are_preserved(self):
+        response = MagicMock(); response.__enter__.return_value = response
+        response.status = 200; response.read.return_value = b"{}"
+        opener = MagicMock(); opener.open.return_value = response
+        with patch.object(CI.urllib.request, "build_opener", return_value=opener):
+            CI.http("http://127.0.0.1:12345", "/synthetic", 200, token="synthetic-token", raw=b"multipart", content_type="multipart/form-data; boundary=synthetic")
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.get_method(), "POST")
+            self.assertEqual(request.data, b"multipart")
+            self.assertEqual(request.get_header("Content-type"), "multipart/form-data; boundary=synthetic")
+            CI.http("http://127.0.0.1:12345", "/synthetic", 200, {"synthetic": True})
+            self.assertEqual(json.loads(opener.open.call_args.args[0].data), {"synthetic": True})
+
+    def test_guard_defaults_and_compose_forwarding_are_closed(self):
+        root = SCRIPT.parents[1]
+        compose = (root / "infra/compose.staging.yml").read_text()
+        self.assertIn('WEDO_STAGING_MEDIA_UPLOAD_ENABLED: "${WEDO_STAGING_MEDIA_UPLOAD_ENABLED:-false}"', compose)
+        self.assertIn('WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS: "${WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS:-}"', compose)
+        profile = (root / "backend/src/main/resources/application-staging.yml").read_text()
+        self.assertIn('enabled: "${WEDO_STAGING_MEDIA_UPLOAD_ENABLED:false}"', profile)
+        self.assertIn('allowed-user-ids: "${WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS:}"', profile)
+        template = (root / "infra/staging.env.example").read_text()
+        self.assertIn('WEDO_STAGING_MEDIA_UPLOAD_ENABLED=false\n', template)
+        self.assertIn('WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS=\n', template)
+
+    def test_validation_workflow_runs_guard_tests_and_preserves_same_image_evidence(self):
+        workflow = (SCRIPT.parents[1] / ".github/workflows/staging-validation.yml").read_text()
+        for name in ("MediaUploadAdmissionGuardTest", "MediaUploadAdmissionPathsTest", "StagingProfileTest"):
+            self.assertIn(name, workflow)
+        self.assertIn("wedo-d2-image/validation.json", workflow)
+        self.assertIn("'uploadClosedSmoke': 'PASS'", workflow)
+        self.assertNotIn("packages: write", workflow)
 
 
 if __name__ == "__main__":

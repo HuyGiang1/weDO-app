@@ -28,6 +28,7 @@ public class MediaService {
     private final ObjectStorageService objectStorageService;
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final MediaUploadAdmissionGuard admission;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private MediaReferenceService mediaReferences;
@@ -40,16 +41,19 @@ public class MediaService {
 
     public MediaService(MediaStorage mediaStorage, UserService userService,
                         ObjectStorageService objectStorageService,
-                        UserRepository userRepository, GroupRepository groupRepository) {
+                        UserRepository userRepository, GroupRepository groupRepository,
+                        MediaUploadAdmissionGuard admission) {
         this.mediaStorage = mediaStorage;
         this.userService = userService;
         this.objectStorageService = objectStorageService;
         this.userRepository = userRepository;
         this.groupRepository = groupRepository;
+        this.admission = admission;
     }
 
     public MediaUploadResult uploadAvatar(UUID callerUserId, MultipartFile file) {
         userService.requireActiveUser(callerUserId);
+        admission.requireAllowed(callerUserId);
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }

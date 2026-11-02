@@ -49,6 +49,8 @@ def validate():
     assert len(backend["ports"]) == 1
     assert backend["environment"]["SPRING_PROFILES_ACTIVE"] == "staging"
     assert backend["environment"]["WEDO_PUSH_ENABLED"] == "false"
+    assert backend["environment"]["WEDO_STAGING_MEDIA_UPLOAD_ENABLED"] == "false"
+    assert backend["environment"]["WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS"] == ""
     assert "GOOGLE_APPLICATION_CREDENTIALS" not in backend["environment"]
     assert all(v["condition"] == "service_healthy" for v in backend["depends_on"].values())
     assert data["networks"]["data"]["internal"]

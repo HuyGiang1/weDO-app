@@ -78,7 +78,7 @@ class MediaUploadAdmissionPathsTest {
         }
         verifyNoInteractions(storage);
     }
-    @Test void stagingImageSizeBoundariesRetainTenMiBLimit() {
+    @Test void stagingImageSizeBoundariesEnforceFiveMiBLimit() {
         var service = uploads(MediaUploadAdmissionGuardTest.guard("true", USER.toString()));
         var references = mock(MediaReferenceService.class);
         ReflectionTestUtils.setField(service, "mediaReferences", references);
@@ -86,12 +86,12 @@ class MediaUploadAdmissionPathsTest {
         when(references.newKey(any(), any(), any())).thenReturn("synthetic/image");
         when(storage.presignPut(anyString(), anyString(), anyLong(), anyString(), any(Duration.class)))
                 .thenReturn(new ObjectStorageService.PresignedObject("https://synthetic.invalid/put", Instant.now(), Map.of()));
-        for (long size : new long[]{1, 10L * 1024 * 1024}) {
+        for (long size : new long[]{1, 5L * 1024 * 1024}) {
             assertDoesNotThrow(() -> service.presign(USER, new PresignUploadRequest(UploadCategory.MOMENT_IMAGE,
                     "synthetic.png", "image/png", size, UUID.randomUUID().toString())));
         }
         clearInvocations(storage);
-        for (long size : new long[]{0, -1, 10L * 1024 * 1024 + 1}) {
+        for (long size : new long[]{0, -1, 5L * 1024 * 1024 + 1}) {
             assertThrows(BusinessException.class, () -> service.presign(USER, new PresignUploadRequest(UploadCategory.MOMENT_IMAGE,
                     "synthetic.png", "image/png", size, UUID.randomUUID().toString())));
         }

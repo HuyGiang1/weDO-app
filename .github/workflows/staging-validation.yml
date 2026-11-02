@@ -53,13 +53,13 @@ jobs:
         working-directory: backend
         run: |
           set +e
-          bash mvnw -B -ntp -Dtest=StagingProfileTest,OptionalPushConfigurationTest,StagingBootstrapIntegrationTest,MediaUploadAdmissionGuardTest,MediaUploadAdmissionPathsTest,StagingSignedUploadTest,SignedUploadConstraintsProofTest test > "$RUNNER_TEMP/wedo-d2-maven.raw.log" 2>&1
+          bash mvnw -B -ntp -Dtest=StagingProfileTest,OptionalPushConfigurationTest,StagingBootstrapIntegrationTest,MediaUploadAdmissionGuardTest,MediaUploadAdmissionPathsTest,StagingMediaBudgetPolicyTest,StagingMediaReservationIntegrationTest,StagingMediaAdmissionIntegrationTest,StagingSignedUploadTest,SignedUploadConstraintsProofTest test > "$RUNNER_TEMP/wedo-d2-maven.raw.log" 2>&1
           result=$?
           export TEST_EXIT="$result"
           python3 - <<'PY'
           import json, os, pathlib, re, xml.etree.ElementTree as ET
           rows = []
-          for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest', 'MediaUploadAdmissionGuardTest', 'MediaUploadAdmissionPathsTest', 'StagingSignedUploadTest', 'SignedUploadConstraintsProofTest'):
+          for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest', 'MediaUploadAdmissionGuardTest', 'MediaUploadAdmissionPathsTest', 'StagingMediaBudgetPolicyTest', 'StagingMediaReservationIntegrationTest', 'StagingMediaAdmissionIntegrationTest', 'StagingSignedUploadTest', 'SignedUploadConstraintsProofTest'):
               for path in pathlib.Path('target/surefire-reports').glob('TEST-*.' + name + '.xml'):
                   root = ET.parse(path).getroot()
                   row = dict(name=name, **{key: int(root.get(key, '0')) for key in ('tests','failures','errors','skipped')})

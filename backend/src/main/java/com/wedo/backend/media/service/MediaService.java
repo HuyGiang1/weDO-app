@@ -53,7 +53,7 @@ public class MediaService {
 
     public MediaUploadResult uploadAvatar(UUID callerUserId, MultipartFile file) {
         userService.requireActiveUser(callerUserId);
-        admission.requireAllowed(callerUserId);
+        admission.requireLegacyUpload(callerUserId);
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }

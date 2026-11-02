@@ -21,12 +21,16 @@ class MediaUploadAdmissionGuardTest {
         var env = staging();
         if (enabled != null) env.setProperty("wedo.staging.media-upload.enabled", enabled);
         if (users != null) env.setProperty("wedo.staging.media-upload.allowed-user-ids", users);
-        return new MediaUploadAdmissionGuard(env);
+        var guard = new MediaUploadAdmissionGuard(env);
+        org.springframework.test.util.ReflectionTestUtils.setField(guard, "reservations",
+                org.mockito.Mockito.mock(StagingMediaReservationService.class));
+        return guard;
     }
     static void denied(MediaUploadAdmissionGuard guard, UUID user) {
         BusinessException failure = assertThrows(BusinessException.class, () -> guard.requireAllowed(user));
-        assertEquals(ErrorCode.ACCESS_DENIED, failure.errorCode());
-        assertEquals("Access is denied.", failure.getMessage());
+        assertTrue(java.util.Set.of(ErrorCode.STAGING_MEDIA_UPLOAD_DISABLED,
+                ErrorCode.STAGING_MEDIA_UPLOAD_NOT_ALLOWED).contains(failure.errorCode()));
+        assertFalse(failure.getMessage().contains(USER.toString()));
     }
     @Test void defaultMissingSwitchIsClosedEvenWithValidAllowlist() {
         denied(guard(null, USER.toString()), USER);
@@ -51,8 +55,8 @@ class MediaUploadAdmissionGuardTest {
         denied(guard("true", USER + ","), USER);
         denied(guard("true", "," + USER), USER);
     }
-    @Test void maximumTenDistinctCanonicalIdsAndTrimmedCsvSupported() {
-        String users = IntStream.range(0, 10).mapToObj(i -> new UUID(0, i + 1).toString())
+    @Test void maximumThreeDistinctCanonicalIdsAndTrimmedCsvSupported() {
+        String users = IntStream.range(0, 3).mapToObj(i -> new UUID(0, i + 1).toString())
                 .collect(java.util.stream.Collectors.joining(", "));
         assertDoesNotThrow(() -> guard("true", users).requireAllowed(new UUID(0, 1)));
         denied(guard("true", users + "," + USER), new UUID(0, 1));

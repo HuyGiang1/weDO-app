@@ -43,9 +43,15 @@ media:
 wedo:
   staging:
     media-upload:
-      # CLOSED unless the operator explicitly opts in and supplies 1–10 distinct UUIDs.
+      # CLOSED unless explicitly enabled for at most three distinct demo UUIDs.
       enabled: "${WEDO_STAGING_MEDIA_UPLOAD_ENABLED:false}"
       allowed-user-ids: "${WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS:}"
+      video-enabled: "${WEDO_STAGING_MEDIA_VIDEO_ENABLED:false}"
+      max-image-bytes: "${WEDO_STAGING_MEDIA_MAX_IMAGE_BYTES:5242880}"
+      max-video-bytes: "${WEDO_STAGING_MEDIA_MAX_VIDEO_BYTES:20971520}"
+      quota-bytes: "${WEDO_STAGING_MEDIA_QUOTA_BYTES:157286400}"
+      max-requests: "${WEDO_STAGING_MEDIA_MAX_REQUESTS:5}"
+      window-seconds: "${WEDO_STAGING_MEDIA_WINDOW_SECONDS:600}"
   deployment:
     # Operator metadata only; this does not reconfigure installed mobile apps.
     public-api-origin: ${WEDO_PUBLIC_API_ORIGIN}

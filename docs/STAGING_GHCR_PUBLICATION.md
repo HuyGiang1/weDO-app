@@ -1,3 +1,11 @@
+> **Current D5-DEMO-02 contract (2026-11-02):** the executable publisher now reads
+> `infra/staging/publication-candidate.json`; historical D3 source/run/artifact IDs
+> below are evidence ONLY and are not defaults for the next release. The record is
+> intentionally `PENDING_VALIDATION`, with all identity fields null: publication is
+> disabled. Follow `docs/STAGING_DEMO_RELEASE_D5_02.md` for the reviewed-record,
+> exact-artifact, upload-CLOSED CI and separate approval sequence. No live run,
+> image build/publication or Git mutation was performed in this preparation.
+
 # D3.1 — publication-only, exact validated weDO image
 
 ## Authority, scope and state

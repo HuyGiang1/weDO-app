@@ -29,7 +29,8 @@ class UploadServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UploadService(storage, userService, groupPermissionService);
+        service = new UploadService(storage, userService, groupPermissionService,
+                new MediaUploadAdmissionGuard(new org.springframework.mock.env.MockEnvironment()));
     }
 
     @Test

@@ -1,4 +1,4 @@
-# Validation only. GHCR publication proposal remains inactive under infra/staging/.
+# Validation only; never publishes. Publication consumes a separately reviewed artifact record.
 name: weDO staging validation
 on:
   pull_request:
@@ -53,13 +53,13 @@ jobs:
         working-directory: backend
         run: |
           set +e
-          bash mvnw -B -ntp -Dtest=StagingProfileTest,OptionalPushConfigurationTest,StagingBootstrapIntegrationTest test > "$RUNNER_TEMP/wedo-d2-maven.raw.log" 2>&1
+          bash mvnw -B -ntp -Dtest=StagingProfileTest,OptionalPushConfigurationTest,StagingBootstrapIntegrationTest,MediaUploadAdmissionGuardTest,MediaUploadAdmissionPathsTest,StagingSignedUploadTest,SignedUploadConstraintsProofTest test > "$RUNNER_TEMP/wedo-d2-maven.raw.log" 2>&1
           result=$?
           export TEST_EXIT="$result"
           python3 - <<'PY'
           import json, os, pathlib, re, xml.etree.ElementTree as ET
           rows = []
-          for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest'):
+          for name in ('StagingProfileTest', 'OptionalPushConfigurationTest', 'StagingBootstrapIntegrationTest', 'MediaUploadAdmissionGuardTest', 'MediaUploadAdmissionPathsTest', 'StagingSignedUploadTest', 'SignedUploadConstraintsProofTest'):
               for path in pathlib.Path('target/surefire-reports').glob('TEST-*.' + name + '.xml'):
                   root = ET.parse(path).getroot()
                   row = dict(name=name, **{key: int(root.get(key, '0')) for key in ('tests','failures','errors','skipped')})
@@ -107,15 +107,20 @@ jobs:
           import json, os, pathlib
           record = {'sourceSha': os.environ['SOURCE_SHA'], 'imageId': os.environ['IMAGE_ID'],
                     'imageSizeBytes': int(os.environ['IMAGE_SIZE']), 'archiveSha256': os.environ['ARCHIVE_SHA'],
-                    'platform': 'linux/amd64', 'externalS3': 'PENDING', 'push': 'DISABLED'}
+                    'platform': 'linux/amd64', 'externalS3': 'PENDING', 'push': 'DISABLED',
+                    'validationRun': int(os.environ['GITHUB_RUN_ID']), 'validationRunAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+                    'mediaUploadPolicy': 'CLOSED', 'uploadClosedSmoke': 'PASS'}
           (pathlib.Path(os.environ['RUNNER_TEMP']) / 'wedo-d2-diagnostics' / 'image-summary.json').write_text(json.dumps(record, indent=2))
+          (pathlib.Path(os.environ['RUNNER_TEMP']) / 'wedo-d2-image' / 'validation.json').write_text(json.dumps(record, indent=2))
           print(json.dumps(record))
           PYMETA
           printf 'Source SHA: %s\nImage ID: %s\nArchive SHA256: %s\nExternal S3: PENDING; FCM: DISABLED\n' "$SOURCE_SHA" "$image_id" "$archive_sha" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: validated-image-${{ env.SOURCE_SHA }}
-          path: ${{ runner.temp }}/wedo-d2-image/image.tar.gz
+          path: |
+            ${{ runner.temp }}/wedo-d2-image/image.tar.gz
+            ${{ runner.temp }}/wedo-d2-image/validation.json
           retention-days: 7
           compression-level: 0
           if-no-files-found: error

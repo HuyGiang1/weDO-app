@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "status": "PENDING_VALIDATION",
+  "sourceSha": null,
+  "validationRunId": null,
+  "validationRunAttempt": null,
+  "artifactId": null,
+  "archiveSha256": null,
+  "imageId": null,
+  "platform": "linux/amd64",
+  "mediaUploadPolicy": "CLOSED"
+}

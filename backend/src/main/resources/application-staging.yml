@@ -41,6 +41,11 @@ media:
     path-style: ${WEDO_MEDIA_PATH_STYLE:true}
 
 wedo:
+  staging:
+    media-upload:
+      # CLOSED unless the operator explicitly opts in and supplies 1–10 distinct UUIDs.
+      enabled: "${WEDO_STAGING_MEDIA_UPLOAD_ENABLED:false}"
+      allowed-user-ids: "${WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS:}"
   deployment:
     # Operator metadata only; this does not reconfigure installed mobile apps.
     public-api-origin: ${WEDO_PUBLIC_API_ORIGIN}

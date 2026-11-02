@@ -72,6 +72,8 @@ services:
       WEDO_MEDIA_BUCKET: ${WEDO_MEDIA_BUCKET:?Set a dedicated private staging bucket}
       WEDO_MEDIA_REGION: ${WEDO_MEDIA_REGION:?Set the provider region}
       WEDO_MEDIA_PATH_STYLE: ${WEDO_MEDIA_PATH_STYLE:-true}
+      WEDO_STAGING_MEDIA_UPLOAD_ENABLED: "${WEDO_STAGING_MEDIA_UPLOAD_ENABLED:-false}"
+      WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS: "${WEDO_STAGING_MEDIA_UPLOAD_ALLOWED_USER_IDS:-}"
       # Enabling FCM needs a separately reviewed credential mount/override.
       WEDO_PUSH_ENABLED: "false"
       JAVA_TOOL_OPTIONS: "-Xms128m -Xmx768m -XX:+ExitOnOutOfMemoryError"

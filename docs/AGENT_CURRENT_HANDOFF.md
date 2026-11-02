@@ -1,3 +1,36 @@
+## CURRENT — D5-RELEASE-05 verified publication metadata (2026-11-02)
+
+- PR12 merged by authorized regular merge, dev c7a40aa31d6d32245884db2ded68c703813177ff.
+  Validated image SOURCE stays0a30d3aaea1b0ebef7e02831da8667291e79444b, preserved
+  ancestor; backend/mobile/scripts/Compose/env/validation trees byte-identical.
+- GitHub environment persisted/effective rules read as:reviewerHuyGiang1,
+  prevent_self_review=false,can_admins_bypass=false,custom_branch_policies=true,
+  protected_branches=false,exact1branchdev/0tags. dev classicprotection404/rules[];
+  no platformrequiredreview/check configured. Owner explicitly authorizes gated
+  merge; no independent PR review fabricated. PR12 safechecks/validateSUCCESS.
+- SourceCI41466194639 attempt1SUCCESS,Java77PASS,actualimageCLOSED/REST/WS/persistence
+  smokePASS,21migrations,cleanupPASS. Exact artifact13152931953 notexpired.
+  Downloaded exactartifact to /tmp/wedo-d5-release05-validated-image; independently
+  computed innerarchiveSHA75488c8571963ac7f0cb389a73397b00dac4f5bcd14b7514eb5528bdfbca4c3f;
+  streamedtar configbytes hashsha256:ba04f5a589f88efcd47c8608bee2f65bcfd5e7901f7e14359ef24dab668f6ae6.
+  ConfigrevisionSOURCE/amd64/linux/UID10001:10001,manifesttag/config andsidecarMATCH.
+  No Dockerload/build,credentialaccess or signedURLs. GitHub artifactZIPdigest
+ 48a9440ca826c56e6e4e84c761f518166653b64e0ad981007af919a2deceac78 is distinct.
+- Separate isolated feat/staging-demo-publication-record worktree from mergeddev;
+  only reviewed publication-candidate.json identity and this handoff changed.
+  RecordVALIDATED uses ORIGINALsource/run/attempt/artifact/archive/config above,
+  notmergeSHA or thismetadatacommit. Runtimeunchanged prevents circularSHA model.
+  Offlineexistingparser/archive/sidecar/sourcehelpersPASS, no suites rerun.
+- Next:metadataPR->dev,read-onlyprovenanceCI mustPASS,thenauthorizednormalmerge.
+  devpush preflight mustPASS andpublish mustWAIT for staging-image-publication.
+  OWNER mustapprove UI;agent mustNOT approve/bypass. Ifjobstartswithoutapproval,
+  provenancefails orprotectionmissingSTOP. RemoteGHCRdigestUNKNOWN untilpublish
+  andremoteidentityverification;do notlabelimagepublishedfromvalidationartifact.
+- VPSstillNO-GO(~14.954GiB<15GiBfloor),oldBreastimage recoveryuncertain,0reclaimed.
+  No VPS/Reader/secrets/backup changes;offhostdestination andisolatedrestorepending.
+  No MacQA/main.dart/signing/Firebase/runtime/data changes. Preserve original
+  feat/staging-media-admission dirtyhandoff+2localprobe files;no checkout/cleanup.
+
 ## CURRENT — D5-NET-02 authenticated inventory + authorized Git checkpoint (2026-11-02)
 
 - One bounded SSH attempt SUCCEEDED using existing approved root/key/strict host

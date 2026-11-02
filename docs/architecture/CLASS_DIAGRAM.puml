@@ -308,4 +308,23 @@ package "R10 Journey / evidence / explicit actions" {
     retained source snapshots
   end note
 }
+package "D6 Staging Admission Infrastructure" {
+class StagingMediaReservationService {
+  reserve(userId, key, bytes, quotaBytes, requests, windowSeconds)
+}
+class StagingMediaUploadControl <<V21 table>> {
+  id: short {singleton 1}
+  enabled: boolean {default false}
+}
+StagingMediaReservationService ..> StagingMediaUploadControl : operator latch / row lock
+class StagingMediaUploadReservation <<V21 table>> {
+  id: UUID
+  userId: UUID
+  storageKey: String {unique}
+  reservedBytes: long
+  createdAt: Instant
+}
+StagingMediaReservationService ..> StagingMediaUploadReservation : PostgreSQL transactional admission
+UserEntity "1" -- "0..*" StagingMediaUploadReservation
+}
 @enduml

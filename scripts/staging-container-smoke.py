@@ -175,10 +175,10 @@ def main():
             health = http(base, "/actuator/health", 200)
             require(health.get("status") == "UP" and "components" not in health, "Readiness/details mismatch")
             http(base, "/api/v1/me", 401)
-            require(sql("SELECT count(*) FROM flyway_schema_history WHERE success") == "21", "Flyway migration mismatch")
+            require(sql("SELECT count(*) FROM flyway_schema_history WHERE success") == "22", "Flyway migration mismatch")
             require(sql("SELECT count(*) FROM users") == "0", "Unexpected seeded users")
             require(compose("exec", "-T", "redis", "redis-cli", "ping") == "PONG", "Redis unavailable")
-            report["checks"].extend(["amd64/non-root", "fresh-V0-V20", "health/PG/Redis", "no-QA-seed"])
+            report["checks"].extend(["amd64/non-root", "fresh-V0-V21", "health/PG/Redis", "no-QA-seed"])
             email, password = "d2-smoke@example.invalid", secrets.token_urlsafe(32)
             http(base, "/api/v1/auth/register", 201, {"email": email, "password": password})
             # Only new disposable CI database: no mail provider and no production verification bypass.

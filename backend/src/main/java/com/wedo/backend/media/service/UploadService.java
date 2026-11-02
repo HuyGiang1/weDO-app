@@ -52,6 +52,7 @@ public class UploadService {
         admission.requireAllowed(callerId);
         String contentType = request.contentType().trim().toLowerCase(Locale.ROOT);
         admission.requireImageUpload(request.category(), contentType);
+        admission.requireSize(request.category(), request.fileSize());
         boolean a2 = request.category() != UploadCategory.AVATAR && request.category() != UploadCategory.GROUP_AVATAR;
         long maxBytes = a2 ? MediaReferenceService.A2_MAX_BYTES : MAX_AVATAR_BYTES;
         boolean moment = request.category()==UploadCategory.MOMENT_IMAGE || request.category()==UploadCategory.MOMENT_VIDEO || request.category()==UploadCategory.COMMUNITY_IMAGE;
@@ -96,6 +97,7 @@ public class UploadService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
+        admission.reserve(callerId, key, request.fileSize());
         ObjectStorageService.PresignedObject target = a2
                 ? storage.presignPut(key, contentType, request.fileSize(), request.fileName().trim(), UPLOAD_EXPIRY)
                 : storage.presignPut(key, contentType, request.fileSize(), UPLOAD_EXPIRY);

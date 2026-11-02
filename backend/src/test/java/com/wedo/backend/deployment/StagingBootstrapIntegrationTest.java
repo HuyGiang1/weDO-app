@@ -88,8 +88,29 @@ class StagingBootstrapIntegrationTest {
     @Autowired Environment env;
     @Autowired ApplicationContext context;
 
+    @Test
+    void additiveReservationMigrationRemainsCompatibleWithPreviousMigrationSet(
+            @org.junit.jupiter.api.io.TempDir Path oldMigrations) throws Exception {
+        int copied = 0;
+        var resolver = new org.springframework.core.io.support.PathMatchingResourcePatternResolver();
+        for (var resource : resolver.getResources("classpath:db/migration/V*.sql")) {
+            String name = resource.getFilename();
+            int version = Integer.parseInt(name.substring(1, name.indexOf("__")));
+            if (version > 20) continue;
+            try (var input = resource.getInputStream()) { Files.copy(input, oldMigrations.resolve(name)); }
+            copied++;
+        }
+        assertThat(copied).isEqualTo(21);
+        assertThat(db.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(22);
+        // Same unchanged Flyway version/default settings as the previous image:
+        // validate the V0–V20 resource set against a database with additive V21.
+        org.flywaydb.core.Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("filesystem:" + oldMigrations).load().validate();
+    }
+
     @Test void freshFlywayReadinessAuthAndAuthorizedSocketWithoutFirebase() throws Exception {
-        assertThat(db.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(21);
+        assertThat(db.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(22);
         assertThat(db.queryForObject("SELECT count(*) FROM users", Integer.class)).isZero();
         assertThat(context.getBeansOfType(LocalTestDataSeeder.class)).isEmpty();
         assertThat(context.getBeansOfType(FirebaseApp.class)).isEmpty();

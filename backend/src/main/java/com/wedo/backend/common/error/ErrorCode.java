@@ -3,6 +3,12 @@ package com.wedo.backend.common.error;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+    STAGING_MEDIA_UPLOAD_DISABLED(HttpStatus.FORBIDDEN, "Staging media upload is disabled."),
+    STAGING_MEDIA_UPLOAD_NOT_ALLOWED(HttpStatus.FORBIDDEN, "This account cannot upload staging media."),
+    STAGING_MEDIA_PRESIGN_REQUIRED(HttpStatus.FORBIDDEN, "Use the authorized direct upload flow."),
+    STAGING_MEDIA_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST, "The file exceeds the staging size limit."),
+    STAGING_MEDIA_RATE_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "Staging upload admission rate exceeded."),
+    STAGING_MEDIA_QUOTA_EXCEEDED(HttpStatus.CONFLICT, "Staging media budget is exhausted."),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Request validation failed."),
     COMMUNITY_FEED_CURSOR_INVALID(HttpStatus.BAD_REQUEST, "Feed page expired or invalid. Refresh the feed."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication is required."),

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "status": "VALIDATED",
-  "sourceSha": "0a30d3aaea1b0ebef7e02831da8667291e79444b",
-  "validationRunId": 41466194639,
-  "validationRunAttempt": 1,
-  "artifactId": 13152931953,
-  "archiveSha256": "75488c8571963ac7f0cb389a73397b00dac4f5bcd14b7514eb5528bdfbca4c3f",
-  "imageId": "sha256:ba04f5a589f88efcd47c8608bee2f65bcfd5e7901f7e14359ef24dab668f6ae6",
+  "status": "PENDING_VALIDATION",
+  "sourceSha": null,
+  "validationRunId": null,
+  "validationRunAttempt": null,
+  "artifactId": null,
+  "archiveSha256": null,
+  "imageId": null,
   "platform": "linux/amd64",
   "mediaUploadPolicy": "CLOSED"
 }

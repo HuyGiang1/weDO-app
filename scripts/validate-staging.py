@@ -65,7 +65,7 @@ def validate():
     for service in services.values():
         assert all(v["type"] == "volume" for v in service.get("volumes", []))
     migrations = list((ROOT / "backend/src/main/resources/db/migration").glob("V*__*.sql"))
-    assert sorted(int(p.name.split("__")[0][1:]) for p in migrations) == list(range(21))
+    assert sorted(int(p.name.split("__")[0][1:]) for p in migrations) == list(range(22))
     ignore = (ROOT / "backend/.dockerignore").read_text()
     assert ignore.splitlines()[1] == "**"
     for required in ("!src/main/java/**", "!src/main/resources/db/migration/*.sql",
@@ -73,7 +73,7 @@ def validate():
                      "**/*.p8", "**/*.key", "**/.env*"):
         assert required in ignore
     assert "!src/main/resources/application*.yml" not in ignore
-    print("PASS: Compose schema/isolation, six external secret references, V0-V20, context allow-list guards")
+    print("PASS: Compose schema/isolation, six external secret references, V0-V21, context allow-list guards")
     print("No Docker daemon, build, secret files or existing services accessed. Context packaging still requires CI build.")
 
 

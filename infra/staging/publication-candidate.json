@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "status": "PENDING_VALIDATION",
-  "sourceSha": null,
-  "validationRunId": null,
-  "validationRunAttempt": null,
-  "artifactId": null,
-  "archiveSha256": null,
-  "imageId": null,
+  "status": "VALIDATED",
+  "sourceSha": "fc581283a71473dc0ead1d607ad035536f334800",
+  "validationRunId": 41554529469,
+  "validationRunAttempt": 1,
+  "artifactId": 13194091438,
+  "archiveSha256": "493fba9049d55a24655238a15bfbb18c730d4ae3ea345c73b2901651c82e52e4",
+  "imageId": "sha256:083cd895f68016115c8617284207a43e1fd67637bcfd197aeb990ee13f57306c",
   "platform": "linux/amd64",
   "mediaUploadPolicy": "CLOSED"
 }

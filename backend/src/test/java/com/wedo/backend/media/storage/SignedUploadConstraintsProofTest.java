@@ -16,7 +16,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.time.Duration;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -27,8 +28,9 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 /** Offline signing gate. Never contacts an endpoint or resolves real credentials. */
 class SignedUploadConstraintsProofTest {
-    @Test
-    void realSdkMustCryptographicallyBindBothUploadConstraints() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"image/png", "video/mp4"})
+    void realSdkMustCryptographicallyBindBothUploadConstraints(String contentType) throws Exception {
         try (var presigner = S3Presigner.builder()
                 .endpointOverride(URI.create("https://storage.invalid"))
                 .region(Region.of("auto"))
@@ -39,8 +41,8 @@ class SignedUploadConstraintsProofTest {
             var signed = presigner.presignPutObject(PutObjectPresignRequest.builder()
                     .signatureDuration(Duration.ofMinutes(10))
                     .putObjectRequest(PutObjectRequest.builder().bucket("synthetic-bucket")
-                            .key("synthetic/object.png").contentLength(128L)
-                            .ifNoneMatch("*").contentType("image/png")
+                            .key(contentType.equals("video/mp4") ? "synthetic/object.mp4" : "synthetic/object.png").contentLength(128L)
+                            .ifNoneMatch("*").contentType(contentType)
                             .metadata(Map.of("declared-size", "128")).build())
                     .build());
             var names = signed.signedHeaders().keySet();
@@ -51,7 +53,7 @@ class SignedUploadConstraintsProofTest {
             assertTrue(names.contains("x-amz-meta-declared-size"), "METADATA_NOT_SIGNED");
             var headers = new LinkedHashMap<>(signed.signedHeaders());
             assertTrue(verifies(signed.url().toURI(), headers), "ORIGINAL_SIGNATURE_INVALID");
-            for (String name : List.of("content-length", "if-none-match")) {
+            for (String name : List.of("content-length", "if-none-match", "content-type")) {
                 var missing = new LinkedHashMap<>(headers);
                 missing.remove(name);
                 assertFalse(verifies(signed.url().toURI(), missing), "MISSING_HEADER_ACCEPTED");

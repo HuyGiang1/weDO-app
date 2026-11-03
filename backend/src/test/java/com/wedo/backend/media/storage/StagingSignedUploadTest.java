@@ -38,7 +38,28 @@ class StagingSignedUploadTest {
         var expectedNames = new java.util.HashSet<>(java.util.Arrays.asList(signedNames.split(";")));
         expectedNames.remove("host");
         assertTrue(expectedNames.equals(result.requiredHeaders().keySet()), "REQUIRED_HEADERS_MUST_MATCH_SIGNATURE");
-        assertThrows(ObjectStorageException.class, () -> storage.presignPut("synthetic/video", "video/mp4", 128, Duration.ofMinutes(10)));
+        assertThrows(ObjectStorageException.class, () -> storage.presignPut("synthetic/file", "application/octet-stream", 128, Duration.ofMinutes(10)));
+    }
+    @Test void stagingMp4RetainsExactLengthAndConditionalWriteSignature() {
+        var env = new MockEnvironment();
+        env.setActiveProfiles("staging");
+        var storage = new S3ObjectStorageService("https://storage.invalid", "", "synthetic-bucket",
+                "auto", "synthetic-access", "synthetic-secret", true, env);
+        var result = storage.presignPut("synthetic/video.mp4", "video/mp4", 16645,
+                "synthetic.mp4", Duration.ofMinutes(10));
+        assertEquals("16645", result.requiredHeaders().get("content-length"));
+        assertEquals("*", result.requiredHeaders().get("if-none-match"));
+        assertEquals("video/mp4", result.requiredHeaders().get("content-type"));
+        assertEquals("16645", result.requiredHeaders().get("x-amz-meta-declared-size"));
+        String names = java.util.Arrays.stream(java.net.URI.create(result.url()).getRawQuery().split("&"))
+                .filter(pair -> pair.startsWith("X-Amz-SignedHeaders="))
+                .map(pair -> java.net.URLDecoder.decode(pair.split("=", 2)[1], java.nio.charset.StandardCharsets.UTF_8))
+                .findFirst().orElseThrow();
+        var expected = new java.util.HashSet<>(java.util.Arrays.asList(names.split(";")));
+        assertTrue(expected.containsAll(List.of("content-length", "if-none-match", "content-type")));
+        expected.remove("host");
+        assertEquals(expected, result.requiredHeaders().keySet());
+        assertFalse(result.requiredHeaders().containsKey("authorization"));
     }
     @Test void nonStagingPreservesExistingTransportContract() {
         var storage = new S3ObjectStorageService("https://storage.invalid", "", "synthetic-bucket",

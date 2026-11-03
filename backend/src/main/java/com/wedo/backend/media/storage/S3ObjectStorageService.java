@@ -114,7 +114,8 @@ public class S3ObjectStorageService implements ObjectStorageService {
                         : Map.of("declared-size", Long.toString(declaredSize), "original-file-name",
                                 Base64.getUrlEncoder().withoutPadding().encodeToString(originalFileName.getBytes(StandardCharsets.UTF_8))));
         if (staging) {
-            if (declaredSize <= 0 || contentType == null || !contentType.startsWith("image/")) {
+            if (declaredSize <= 0 || contentType == null
+                    || (!contentType.startsWith("image/") && !"video/mp4".equals(contentType))) {
                 throw constraintsUnavailable();
             }
             put.contentLength(declaredSize).ifNoneMatch("*");
